@@ -8176,13 +8176,13 @@ function App() {
 
   const tabBtn = (key, label) => (
     <button key={key} onClick={() => setTab(key)} style={{
-      padding:"11px 20px",
+      padding: isMobile ? "9px 12px" : "11px 20px",
       background: tab===key ? T.navy : "transparent",
       border:"none",
       color: tab===key ? "#fff" : T.muted,
       fontFamily:"'ProximaNova Black', sans-serif",
-      fontWeight:800, fontSize:12, letterSpacing:"0.1em",
-      cursor:"pointer",
+      fontWeight:800, fontSize: isMobile ? 10 : 12, letterSpacing: isMobile ? "0.06em" : "0.1em",
+      cursor:"pointer", whiteSpace:"nowrap",
       borderBottom: tab===key ? `3px solid ${T.gold}` : "3px solid transparent",
       transition:"all 0.15s",
     }}>{label}</button>
@@ -8207,8 +8207,8 @@ function App() {
       {/* Header */}
       <header className="app-header" style={{
         display:"flex", alignItems:"center", justifyContent:"space-between",
-        padding:"16px 32px", background:T.cardBg,
-        borderBottom:`1px solid ${T.border}`, flexWrap:"wrap", gap:16,
+        padding: isMobile ? "10px 14px" : "16px 32px", background:T.cardBg,
+        borderBottom:`1px solid ${T.border}`, flexWrap:"wrap", gap:isMobile ? 8 : 16,
       }}>
         <div style={{ display:"flex", alignItems:"center", gap:18 }}>
           {(() => {
@@ -8224,7 +8224,7 @@ function App() {
                 onClick={() => setBrandingModal(true)}
                 title="Click to edit branding"
                 style={{
-                  height:48, width:"auto", display:"block", objectFit:"contain",
+                  height: isMobile ? 32 : 48, width:"auto", display:"block", objectFit:"contain",
                   cursor:"pointer", borderRadius:4, transition:"opacity 0.15s",
                   filter: needsInvert ? "brightness(0) saturate(100%)" : "none",
                 }}
@@ -8233,19 +8233,19 @@ function App() {
               />
             );
           })()}
-          <div style={{ height:30, width:1, background:T.border }}></div>
-          <div>
+          {!isMobile && <div style={{ height:30, width:1, background:T.border }}></div>}
+          {!isMobile && <div>
             <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:19, letterSpacing:"0.02em", color:T.heading, lineHeight:1 }}>{branding.appName || "PRONTO"}</p>
             <p style={{ color:T.muted, fontSize:9.5, letterSpacing:"0.16em", fontWeight:700, marginTop:3 }}>{branding.appSubtitle || "PRODUCTIVE"}</p>
-          </div>
+          </div>}
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
-          <SearchBar tasksByDate={tasksByDate} content={content} ideas={ideas} suppliers={suppliers} staff={staff}
+        <div style={{ display:"flex", alignItems:"center", gap: isMobile ? 8 : 14, flexWrap:"wrap" }}>
+          {!isMobile && <SearchBar tasksByDate={tasksByDate} content={content} ideas={ideas} suppliers={suppliers} staff={staff}
             onJumpTask={(dk) => { setSelDate(parseISO(dk)); setView("day"); setTab("tasks"); }}
             onJumpContent={(dk) => { setSelDate(parseISO(dk)); setTab("content"); }}
             onJumpStaff={() => setTab("team")}
             onJumpTab={(k) => setTab(k)}
-          />
+          />}
           <NotificationsBell tasksByDate={tasksByDate} schedule={schedule} staff={staff}
             dismissed={notifDismissed} setDismissed={setNotifDismissed}
             onJumpTask={(dk) => { setSelDate(parseISO(dk)); setView("day"); setTab("tasks"); }}
@@ -8275,7 +8275,7 @@ function App() {
               cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
             }}>{t.icon}</button>
           ))}
-          <div style={{ height:18, width:1, background:T.border }}></div>
+          {!isMobile && <div style={{ height:18, width:1, background:T.border }}></div>}
           <input ref={fileInputRef} type="file" accept="application/json,.json"
             onChange={handleImportFile} style={{ display:"none" }}/>
           <SyncButton getState={fullState} applyState={applyState} syncRef={syncRef}
@@ -8284,7 +8284,7 @@ function App() {
             activeTab={tab}
             onPresenceChange={setOnlineUsers}
           />
-          <button onClick={exportState} title="Download all data as a JSON file you can email or save" style={{
+          {!isMobile && <button onClick={exportState} title="Download all data as a JSON file you can email or save" style={{
             padding:"7px 12px", background:"transparent", border:`1px solid ${T.border}`,
             borderRadius:6, color:T.text, fontSize:11, fontWeight:700,
             cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
@@ -8297,8 +8297,8 @@ function App() {
               <path d="M8 2v8"/><polyline points="4,7 8,10.5 12,7"/><path d="M3 12v2h10v-2"/>
             </svg>
             EXPORT
-          </button>
-          <button onClick={importState} title="Replace all data from a JSON file" style={{
+          </button>}
+          {!isMobile && <button onClick={importState} title="Replace all data from a JSON file" style={{
             padding:"7px 12px", background:"transparent", border:`1px solid ${T.border}`,
             borderRadius:6, color:T.text, fontSize:11, fontWeight:700,
             cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
@@ -8311,13 +8311,13 @@ function App() {
               <path d="M8 14V6"/><polyline points="4,9 8,5.5 12,9"/><path d="M3 4V2h10v2"/>
             </svg>
             IMPORT
-          </button>
-          <div style={{ height:18, width:1, background:T.border }}></div>
-          <button onClick={goToday} title="Jump to today" style={{
+          </button>}
+          {!isMobile && <div style={{ height:18, width:1, background:T.border }}></div>}
+          {!isMobile && <button onClick={goToday} title="Jump to today" style={{
             padding:"7px 14px", background:T.surface, border:`1px solid ${T.border}`,
             borderRadius:6, color:T.text, fontSize:11.5, fontWeight:700,
             cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em",
-          }}>{today().toLocaleDateString("en-NZ", { weekday:"short", day:"numeric", month:"short", year:"numeric" })}</button>
+          }}>{today().toLocaleDateString("en-NZ", { weekday:"short", day:"numeric", month:"short", year:"numeric" })}</button>}
           <div style={{ height:18, width:1, background:T.border }}></div>
           {/* Settings gear */}
           <button onClick={() => setSettingsOpen(true)} title="Settings" style={{
@@ -8338,14 +8338,16 @@ function App() {
       {/* Tab bar */}
       <div style={{
         display:"flex", alignItems:"flex-end", justifyContent:"space-between",
-        padding:"0 32px", background:T.cardBg, borderBottom:`1px solid ${T.border}`,
-        gap:20, flexWrap:"wrap",
+        padding: isMobile ? "0 0" : "0 32px", background:T.cardBg, borderBottom:`1px solid ${T.border}`,
+        gap: isMobile ? 0 : 20, flexWrap: isMobile ? "nowrap" : "wrap",
+        overflowX: isMobile ? "auto" : "visible",
+        WebkitOverflowScrolling:"touch",
       }}>
-        <div className="tab-bar" style={{ display:"flex", flexWrap:"wrap" }}>
+        <div className="tab-bar" style={{ display:"flex", flexWrap:"nowrap", flexShrink:0 }}>
           {TABS.filter(t => visibleTabs.includes(t.key)).map(t => tabBtn(t.key, t.label))}
         </div>
-        {showDateStrip && (
-          <div style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10 }}>
+        {showDateStrip && !isMobile && (
+          <div style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10, flexShrink:0 }}>
             <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden", background:T.cardBg }}>
               <IconBtn onClick={() => navigateDate(-1)} label="Previous" style={{ border:"none", borderRadius:0, borderRight:`1px solid ${T.border}` }}><Chev dir="left"/></IconBtn>
               <span style={{ padding:"0 16px", fontSize:12, fontWeight:700, color:T.ink, fontFamily:"inherit", letterSpacing:"0.02em", minWidth:240, textAlign:"center" }}>{dateLabel}</span>
@@ -8361,13 +8363,30 @@ function App() {
           </div>
         )}
       </div>
+      {/* Mobile date strip — full width below tab bar */}
+      {showDateStrip && isMobile && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, padding:"8px 12px", background:T.cardBg, borderBottom:`1px solid ${T.border}` }}>
+          <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden", background:T.surface, flex:1 }}>
+            <IconBtn onClick={() => navigateDate(-1)} label="Previous" style={{ border:"none", borderRadius:0, borderRight:`1px solid ${T.border}`, padding:"6px 10px" }}><Chev dir="left"/></IconBtn>
+            <span style={{ flex:1, textAlign:"center", fontSize:11.5, fontWeight:700, color:T.ink, fontFamily:"inherit", letterSpacing:"0.02em", padding:"0 8px" }}>{dateLabel}</span>
+            <IconBtn onClick={() => navigateDate(1)} label="Next" style={{ border:"none", borderRadius:0, borderLeft:`1px solid ${T.border}`, padding:"6px 10px" }}><Chev dir="right"/></IconBtn>
+          </div>
+          {tab === "tasks" && (
+            <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden", flexShrink:0 }}>
+              {viewBtn("day","Day")}
+              {viewBtn("week","Wk")}
+              {viewBtn("month","Mo")}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main */}
-      <main className="main-content" style={{ flex:1, padding:"28px 32px 60px", overflowY:"auto", maxWidth:1500, width:"100%", margin:"0 auto", boxSizing:"border-box" }}>
+      <main className="main-content" style={{ flex:1, padding: isMobile ? "14px 12px 80px" : "28px 32px 60px", overflowY:"auto", maxWidth:1500, width:"100%", margin:"0 auto", boxSizing:"border-box" }}>
         {heading && (
           <div style={{ marginBottom:20 }}>
             <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{heading.eyebrow}</p>
-            <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:8 }}>{heading.big}</h1>
+            <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize: isMobile ? 28 : 50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:8 }}>{heading.big}</h1>
             <p style={{ color:T.muted, fontSize:13.5 }}>{heading.sub}</p>
           </div>
         )}
@@ -8468,6 +8487,46 @@ function App() {
           </div>
         )}
       </main>
+
+      {/* Mobile bottom nav */}
+      {isMobile && (
+        <nav style={{
+          position:"fixed", bottom:0, left:0, right:0, zIndex:500,
+          background:T.cardBg, borderTop:`1px solid ${T.border}`,
+          display:"flex", alignItems:"stretch",
+          boxShadow:"0 -2px 12px rgba(0,0,0,0.12)",
+        }}>
+          {[
+            { key:"today", icon:"🏠", label:"Today" },
+            { key:"tasks", icon:"✅", label:"Tasks" },
+            { key:"schedule", icon:"📅", label:"Schedule" },
+            { key:"content", icon:"📝", label:"Content" },
+            { key:"video", icon:"🎬", label:"Video" },
+          ].map(({ key, icon, label }) => (
+            <button key={key} onClick={() => setTab(key)} style={{
+              flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+              padding:"8px 4px 10px", gap:3,
+              background: tab===key ? T.navy+"18" : "transparent",
+              border:"none", cursor:"pointer", fontFamily:"inherit",
+              borderTop: tab===key ? `2px solid ${T.gold}` : "2px solid transparent",
+            }}>
+              <span style={{ fontSize:18, lineHeight:1 }}>{icon}</span>
+              <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.06em", color: tab===key ? T.gold : T.muted, textTransform:"uppercase" }}>{label}</span>
+            </button>
+          ))}
+          <button onClick={() => setSettingsOpen(true)} style={{
+            flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+            padding:"8px 4px 10px", gap:3,
+            background:"transparent", border:"none", cursor:"pointer",
+            borderTop:"2px solid transparent",
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.06em", color:T.muted, textTransform:"uppercase" }}>More</span>
+          </button>
+        </nav>
+      )}
     </div>
   );
 }
@@ -8914,16 +8973,28 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
 
 // ── Video Schedule View ──
 function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView, videoLabels, onAddToTasks }) {
-  const [adding, setAdding] = useS(null); // date key being added to
-  const [form, setForm] = useS({ talent:"", location:"", type:"BTS", durationMin:60, notes:"", prepTasks:[] });
-  const [expandedEvent, setExpandedEvent] = useS(null); // id of event showing task workflow
-  const [viewMode, setViewMode] = useS("both"); // "schedule" | "tasks" | "both"
+  const [adding, setAdding] = useS(null);
+  const [form, setForm] = useS({ talent:"", location:"", type:"BTS", durationMin:120, startHour:9, notes:"", prepTasks:[] });
+  const [expandedEvent, setExpandedEvent] = useS(null);
+  const [calView, setCalView] = useS("week");
+  const [monthOffset, setMonthOffset] = useS(0);
+  const [yearOffset, setYearOffset] = useS(0);
+  const [vidWeekOffset, setVidWeekOffset] = useS(0);
+  const [selectedEvent, setSelectedEvent] = useS(null); // { ev, dk } for detail modal
+  const [expandedDay, setExpandedDay] = useS(null); // dk for "+more" expanded view
+
   const VIDEO_TYPES = videoLabels || ["BTS","Interview","Promo","Tutorial","Testimonial","Product","Event","Other"];
   const TYPE_COLORS = { BTS:"#E76F1B", Interview:"#2563EB", Promo:"#059669", Tutorial:"#7C3AED", Testimonial:"#D97706", Product:"#0E9F6E", Event:"#FFC030", Other:"#6B7280" };
 
-  const monday = startOfWeek(selDate);
+  // Time grid constants
+  const TG_START = 7;  // 7am
+  const TG_END   = 20; // 8pm
+  const PX_PER_HR = 64;
+  const gridH = (TG_END - TG_START) * PX_PER_HR;
+
+  const baseMonday = addDays(startOfWeek(selDate), vidWeekOffset * 7);
   const CAL_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const days = Array.from({ length:7 }, (_, i) => addDays(monday, i));
+  const days = Array.from({ length:7 }, (_, i) => addDays(baseMonday, i));
 
   const DEFAULT_PREP_TASKS = ["Write script","Email talent for approval","Organise filming","Gather assets","Film shoot","Edit content","Finalise captions","Upload & schedule"];
 
@@ -8958,161 +9029,559 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
   };
 
   const todayD = today();
-  const fmtWeekLabel = () => {
-    const fri = addDays(monday, 4);
-    return `Week of ${monday.getDate()} ${MONTHS[monday.getMonth()].slice(0,3)} – ${fri.getDate()} ${MONTHS[fri.getMonth()].slice(0,3)}`;
-  };
+  const todayIso = isoDate(todayD);
+  const nowHour = new Date().getHours() + new Date().getMinutes() / 60;
 
-  const inputStyle = {
-    background:T.surface, border:`1px solid ${T.border}`, borderRadius:5,
-    color:T.ink, fontSize:11.5, padding:"6px 9px", fontFamily:"inherit",
-  };
+  // Month calendar data
+  const baseMonth = new Date(selDate.getFullYear(), selDate.getMonth() + monthOffset, 1);
+  const monthCalDays = (() => {
+    const first = new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1);
+    const dow = first.getDay();
+    const startOff = dow === 0 ? 6 : dow - 1;
+    const start = new Date(first); start.setDate(first.getDate() - startOff);
+    return Array.from({ length:42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  })();
 
-  return (
-    <div>
-      <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-        <div>
-          <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>FILMING & PRODUCTION</p>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>VIDEO SCHEDULE</h1>
-          <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Plan filming days — talent, location, type and duration at a glance.</p>
-        </div>
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          {[["both","SCHEDULE + TASKS"],["schedule","SCHEDULE ONLY"],["tasks","TASKS ONLY"]].map(([k,l]) => (
-            <button key={k} onClick={() => setViewMode(k)} style={{
-              padding:"5px 10px", borderRadius:5, fontSize:10, fontWeight:800,
-              background: viewMode===k ? T.gold : "transparent",
-              border:`1px solid ${viewMode===k ? T.gold : T.border}`,
-              color: viewMode===k ? "#fff" : T.muted,
-              cursor:"pointer", fontFamily:"inherit",
-            }}>{l}</button>
+  // Year data
+  const baseYear = selDate.getFullYear() + yearOffset;
+
+  const inputStyle = { background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, fontSize:11.5, padding:"6px 9px", fontFamily:"inherit" };
+  const fmtHour = (h) => { const ampm = h >= 12 ? "pm" : "am"; const h12 = h % 12 === 0 ? 12 : h % 12; return `${h12}${ampm}`; };
+  const fmtHourFull = (h) => { const ampm = h >= 12 ? "pm" : "am"; const h12 = h % 12 === 0 ? 12 : h % 12; const mins = Math.round((h % 1) * 60); return mins > 0 ? `${h12}:${String(mins).padStart(2,"0")}${ampm}` : `${h12}${ampm}`; };
+
+  // Add form (reused in week/month)
+  const renderAddForm = (dk, onDone) => (
+    <div style={{ padding:"16px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+      {/* Type chips */}
+      <div>
+        <p style={{ fontSize:9, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>SHOOT TYPE</p>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+          {VIDEO_TYPES.map(t => (
+            <button key={t} onClick={() => setForm(f => ({ ...f, type:t }))} style={{
+              padding:"4px 10px", borderRadius:20, fontSize:10, fontWeight:800, border:"none",
+              background: form.type===t ? (TYPE_COLORS[t]||T.gold) : T.surface2,
+              color: form.type===t ? "#fff" : T.muted, cursor:"pointer", fontFamily:"inherit",
+            }}>{t}</button>
           ))}
         </div>
       </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        <div>
+          <p style={{ fontSize:9, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:4 }}>START TIME</p>
+          <select value={form.startHour} onChange={e => setForm(f => ({ ...f, startHour:Number(e.target.value) }))} style={{ ...inputStyle, width:"100%" }}>
+            {Array.from({length:13}, (_,i) => i+7).map(h => <option key={h} value={h}>{fmtHour(h)}</option>)}
+          </select>
+        </div>
+        <div>
+          <p style={{ fontSize:9, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:4 }}>DURATION</p>
+          <select value={form.durationMin} onChange={e => setForm(f => ({ ...f, durationMin:Number(e.target.value) }))} style={{ ...inputStyle, width:"100%" }}>
+            {[30,60,90,120,180,240,300,480].map(m => <option key={m} value={m}>{m>=60?`${m/60}h`:`${m}m`}</option>)}
+          </select>
+        </div>
+      </div>
+      <input value={form.talent} onChange={e => setForm(f => ({ ...f, talent:e.target.value }))}
+        placeholder="Talent / who's filming" style={{ ...inputStyle, width:"100%", boxSizing:"border-box" }}/>
+      <input value={form.location} onChange={e => setForm(f => ({ ...f, location:e.target.value }))}
+        placeholder="📍 Location" style={{ ...inputStyle, width:"100%", boxSizing:"border-box" }}/>
+      <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes:e.target.value }))}
+        placeholder="Notes…" rows={2} style={{ ...inputStyle, width:"100%", boxSizing:"border-box", resize:"none" }}/>
+      <div>
+        <p style={{ fontSize:9, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>PREP TASKS</p>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
+          {DEFAULT_PREP_TASKS.map(t => (
+            <label key={t} style={{ display:"flex", alignItems:"center", gap:5, cursor:"pointer" }}>
+              <input type="checkbox" checked={(form.prepTasks||[]).includes(t)}
+                onChange={e => setForm(f => ({ ...f, prepTasks: e.target.checked ? [...(f.prepTasks||[]),t] : (f.prepTasks||[]).filter(x=>x!==t) }))}
+                style={{ width:11, height:11, accentColor:TYPE_COLORS[form.type]||T.gold }}/>
+              <span style={{ fontSize:10, color:T.ink }}>{t}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:8, paddingTop:4 }}>
+        <button onClick={() => { const resolvedDk = typeof dk === "function" ? dk() : dk; if (resolvedDk) addEvent(resolvedDk); onDone && onDone(); }} style={{ flex:1, background:TYPE_COLORS[form.type]||T.gold, border:"none", borderRadius:6, color:"#fff", padding:"8px", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>ADD SHOOT</button>
+        <button onClick={() => { setAdding(null); onDone && onDone(); }} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, padding:"8px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+      </div>
+    </div>
+  );
 
-      {/* Calendar grid */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:10 }}>
-        {CAL_DAYS.map((d, i) => (
-          <div key={d} style={{ padding:"8px 10px", textAlign:"center", fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:10, letterSpacing:"0.1em", color: i>=5 ? T.muted : T.heading, background: i>=5 ? T.surface2 : T.surface, borderRadius:6 }}>{d}</div>
-        ))}
-        {days.map((d, di) => {
-          const dk = isoDate(d);
-          const events = videoEvents[dk] || [];
-          const isToday = sameDay(d, todayD);
-          const isWeekend = di >= 5;
-          return (
-            <div key={dk} style={{ background: isWeekend ? T.surface2 : T.cardBg, border:`1px solid ${isToday ? T.gold : T.border}`, borderRadius:8, padding:"10px", minHeight:200 }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+  // Event detail modal
+  const renderDetailModal = () => {
+    if (!selectedEvent) return null;
+    const { ev, dk } = selectedEvent;
+    const tc = TYPE_COLORS[ev.type] || "#888";
+    const d = parseISO(dk);
+    const prepDone = (ev.prepTasks||[]).filter(t=>t.done).length;
+    const prepTotal = (ev.prepTasks||[]).length;
+    return (
+      <div onClick={() => setSelectedEvent(null)} style={{ position:"fixed", inset:0, zIndex:2000, background:"rgba(15,27,58,0.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:32 }}>
+        <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:12, width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto", borderTop:`4px solid ${tc}`, boxShadow:"0 24px 60px rgba(15,27,58,0.4)" }}>
+          <div style={{ padding:"16px 20px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ width:12, height:12, borderRadius:3, background:tc }} />
+              <div>
+                <p style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:tc }}>{ev.type.toUpperCase()}</p>
+                <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontSize:16, color:T.heading, fontWeight:800 }}>{ev.talent || ev.type}</p>
+              </div>
+            </div>
+            <button onClick={() => setSelectedEvent(null)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:20 }}>×</button>
+          </div>
+          <div style={{ padding:"16px 20px", display:"flex", flexDirection:"column", gap:12 }}>
+            <div style={{ display:"flex", gap:16 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.muted} strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <p style={{ fontSize:12, color:T.text }}>{DAYS_LONG[d.getDay()]}, {d.getDate()} {MONTHS[d.getMonth()]}</p>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.muted} strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <p style={{ fontSize:12, color:T.text }}>{fmtHour(ev.startHour||9)} · {ev.durationMin < 60 ? `${ev.durationMin}m` : `${ev.durationMin/60}h`}</p>
+              </div>
+              {ev.location && (
                 <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{
-                    width:26, height:26, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center",
-                    background: isToday ? T.gold : "transparent",
-                    fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13,
-                    color: isToday ? "#fff" : isWeekend ? T.muted : T.heading,
-                  }}>{d.getDate()}</span>
-                  <span style={{ fontSize:9.5, color:T.faint, fontWeight:700 }}>{MONTHS[d.getMonth()].slice(0,3).toUpperCase()}</span>
-                </div>
-                {!isWeekend && (
-                  <button onClick={() => { setAdding(dk); setForm({ talent:"", location:"", type:(VIDEO_TYPES[0]||"BTS"), durationMin:60, notes:"", prepTasks:[] }); }} style={{
-                    width:20, height:20, borderRadius:"50%", background:"transparent",
-                    border:`1px solid ${T.borderStrong}`, color:T.muted, fontSize:12,
-                    cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1,
-                  }}>+</button>
-                )}
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                {events.map(ev => {
-                  const tc = TYPE_COLORS[ev.type] || "#888";
-                  const isExpanded = expandedEvent === ev.id;
-                  const prepDone = (ev.prepTasks||[]).filter(t=>t.done).length;
-                  const prepTotal = (ev.prepTasks||[]).length;
-                  const showSched = viewMode !== "tasks";
-                  const showTasks = viewMode !== "schedule";
-                  return (
-                    <div key={ev.id}>
-                      {showSched && (
-                        <div style={{ background:tc+"18", borderLeft:`3px solid ${tc}`, borderRadius:4, padding:"5px 7px" }}>
-                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <p style={{ fontSize:9.5, fontWeight:800, color:tc, letterSpacing:"0.06em" }}>{ev.type.toUpperCase()}{ev.durationMin ? ` · ${ev.durationMin}m` : ""}</p>
-                              {ev.talent && <p style={{ fontSize:11, color:T.ink, fontWeight:600, lineHeight:1.3 }}>{ev.talent}</p>}
-                              {ev.location && <p style={{ fontSize:10, color:T.muted, marginTop:1 }}>📍 {ev.location}</p>}
-                              {prepTotal > 0 && (
-                                <button onClick={() => setExpandedEvent(isExpanded ? null : ev.id)} style={{ background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:"inherit" }}>
-                                  <p style={{ fontSize:9.5, color:tc, marginTop:2, fontWeight:700 }}>{prepDone}/{prepTotal} tasks {isExpanded ? "▲" : "▼"}</p>
-                                </button>
-                              )}
-                            </div>
-                            <button onClick={() => deleteEvent(dk, ev.id)} style={{ background:"transparent", border:"none", color:T.faint, cursor:"pointer", fontSize:12, padding:0, flexShrink:0, marginLeft:4 }}>×</button>
-                          </div>
-                        </div>
-                      )}
-                      {/* Prep tasks (expanded or tasks-only mode) */}
-                      {showTasks && (isExpanded || viewMode==="tasks") && (ev.prepTasks||[]).length > 0 && (
-                        <div style={{ padding:"6px 8px", background:T.surface, borderRadius:4, marginTop:2 }}>
-                          <p style={{ fontSize:8.5, fontWeight:800, color:tc, letterSpacing:"0.08em", marginBottom:4 }}>PREP TASKS</p>
-                          {(ev.prepTasks||[]).map(t => (
-                            <div key={t.id} style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3 }}>
-                              <button onClick={() => togglePrepTask(dk, ev.id, t.id)} style={{
-                                width:11, height:11, borderRadius:2, flexShrink:0, padding:0, cursor:"pointer",
-                                background: t.done ? tc : "transparent",
-                                border:`1.5px solid ${t.done ? tc : T.borderStrong}`,
-                                display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:7, fontWeight:900,
-                              }}>{t.done && "✓"}</button>
-                              <p style={{ fontSize:10.5, color: t.done ? T.muted : T.ink, textDecoration: t.done ? "line-through" : "none", lineHeight:1.3 }}>{t.text}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {events.length === 0 && !isWeekend && (
-                  <p style={{ fontSize:10, color:T.faint, fontStyle:"italic", textAlign:"center", paddingTop:8 }}>No shoots planned</p>
-                )}
-              </div>
-
-              {/* Add form inline */}
-              {adding === dk && (
-                <div style={{ marginTop:8, padding:"8px", background:T.surface, border:`1px solid ${T.gold}`, borderRadius:6 }}>
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:6 }}>
-                    {VIDEO_TYPES.map(t => (
-                      <button key={t} onClick={() => setForm(f => ({ ...f, type:t }))} style={{
-                        padding:"2px 6px", borderRadius:3, fontSize:9, fontWeight:800, border:"none",
-                        background: form.type===t ? (TYPE_COLORS[t]||T.gold) : T.surface2,
-                        color: form.type===t ? "#fff" : T.muted, cursor:"pointer", fontFamily:"inherit",
-                      }}>{t}</button>
-                    ))}
-                  </div>
-                  <input value={form.talent} onChange={e => setForm(f => ({ ...f, talent:e.target.value }))}
-                    placeholder="Talent / who's filming" style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:4 }}/>
-                  <input value={form.location} onChange={e => setForm(f => ({ ...f, location:e.target.value }))}
-                    placeholder="Location" style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:4 }}/>
-                  <select value={form.durationMin} onChange={e => setForm(f => ({ ...f, durationMin:Number(e.target.value) }))} style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:4 }}>
-                    {[30,60,90,120,180,240,300,480].map(m => <option key={m} value={m}>{m >= 60 ? `${m/60}h` : `${m}m`}</option>)}
-                  </select>
-                  <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes:e.target.value }))}
-                    placeholder="Notes…" rows={2}
-                    style={{ ...inputStyle, width:"100%", boxSizing:"border-box", resize:"none", marginBottom:4 }}/>
-                  {/* Prep tasks */}
-                  <p style={{ fontSize:9, fontWeight:800, color:T.muted, letterSpacing:"0.08em", marginBottom:4 }}>PREP TASKS</p>
-                  {DEFAULT_PREP_TASKS.map(t => (
-                    <label key={t} style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3, cursor:"pointer" }}>
-                      <input type="checkbox" checked={(form.prepTasks||[]).includes(t)}
-                        onChange={e => setForm(f => ({ ...f, prepTasks: e.target.checked ? [...(f.prepTasks||[]),t] : (f.prepTasks||[]).filter(x=>x!==t) }))}
-                        style={{ width:11, height:11 }}/>
-                      <span style={{ fontSize:10, color:T.ink }}>{t}</span>
-                    </label>
-                  ))}
-                  <div style={{ display:"flex", gap:4, marginTop:6 }}>
-                    <button onClick={() => addEvent(dk)} style={{ background:T.gold, border:"none", borderRadius:4, color:"#fff", padding:"4px 10px", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>ADD</button>
-                    <button onClick={() => setAdding(null)} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, padding:"4px 8px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
-                  </div>
+                  <span style={{ fontSize:12 }}>📍</span>
+                  <p style={{ fontSize:12, color:T.text }}>{ev.location}</p>
                 </div>
               )}
             </div>
-          );
-        })}
+            {ev.notes && <p style={{ fontSize:12, color:T.text, background:T.surface, padding:"10px 12px", borderRadius:6, lineHeight:1.5 }}>{ev.notes}</p>}
+            {prepTotal > 0 && (
+              <div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                  <p style={{ fontSize:10, fontWeight:800, color:tc, letterSpacing:"0.1em" }}>PREP TASKS</p>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <div style={{ width:80, height:4, background:T.surface2, borderRadius:2 }}>
+                      <div style={{ width:`${prepDone/prepTotal*100}%`, height:"100%", background:tc, borderRadius:2 }} />
+                    </div>
+                    <p style={{ fontSize:10, color:T.muted, fontWeight:700 }}>{prepDone}/{prepTotal}</p>
+                  </div>
+                </div>
+                {(ev.prepTasks||[]).map(t => (
+                  <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderBottom:`1px solid ${T.border}` }}>
+                    <button onClick={() => { togglePrepTask(dk, ev.id, t.id); setSelectedEvent(prev => prev ? { ...prev, ev: { ...prev.ev, prepTasks: (prev.ev.prepTasks||[]).map(pt => pt.id===t.id ? {...pt, done:!pt.done} : pt) } } : null); }} style={{ width:14, height:14, borderRadius:3, flexShrink:0, padding:0, cursor:"pointer", background: t.done ? tc : "transparent", border:`1.5px solid ${t.done ? tc : T.borderStrong}`, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:900 }}>{t.done && "✓"}</button>
+                    <p style={{ fontSize:12, color: t.done ? T.muted : T.ink, textDecoration: t.done ? "line-through" : "none" }}>{t.text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ padding:"12px 20px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", background:T.surface, borderRadius:"0 0 12px 12px" }}>
+            <button onClick={() => { if (window.confirm("Delete this shoot?")) { deleteEvent(dk, ev.id); setSelectedEvent(null); } }} style={{ background:"transparent", color:T.urgent, border:`1px solid ${T.urgent}33`, borderRadius:5, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>DELETE</button>
+            <button onClick={() => setSelectedEvent(null)} style={{ background:tc, color:"#fff", border:"none", borderRadius:5, padding:"6px 16px", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>CLOSE</button>
+          </div>
+        </div>
       </div>
+    );
+  };
+
+  // Shared event card renderer (used in week + month views)
+  const renderEventCard = (ev, dk) => {
+    const tc = TYPE_COLORS[ev.type] || "#888";
+    const isExpanded = expandedEvent === ev.id;
+    const prepDone = (ev.prepTasks||[]).filter(t=>t.done).length;
+    const prepTotal = (ev.prepTasks||[]).length;
+    const showSched = viewMode !== "tasks";
+    const showTasks = viewMode !== "schedule";
+    return (
+      <div key={ev.id}>
+        {showSched && (
+          <div style={{ background:tc+"18", borderLeft:`3px solid ${tc}`, borderRadius:4, padding:"5px 7px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <p style={{ fontSize:9.5, fontWeight:800, color:tc, letterSpacing:"0.06em" }}>{ev.type.toUpperCase()}{ev.durationMin ? ` · ${ev.durationMin}m` : ""}</p>
+                {ev.talent && <p style={{ fontSize:11, color:T.ink, fontWeight:600, lineHeight:1.3 }}>{ev.talent}</p>}
+                {ev.location && <p style={{ fontSize:10, color:T.muted, marginTop:1 }}>📍 {ev.location}</p>}
+                {prepTotal > 0 && (
+                  <button onClick={() => setExpandedEvent(isExpanded ? null : ev.id)} style={{ background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:"inherit" }}>
+                    <p style={{ fontSize:9.5, color:tc, marginTop:2, fontWeight:700 }}>{prepDone}/{prepTotal} tasks {isExpanded ? "▲" : "▼"}</p>
+                  </button>
+                )}
+              </div>
+              <button onClick={() => deleteEvent(dk, ev.id)} style={{ background:"transparent", border:"none", color:T.faint, cursor:"pointer", fontSize:12, padding:0, flexShrink:0, marginLeft:4 }}>×</button>
+            </div>
+          </div>
+        )}
+        {showTasks && (isExpanded || viewMode==="tasks") && (ev.prepTasks||[]).length > 0 && (
+          <div style={{ padding:"6px 8px", background:T.surface, borderRadius:4, marginTop:2 }}>
+            <p style={{ fontSize:8.5, fontWeight:800, color:tc, letterSpacing:"0.08em", marginBottom:4 }}>PREP TASKS</p>
+            {(ev.prepTasks||[]).map(t => (
+              <div key={t.id} style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3 }}>
+                <button onClick={() => togglePrepTask(dk, ev.id, t.id)} style={{
+                  width:11, height:11, borderRadius:2, flexShrink:0, padding:0, cursor:"pointer",
+                  background: t.done ? tc : "transparent",
+                  border:`1.5px solid ${t.done ? tc : T.borderStrong}`,
+                  display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:7, fontWeight:900,
+                }}>{t.done && "✓"}</button>
+                <p style={{ fontSize:10.5, color: t.done ? T.muted : T.ink, textDecoration: t.done ? "line-through" : "none", lineHeight:1.3 }}>{t.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Add form (used inline in week; as modal in month)
+  const renderAddForm = (dk) => (
+    <div style={{ padding:"8px", background:T.surface, border:`1px solid ${T.gold}`, borderRadius:6, marginTop:8 }}>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:6 }}>
+        {VIDEO_TYPES.map(t => (
+          <button key={t} onClick={() => setForm(f => ({ ...f, type:t }))} style={{
+            padding:"2px 6px", borderRadius:3, fontSize:9, fontWeight:800, border:"none",
+            background: form.type===t ? (TYPE_COLORS[t]||T.gold) : T.surface2,
+            color: form.type===t ? "#fff" : T.muted, cursor:"pointer", fontFamily:"inherit",
+          }}>{t}</button>
+        ))}
+      </div>
+      <input value={form.talent} onChange={e => setForm(f => ({ ...f, talent:e.target.value }))}
+        placeholder="Talent / who's filming" style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:4 }}/>
+      <input value={form.location} onChange={e => setForm(f => ({ ...f, location:e.target.value }))}
+        placeholder="Location" style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:4 }}/>
+      <select value={form.durationMin} onChange={e => setForm(f => ({ ...f, durationMin:Number(e.target.value) }))} style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:4 }}>
+        {[30,60,90,120,180,240,300,480].map(m => <option key={m} value={m}>{m >= 60 ? `${m/60}h` : `${m}m`}</option>)}
+      </select>
+      <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes:e.target.value }))}
+        placeholder="Notes…" rows={2} style={{ ...inputStyle, width:"100%", boxSizing:"border-box", resize:"none", marginBottom:4 }}/>
+      <p style={{ fontSize:9, fontWeight:800, color:T.muted, letterSpacing:"0.08em", marginBottom:4 }}>PREP TASKS</p>
+      {DEFAULT_PREP_TASKS.map(t => (
+        <label key={t} style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3, cursor:"pointer" }}>
+          <input type="checkbox" checked={(form.prepTasks||[]).includes(t)}
+            onChange={e => setForm(f => ({ ...f, prepTasks: e.target.checked ? [...(f.prepTasks||[]),t] : (f.prepTasks||[]).filter(x=>x!==t) }))}
+            style={{ width:11, height:11 }}/>
+          <span style={{ fontSize:10, color:T.ink }}>{t}</span>
+        </label>
+      ))}
+      <div style={{ display:"flex", gap:4, marginTop:6 }}>
+        <button onClick={() => addEvent(dk)} style={{ background:T.gold, border:"none", borderRadius:4, color:"#fff", padding:"4px 10px", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>ADD SHOOT</button>
+        <button onClick={() => setAdding(null)} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, padding:"4px 8px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* ── Outlook-style header bar ── */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+        <div style={{ flex:1 }}>
+          <p style={{ color:T.gold, fontSize:9, letterSpacing:"0.18em", fontWeight:800, marginBottom:2 }}>FILMING & PRODUCTION</p>
+          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:34, letterSpacing:"-0.02em", lineHeight:1, color:T.heading, margin:0 }}>VIDEO SCHEDULE</h1>
+        </div>
+        {/* Navigation */}
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <button onClick={() => { calView==="week" ? setVidWeekOffset(o=>o-1) : calView==="month" ? setMonthOffset(o=>o-1) : setYearOffset(o=>o-1); }} style={{ width:30, height:30, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+          <button onClick={() => { setVidWeekOffset(0); setMonthOffset(0); setYearOffset(0); }} style={{ padding:"5px 12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:11, fontWeight:700, fontFamily:"inherit" }}>Today</button>
+          <button onClick={() => { calView==="week" ? setVidWeekOffset(o=>o+1) : calView==="month" ? setMonthOffset(o=>o+1) : setYearOffset(o=>o+1); }} style={{ width:30, height:30, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+          {/* Current period label */}
+          <span style={{ fontSize:14, fontWeight:800, color:T.heading, letterSpacing:"0.02em", minWidth:140 }}>
+            {calView==="week" ? (() => { const fri = addDays(days[0],4); return `${days[0].getDate()} ${MONTHS[days[0].getMonth()].slice(0,3)} – ${fri.getDate()} ${MONTHS[fri.getMonth()].slice(0,3)} ${fri.getFullYear()}`; })() : calView==="month" ? `${MONTHS[baseMonth.getMonth()]} ${baseMonth.getFullYear()}` : String(selDate.getFullYear() + yearOffset)}
+          </span>
+        </div>
+        {/* View toggle */}
+        <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
+          {[["week","Week"],["month","Month"],["year","Year"]].map(([k,l], i) => (
+            <button key={k} onClick={() => setCalView(k)} style={{ padding:"6px 14px", fontSize:11, fontWeight:700, border:"none", borderLeft: i>0 ? `1px solid ${T.border}` : "none", cursor:"pointer", fontFamily:"inherit", background: calView===k ? T.navy : T.surface, color: calView===k ? "#fff" : T.muted, transition:"all 0.15s" }}>{l}</button>
+          ))}
+        </div>
+        {/* New event */}
+        <button onClick={() => { setAdding("__new__"); setForm({ talent:"", location:"", type:(VIDEO_TYPES[0]||"BTS"), durationMin:120, startHour:9, notes:"", prepTasks:[] }); }} style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", background:T.gold, border:"none", borderRadius:6, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:800, fontFamily:"inherit" }}>
+          <span style={{ fontSize:16, lineHeight:1 }}>+</span> NEW SHOOT
+        </button>
+      </div>
+
+      {/* Type legend */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:14 }}>
+        {VIDEO_TYPES.map(t => (
+          <div key={t} style={{ display:"flex", alignItems:"center", gap:4 }}>
+            <div style={{ width:10, height:10, borderRadius:2, background:TYPE_COLORS[t]||"#888" }} />
+            <span style={{ fontSize:10, color:T.muted, fontWeight:600 }}>{t}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── WEEK VIEW — Outlook time grid ── */}
+      {calView === "week" && (
+        <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", background:T.cardBg, minWidth:520 }}>
+          {/* Day column headers */}
+          <div style={{ display:"grid", gridTemplateColumns:"52px repeat(7,1fr)", borderBottom:`1px solid ${T.border}` }}>
+            <div style={{ background:T.surface }} />
+            {days.map((d, di) => {
+              const dk = isoDate(d);
+              const isToday = dk === todayIso;
+              const isWeekend = di >= 5;
+              return (
+                <div key={dk} style={{ padding:"8px 6px", textAlign:"center", background: isWeekend ? T.surface2 : T.surface, borderLeft:`1px solid ${T.border}` }}>
+                  <p style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color: isToday ? T.gold : isWeekend ? T.faint : T.muted, marginBottom:3 }}>{CAL_DAYS[di]}</p>
+                  <span style={{ width:28, height:28, borderRadius:"50%", display:"inline-flex", alignItems:"center", justifyContent:"center", background: isToday ? T.gold : "transparent", fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:15, color: isToday ? "#fff" : isWeekend ? T.muted : T.ink }}>{d.getDate()}</span>
+                </div>
+              );
+            })}
+          </div>
+          {/* Time grid body */}
+          <div style={{ display:"grid", gridTemplateColumns:"52px repeat(7,1fr)", overflowY:"auto", maxHeight:600 }}>
+            {/* Hour labels */}
+            <div style={{ background:T.surface, borderRight:`1px solid ${T.border}` }}>
+              {Array.from({length: TG_END - TG_START}, (_, i) => (
+                <div key={i} style={{ height:PX_PER_HR, borderTop:`1px solid ${T.border}`, display:"flex", alignItems:"flex-start", justifyContent:"flex-end", paddingRight:6, paddingTop:3 }}>
+                  <span style={{ fontSize:9, fontWeight:700, color:T.faint }}>{fmtHour(TG_START+i)}</span>
+                </div>
+              ))}
+            </div>
+            {/* Day columns */}
+            {days.map((d, di) => {
+              const dk = isoDate(d);
+              const isToday = dk === todayIso;
+              const isWeekend = di >= 5;
+              const events = videoEvents[dk] || [];
+              return (
+                <div key={dk} onClick={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const y = e.clientY - rect.top;
+                  const clickHour = Math.floor(y / PX_PER_HR) + TG_START;
+                  setAdding(dk);
+                  setForm(f => ({ ...f, startHour: Math.min(TG_END-1, Math.max(TG_START, clickHour)) }));
+                }} style={{ position:"relative", height:gridH, borderLeft:`1px solid ${T.border}`, background: isWeekend ? T.surface2 + "88" : isToday ? T.gold+"06" : "transparent", cursor:"cell" }}>
+                  {/* Hour lines */}
+                  {Array.from({length: TG_END - TG_START}, (_, i) => (
+                    <div key={i} style={{ position:"absolute", left:0, right:0, top: i * PX_PER_HR, borderTop:`1px solid ${T.border}`, pointerEvents:"none", opacity:0.5 }} />
+                  ))}
+                  {/* "Now" line */}
+                  {isToday && nowHour >= TG_START && nowHour <= TG_END && (
+                    <div style={{ position:"absolute", left:0, right:0, top:(nowHour - TG_START) * PX_PER_HR, zIndex:3, pointerEvents:"none" }}>
+                      <div style={{ height:2, background:"#EF4444", position:"relative" }}>
+                        <div style={{ width:8, height:8, borderRadius:"50%", background:"#EF4444", position:"absolute", left:-4, top:-3 }} />
+                      </div>
+                    </div>
+                  )}
+                  {/* Events */}
+                  {events.map((ev, ei) => {
+                    const tc = TYPE_COLORS[ev.type] || "#888";
+                    const sh = ev.startHour || 9;
+                    const top = (sh - TG_START) * PX_PER_HR;
+                    const height = Math.max(22, (ev.durationMin / 60) * PX_PER_HR - 2);
+                    const prepDone = (ev.prepTasks||[]).filter(t=>t.done).length;
+                    const prepTotal = (ev.prepTasks||[]).length;
+                    return (
+                      <div key={ev.id} onClick={(e) => { e.stopPropagation(); setSelectedEvent({ ev, dk }); }} style={{
+                        position:"absolute", left:3, right:3, top: top + 2, height,
+                        background: tc + "E0", borderRadius:5, padding:"3px 6px",
+                        cursor:"pointer", zIndex:2, overflow:"hidden",
+                        boxShadow:`0 1px 3px ${tc}44`,
+                        border:`1px solid ${tc}`,
+                      }}>
+                        <p style={{ fontSize:9, fontWeight:800, color:"#fff", opacity:0.85, marginBottom:1 }}>{fmtHour(sh)} · {ev.durationMin<60?`${ev.durationMin}m`:`${ev.durationMin/60}h`}</p>
+                        <p style={{ fontSize:10.5, fontWeight:800, color:"#fff", lineHeight:1.2, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{ev.talent || ev.type}</p>
+                        {ev.location && <p style={{ fontSize:9, color:"#fff", opacity:0.75, marginTop:1 }}>📍 {ev.location}</p>}
+                        {prepTotal > 0 && (
+                          <div style={{ marginTop:4 }}>
+                            <div style={{ height:2, background:"rgba(255,255,255,0.3)", borderRadius:1 }}>
+                              <div style={{ width:`${prepDone/prepTotal*100}%`, height:"100%", background:"rgba(255,255,255,0.8)", borderRadius:1 }} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {/* Add form inline */}
+                  {adding === dk && (
+                    <div style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:32 }} onClick={() => setAdding(null)}>
+                      <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", borderTop:`3px solid ${TYPE_COLORS[form.type]||T.gold}` }}>
+                        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <p style={{ fontSize:11, fontWeight:800, color:T.gold, letterSpacing:"0.1em" }}>NEW SHOOT · {d.getDate()} {MONTHS[d.getMonth()].toUpperCase()}</p>
+                          <button onClick={() => setAdding(null)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18 }}>×</button>
+                        </div>
+                        {renderAddForm(dk, () => setAdding(null))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        </div>
+      )}
+
+      {/* ── MONTH VIEW — Outlook style ── */}
+      {calView === "month" && (
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
+          {/* DOW headers */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
+            {["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map((d,i) => (
+              <div key={d} style={{ padding:"8px 10px", fontSize:10, fontWeight:800, letterSpacing:"0.08em", color: i>=5 ? T.faint : T.muted, borderLeft: i>0 ? `1px solid ${T.border}` : "none" }}>{d}</div>
+            ))}
+          </div>
+          {/* Calendar cells */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
+            {monthCalDays.map((d, idx) => {
+              const dk = isoDate(d);
+              const inMonth = d.getMonth() === baseMonth.getMonth();
+              const isToday = dk === todayIso;
+              const isWeekend = idx % 7 >= 5;
+              const events = videoEvents[dk] || [];
+              const showLimit = 3;
+              const visible = events.slice(0, showLimit);
+              const overflow = events.length - showLimit;
+              const isExpanded = expandedDay === dk;
+              return (
+                <div key={idx} style={{
+                  minHeight:110, padding:"6px",
+                  background: isWeekend ? (inMonth ? T.surface2 : T.surface2+"88") : inMonth ? T.cardBg : T.surface,
+                  borderLeft: idx%7>0 ? `1px solid ${T.border}` : "none",
+                  borderTop:`1px solid ${T.border}`,
+                  opacity: inMonth ? 1 : 0.5,
+                  position:"relative",
+                }}>
+                  {/* Date number */}
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+                    <span style={{
+                      width:24, height:24, borderRadius:"50%", display:"inline-flex", alignItems:"center", justifyContent:"center",
+                      background: isToday ? T.gold : "transparent",
+                      fontSize: isToday ? 12 : 13, fontWeight:800,
+                      color: isToday ? "#fff" : isWeekend ? T.muted : inMonth ? T.ink : T.faint,
+                    }}>{d.getDate()}</span>
+                    {inMonth && (
+                      <button onClick={() => { setAdding(dk); setForm({ talent:"", location:"", type:(VIDEO_TYPES[0]||"BTS"), durationMin:120, startHour:9, notes:"", prepTasks:[] }); }} style={{ opacity:0, width:18, height:18, borderRadius:"50%", background:"transparent", border:`1px solid ${T.borderStrong}`, color:T.muted, fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", transition:"opacity 0.15s" }} className="add-btn">+</button>
+                    )}
+                  </div>
+                  {/* Event bars */}
+                  <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                    {(isExpanded ? events : visible).map(ev => {
+                      const tc = TYPE_COLORS[ev.type] || "#888";
+                      return (
+                        <div key={ev.id} onClick={() => setSelectedEvent({ ev, dk })} style={{
+                          background: tc,
+                          borderRadius:3, padding:"1px 6px",
+                          cursor:"pointer", overflow:"hidden",
+                          display:"flex", alignItems:"center", gap:4,
+                          transition:"opacity 0.1s",
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.opacity="0.8"}
+                        onMouseLeave={e => e.currentTarget.style.opacity="1"}
+                        >
+                          <span style={{ fontSize:9.5, color:"#fff", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                            {fmtHour(ev.startHour||9)} {ev.talent || ev.type}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {overflow > 0 && !isExpanded && (
+                      <button onClick={() => setExpandedDay(dk)} style={{ background:"transparent", border:"none", padding:"1px 3px", fontSize:10, color:T.muted, cursor:"pointer", textAlign:"left", fontWeight:700, fontFamily:"inherit" }}>
+                        +{overflow} more
+                      </button>
+                    )}
+                    {isExpanded && (
+                      <button onClick={() => setExpandedDay(null)} style={{ background:"transparent", border:"none", padding:"1px 3px", fontSize:10, color:T.muted, cursor:"pointer", textAlign:"left", fontWeight:700, fontFamily:"inherit" }}>
+                        show less ▲
+                      </button>
+                    )}
+                  </div>
+                  {/* Add modal */}
+                  {adding === dk && (
+                    <div style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.5)", display:"flex", alignItems:"center", justifyContent:"center", padding:32 }} onClick={() => setAdding(null)}>
+                      <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", borderTop:`3px solid ${TYPE_COLORS[form.type]||T.gold}` }}>
+                        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <p style={{ fontSize:11, fontWeight:800, color:T.gold, letterSpacing:"0.1em" }}>NEW SHOOT · {d.getDate()} {MONTHS[d.getMonth()].toUpperCase()} {d.getFullYear()}</p>
+                          <button onClick={() => setAdding(null)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18 }}>×</button>
+                        </div>
+                        {renderAddForm(dk, () => setAdding(null))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── YEAR VIEW ── */}
+      {calView === "year" && (
+        <div>
+          {/* Year nav */}
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:24 }}>
+            <button onClick={() => setYearOffset(o => o-1)} style={{ padding:"5px 12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:11, fontWeight:700, fontFamily:"inherit" }}>← {baseYear - 1}</button>
+            <span style={{ flex:1, textAlign:"center", fontSize:22, fontWeight:800, color:T.heading, letterSpacing:"0.06em", fontFamily:"'ProximaNova Black', sans-serif" }}>{baseYear}</span>
+            <button onClick={() => setYearOffset(o => o+1)} style={{ padding:"5px 12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:11, fontWeight:700, fontFamily:"inherit" }}>{baseYear + 1} →</button>
+            {yearOffset !== 0 && <button onClick={() => setYearOffset(0)} style={{ padding:"5px 12px", background:T.gold, border:"none", borderRadius:5, color:"#fff", cursor:"pointer", fontSize:11, fontWeight:800, fontFamily:"inherit" }}>THIS YEAR</button>}
+          </div>
+          {/* 12-month grid */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14 }}>
+            {Array.from({ length:12 }, (_, mi) => {
+              const mDate = new Date(baseYear, mi, 1);
+              const isCurrentMonth = mi === todayD.getMonth() && baseYear === todayD.getFullYear();
+              // Get all days in this month
+              const daysInMonth = new Date(baseYear, mi+1, 0).getDate();
+              // Find shoot days
+              const shootDays = [];
+              for (let d = 1; d <= daysInMonth; d++) {
+                const dk = isoDate(new Date(baseYear, mi, d));
+                if ((videoEvents[dk]||[]).length > 0) shootDays.push({ d, dk, events: videoEvents[dk] });
+              }
+              const totalShoots = shootDays.reduce((s, sd) => s + sd.events.length, 0);
+              return (
+                <div key={mi} onClick={() => { setMonthOffset((mi - selDate.getMonth()) + (baseYear - selDate.getFullYear()) * 12); setCalView("month"); }}
+                  style={{
+                    background: isCurrentMonth ? T.navy+"15" : T.cardBg,
+                    border:`1.5px solid ${isCurrentMonth ? T.navy : T.border}`,
+                    borderRadius:10, padding:"12px", cursor:"pointer",
+                    transition:"all 0.14s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = T.gold}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = isCurrentMonth ? T.navy : T.border}
+                >
+                  <p style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color: isCurrentMonth ? T.gold : T.muted, marginBottom:4 }}>
+                    {MONTHS[mi].toUpperCase().slice(0,3)}
+                    {isCurrentMonth && <span style={{ marginLeft:5, fontSize:8, background:T.gold, color:"#fff", borderRadius:3, padding:"1px 5px" }}>NOW</span>}
+                  </p>
+                  {/* Mini month dots */}
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1, marginBottom:8 }}>
+                    {Array.from({ length: daysInMonth }, (_, i) => {
+                      const dk = isoDate(new Date(baseYear, mi, i+1));
+                      const evs = videoEvents[dk] || [];
+                      const isT = dk === todayIso;
+                      return (
+                        <div key={i} style={{
+                          width:"100%", paddingBottom:"100%", borderRadius:"50%", position:"relative",
+                          background: evs.length > 0 ? (TYPE_COLORS[evs[0].type]||T.gold) : isT ? T.navy+"33" : "transparent",
+                        }}>
+                          {isT && evs.length === 0 && <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:`1px solid ${T.navy}` }} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {totalShoots > 0 ? (
+                    <p style={{ fontSize:10, color:T.ink, fontWeight:700 }}>
+                      🎬 {totalShoots} shoot{totalShoots!==1?"s":""} · {shootDays.length} day{shootDays.length!==1?"s":""}
+                    </p>
+                  ) : (
+                    <p style={{ fontSize:10, color:T.faint, fontStyle:"italic" }}>No shoots</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {/* Global add modal for "NEW SHOOT" button */}
+      {adding === "__new__" && (
+        <div style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.5)", display:"flex", alignItems:"center", justifyContent:"center", padding:32 }} onClick={() => setAdding(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", borderTop:`3px solid ${TYPE_COLORS[form.type]||T.gold}` }}>
+            <div style={{ padding:"14px 18px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <p style={{ fontSize:11, fontWeight:800, color:T.gold, letterSpacing:"0.1em" }}>NEW SHOOT</p>
+              <button onClick={() => setAdding(null)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18 }}>×</button>
+            </div>
+            <div style={{ padding:"10px 18px 4px" }}>
+              <p style={{ fontSize:9, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:4 }}>DATE</p>
+              <input type="date" defaultValue={todayIso} id="new-shoot-date-picker" style={{ ...inputStyle, width:"100%", boxSizing:"border-box", marginBottom:4 }} />
+            </div>
+            {renderAddForm(() => { const el = document.getElementById("new-shoot-date-picker"); return el ? el.value : todayIso; }, () => setAdding(null))}
+          </div>
+        </div>
+      )}
+
+      {/* Event detail modal */}
+      {renderDetailModal()}
     </div>
   );
 }
@@ -9480,6 +9949,5 @@ const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<PasswordGate><App /></PasswordGate>);
 
 </script>
-
 </body>
 </html>
