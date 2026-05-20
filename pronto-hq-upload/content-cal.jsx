@@ -1,6 +1,9 @@
 // ── Content Calendar (editable, colorized, drag-and-drop) ──
 const { useState: useSc, useEffect: useEc, useRef: useRc, useMemo: useMc } = React;
 
+// Mon-first day labels (grid starts on Monday via startOfWeek)
+const CAL_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
 // ── Monthly Pillars: each is a goal to hit per month ──
 const MONTHLY_PILLARS = [
   { id:"pronto-pick", label:"Pronto Pick",       target:1, color:"#DC9F09" },
@@ -616,9 +619,9 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
   return (
     <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", borderBottom:`1px solid ${T.border}`, background:T.surface }}>
-        {DAYS.map((d, i) => (
+        {CAL_DAYS.map((d, i) => (
           <div key={d} style={{
-            padding:"10px 12px", color: (i===0||i===6) ? T.faint : T.muted,
+            padding:"10px 12px", color: (i===5||i===6) ? T.faint : T.muted,
             fontSize:10, fontWeight:800, letterSpacing:"0.14em",
             borderRight: i < 6 ? `1px solid ${T.border}` : "none",
           }}>{d.toUpperCase()}</div>
@@ -628,7 +631,7 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
         <div key={wi} style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", borderBottom: wi < 5 ? `1px solid ${T.border}` : "none" }}>
           {row.map((d, di) => {
             const inMonth = d.getMonth() === month;
-            const isWeekend = di === 0 || di === 6;
+            const isWeekend = di === 5 || di === 6;
             const dk = isoDate(d);
             const posts = content[dk] || [];
             const isToday = sameDay(d, today);

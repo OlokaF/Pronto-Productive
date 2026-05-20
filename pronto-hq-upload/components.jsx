@@ -61,19 +61,20 @@ const DARK_T = {
 };
 // Pronto Navy brand theme — dark navy bg, white + gold text
 const NAVY_T = {
-  bg:"#071536", surface:"#0D1F45", surface2:"#050D28",
-  cardBg:"#0D1F45",
-  border:"#162B5A", borderStrong:"#1E3A78",
+  bg:"#071536", surface:"#102050", surface2:"#071030",
+  cardBg:"#0F1E46",          // slightly lighter than bg so cards lift off
+  border:"#1E3566", borderStrong:"#2A4A8A",
   navy:"#14295A", navyDeep:"#071536",
   blue:"#7AAFF0", gold:"#FFC030", goldHover:"#FFCD55",
-  ink:"#FFFFFF", text:"#FFFFFF", heading:"#FFC030",
-  muted:"#C8D8EC", faint:"#7A90B0",
+  ink:"#FFFFFF", text:"#EAF0FF", heading:"#FFC030",
+  muted:"#A8C4E0",           // brighter — was too dim (#C8D8EC looks similar but this is more legible)
+  faint:"#607898",           // bumped up from #7A90B0
   vanja:"#C4A8FF", vanjaSoft:"#1A1040",
   oloka:"#4DE8A0", olokaSoft:"#082818",
   urgent:"#FF7A72", urgentSoft:"#300E0A",
   high:"#FFC030", highSoft:"#221500",
   normal:"#7AAFF0", normalSoft:"#081430",
-  low:"#6080AA", lowSoft:"#101828",
+  low:"#8AACCC", lowSoft:"#101828",
 };
 // mode: "light" | "dark" | "navy"
 function applyTheme(mode) {
@@ -97,14 +98,15 @@ const PR = {
 const CATS = ["Social Post","Email","Video","Design","Blog","Meeting","Event","Admin"];
 
 const CAT_COLOR = {
-  "Social Post": "#7C5DCA",
-  "Email":       "#1B3F94",
-  "Video":       "#C8261A",
-  "Design":      "#DC9F09",
-  "Blog":        "#0E9F6E",
-  "Meeting":     "#0F1B3A",
-  "Event":       "#9AA0AE",
-  "Admin":       "#6B7280",
+  "Social Post": "#6D4CC4",   // indigo-purple (distinct from Vanja's #7C5DCA accent)
+  "Email":       "#1B3F94",   // brand blue
+  "Video":       "#C8261A",   // red
+  "Design":      "#DC9F09",   // gold
+  "Blog":        "#0E9F6E",   // emerald
+  "Meeting":     "#3B5CB8",   // mid-blue (replaces near-black — unreadable in dark)
+  "Event":       "#E07B00",   // amber-orange
+  "Admin":       "#0D9488",   // teal — distinct from purple/blue; reads on all themes
+  "Unassigned":  "#9AA0AE",   // slate
 };
 
 // Days / dates

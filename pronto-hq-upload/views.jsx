@@ -107,7 +107,8 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, filter, da
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
-  const [cat, setCat] = useStateV("Social Post");
+  const availCats = window.prontoCats || CATS;
+  const [cat, setCat] = useStateV(availCats[0] || "Social Post");
   const inputRef = useRefV(null);
   useEffectV(() => { if (adding) inputRef.current?.focus(); }, [adding]);
 
@@ -133,7 +134,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, filter, da
       done: false,
       owner: isEvent ? "event" : owner,
     });
-    setText(""); setPri("Normal"); setCat("Social Post"); setAdding(false);
+    setText(""); setPri("Normal"); setCat((window.prontoCats || CATS)[0] || "Social Post"); setAdding(false);
   };
   const selStyle = {
     background:T.cardBg, border:`1px solid ${T.border}`,
@@ -199,7 +200,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, filter, da
                 </select>
               )}
               <select value={cat} onChange={e => setCat(e.target.value)} style={selStyle}>
-                {CATS.map(c => <option key={c}>{c}</option>)}
+                {(window.prontoCats || CATS).map(c => <option key={c}>{c}</option>)}
               </select>
               <button onClick={submit} style={{ background: cat === "Event" ? T.gold : accent, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:800, padding:"6px 14px", cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em" }}>{cat === "Event" ? "ADD EVENT" : "ADD"}</button>
               <button onClick={() => setAdding(false)} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:11, padding:"6px 11px", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>

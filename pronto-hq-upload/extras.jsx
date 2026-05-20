@@ -394,11 +394,26 @@ function NotifItem({ color, title, sub, onClick, onDismiss }) {
 }
 
 // ── Today account picker ──
-function TodayPicker({ onSelect }) {
+function TodayPicker({ onSelect, avatars, onAvatarChange }) {
   const users = [
     { key: "vanja", name: "Vanja", role: "Manager · Strategy & Comms", color: T.vanja, soft: T.vanjaSoft, initial: "V" },
     { key: "oloka", name: "Oloka", role: "Content · Photo, Video, Social", color: T.oloka, soft: T.olokaSoft, initial: "O" },
   ];
+  const vanjaRef = useRx(null);
+  const olokaRef = useRx(null);
+  const fileRefs = { vanja: vanjaRef, oloka: olokaRef };
+
+  const handleUpload = (key, e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (onAvatarChange) onAvatarChange(key, ev.target.result);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
   return (
     <div style={{ maxWidth: 480, margin: "60px auto 0", textAlign: "center" }}>
       <p style={{ color: T.gold, fontSize: 10, letterSpacing: "0.18em", fontWeight: 800, marginBottom: 10 }}>PRONTO HQ</p>
@@ -410,18 +425,39 @@ function TodayPicker({ onSelect }) {
             flex: 1, padding: "28px 20px", borderRadius: 12,
             background: T.cardBg, border: `2px solid ${T.border}`,
             cursor: "pointer", fontFamily: "inherit", textAlign: "center",
-            transition: "border-color 0.15s",
+            transition: "border-color 0.15s", position: "relative",
           }}
             onMouseEnter={e => e.currentTarget.style.borderColor = u.color}
             onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
           >
-            <div style={{
-              width: 56, height: 56, borderRadius: "50%",
-              background: u.soft, border: `2px solid ${u.color}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              margin: "0 auto 14px",
-              fontFamily: "'ProximaNova Black', sans-serif", fontSize: 22, fontWeight: 900, color: u.color,
-            }}>{u.initial}</div>
+            <div style={{ position: "relative", width: 56, height: 56, margin: "0 auto 14px" }}>
+              {(avatars && avatars[u.key]) ? (
+                <img src={avatars[u.key]} alt={u.name} style={{
+                  width: 56, height: 56, borderRadius: "50%", objectFit: "cover",
+                  border: `2px solid ${u.color}`, display: "block",
+                }} />
+              ) : (
+                <div style={{
+                  width: 56, height: 56, borderRadius: "50%",
+                  background: u.soft, border: `2px solid ${u.color}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "'ProximaNova Black', sans-serif", fontSize: 22, fontWeight: 900, color: u.color,
+                }}>{u.initial}</div>
+              )}
+              <button
+                onClick={e => { e.stopPropagation(); fileRefs[u.key].current && fileRefs[u.key].current.click(); }}
+                title="Upload photo"
+                style={{
+                  position: "absolute", bottom: -2, right: -2,
+                  width: 20, height: 20, borderRadius: "50%",
+                  background: T.gold, border: `2px solid ${T.cardBg}`,
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 9, lineHeight: 1,
+                }}
+              >📷</button>
+              <input ref={fileRefs[u.key]} type="file" accept="image/*" style={{ display: "none" }}
+                onChange={e => handleUpload(u.key, e)} />
+            </div>
             <p style={{ fontFamily: "'ProximaNova Black', sans-serif", fontWeight: 800, fontSize: 16, color: T.heading, marginBottom: 4 }}>{u.name}</p>
             <p style={{ fontSize: 11, color: T.muted }}>{u.role}</p>
           </button>
@@ -431,8 +467,52 @@ function TodayPicker({ onSelect }) {
   );
 }
 
+// ── Daily motivational quotes ──
+const DAILY_QUOTES = [
+  { q: "Great things are done by a series of small things brought together.", a: "Van Gogh" },
+  { q: "The secret of getting ahead is getting started.", a: "Mark Twain" },
+  { q: "Done is better than perfect.", a: "Sheryl Sandberg" },
+  { q: "Focus on being productive instead of busy.", a: "Tim Ferriss" },
+  { q: "Creativity is intelligence having fun.", a: "Albert Einstein" },
+  { q: "Your time is limited, so don't waste it living someone else's life.", a: "Steve Jobs" },
+  { q: "The best way to predict the future is to create it.", a: "Peter Drucker" },
+  { q: "Small daily improvements over time lead to stunning results.", a: "Robin Sharma" },
+  { q: "Success is the sum of small efforts repeated day in and day out.", a: "R. Collier" },
+  { q: "The only way to do great work is to love what you do.", a: "Steve Jobs" },
+  { q: "In the middle of every difficulty lies opportunity.", a: "Albert Einstein" },
+  { q: "Believe you can and you're halfway there.", a: "Theodore Roosevelt" },
+  { q: "Don't watch the clock; do what it does. Keep going.", a: "Sam Levenson" },
+  { q: "It always seems impossible until it's done.", a: "Nelson Mandela" },
+  { q: "Start where you are. Use what you have. Do what you can.", a: "Arthur Ashe" },
+  { q: "Act as if what you do makes a difference. It does.", a: "William James" },
+  { q: "Quality is not an act, it is a habit.", a: "Aristotle" },
+  { q: "The harder I work, the luckier I get.", a: "Samuel Goldwyn" },
+  { q: "Opportunities don't happen. You create them.", a: "Chris Grosser" },
+  { q: "Dream big and dare to fail.", a: "Norman Vaughan" },
+  { q: "Don't be afraid to give up the good to go for the great.", a: "John D. Rockefeller" },
+  { q: "Motivation is what gets you started. Habit is what keeps you going.", a: "Jim Ryun" },
+  { q: "You are never too old to set another goal or to dream a new dream.", a: "C.S. Lewis" },
+  { q: "Push yourself, because no one else is going to do it for you.", a: "Unknown" },
+  { q: "Great things never come from comfort zones.", a: "Unknown" },
+  { q: "The people who are crazy enough to think they can change the world, do.", a: "Steve Jobs" },
+  { q: "Excellence is not a destination but a continuous journey.", a: "Brian Tracy" },
+  { q: "What you do today can improve all your tomorrows.", a: "Ralph Marston" },
+];
+
+function getDailyQuote() {
+  const d = new Date();
+  const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+  return DAILY_QUOTES[dayOfYear % DAILY_QUOTES.length];
+}
+
+function getGreeting(name) {
+  const h = new Date().getHours();
+  const time = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+  return `Good ${time}, ${name.charAt(0).toUpperCase() + name.slice(1)}`;
+}
+
 // ── Today dashboard ──
-function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, onJumpTask, onJumpSchedule, onJumpContent, onJumpStaff }) {
+function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avatars, onJumpTask, onJumpSchedule, onJumpContent, onJumpStaff }) {
   const todayD = today();
   const dk = isoDate(todayD);
   const tasks = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
@@ -477,14 +557,34 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, onJu
     </div>
   );
 
+  const quote = getDailyQuote();
+  const userName = todayUser === "vanja" ? "Vanja" : todayUser === "oloka" ? "Oloka" : "";
+  const greeting = todayUser ? getGreeting(userName) : "";
+  const userAvatar = avatars && todayUser ? avatars[todayUser] : null;
+
   return (
     <div>
       <div style={{ marginBottom:24 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{todayD.toLocaleDateString("en-NZ", { weekday:"long" }).toUpperCase()} · {todayD.toLocaleDateString("en-NZ", { day:"numeric", month:"long", year:"numeric" }).toUpperCase()}</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>
-          {todayUser ? (todayUser === "vanja" ? "VANJA'S" : "OLOKA'S") : ""} TODAY
-        </h1>
-        <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Morning standup at a glance.</p>
+        {/* Greeting row */}
+        {greeting && (
+          <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:6 }}>
+            {userAvatar ? (
+              <img src={userAvatar} alt={userName} style={{ width:52, height:52, borderRadius:"50%", objectFit:"cover", border:`2px solid ${todayUser==="vanja"?T.vanja:T.oloka}`, flexShrink:0 }}/>
+            ) : (
+              <div style={{ width:52, height:52, borderRadius:"50%", background: todayUser==="vanja"?T.vanjaSoft:T.olokaSoft, border:`2px solid ${todayUser==="vanja"?T.vanja:T.oloka}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontSize:20, fontWeight:900, color: todayUser==="vanja"?T.vanja:T.oloka, flexShrink:0 }}>{userName[0]}</div>
+            )}
+            <div>
+              <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:38, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>{greeting.toUpperCase()}</h1>
+              <p style={{ color:T.muted, fontSize:12.5, marginTop:6 }}>Here's your day at a glance.</p>
+            </div>
+          </div>
+        )}
+        {/* Daily quote */}
+        <div style={{ background:T.gold+"12", borderLeft:`3px solid ${T.gold}`, borderRadius:4, padding:"10px 14px", marginTop:greeting?10:0 }}>
+          <p style={{ fontSize:12.5, color:T.ink, fontStyle:"italic", lineHeight:1.5, margin:0 }}>"{quote.q}"</p>
+          <p style={{ fontSize:10.5, color:T.gold, fontWeight:800, letterSpacing:"0.06em", marginTop:4 }}>— {quote.a}</p>
+        </div>
       </div>
 
       {/* Stats strip */}
@@ -710,4 +810,4 @@ function SubtaskList({ task, onChangeSubtasks, isDropTarget }) {
   );
 }
 
-Object.assign(window, { SearchBar, NotificationsBell, TodayPicker, TodayDashboard, SubtaskList });
+Object.assign(window, { SearchBar, NotificationsBell, TodayPicker, TodayDashboard, SubtaskList, getDailyQuote, getGreeting });
