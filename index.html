@@ -3829,6 +3829,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [editing, setEditing] = useSh(null);
   const [includeOther, setIncludeOther] = useSh(false);
   const [drag, setDrag] = useSh(null);
+  const [schedView, setSchedView] = useSh("day");
+  const [schedWeekOffset, setSchedWeekOffset] = useSh(0);
+  const [schedMonthOffset, setSchedMonthOffset] = useSh(0);
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -4012,8 +4015,113 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     });
   };
 
+  const schedMonday = addDays(startOfWeek(selDate), schedWeekOffset * 7);
+  const schedBaseMonth = new Date(selDate.getFullYear(), selDate.getMonth() + schedMonthOffset, 1);
+
   return (
     <div>
+      {/* ── View toggle header ── */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:16 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <button onClick={() => { if(schedView==="week") setSchedWeekOffset(o=>o-1); else if(schedView==="month") setSchedMonthOffset(o=>o-1); }} style={{ width:28, height:28, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", visibility: schedView==="day"?"hidden":"visible" }}>‹</button>
+          <button onClick={() => { setSchedWeekOffset(0); setSchedMonthOffset(0); }} style={{ padding:"4px 10px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:10, fontWeight:700, fontFamily:"inherit", visibility: schedView==="day"?"hidden":"visible" }}>Today</button>
+          <button onClick={() => { if(schedView==="week") setSchedWeekOffset(o=>o+1); else if(schedView==="month") setSchedMonthOffset(o=>o+1); }} style={{ width:28, height:28, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", visibility: schedView==="day"?"hidden":"visible" }}>›</button>
+          {schedView === "week" && <span style={{ fontSize:13, fontWeight:700, color:T.heading, marginLeft:4 }}>{schedMonday.getDate()} {MONTHS[schedMonday.getMonth()].slice(0,3)} – {addDays(schedMonday,6).getDate()} {MONTHS[addDays(schedMonday,6).getMonth()].slice(0,3)} {addDays(schedMonday,6).getFullYear()}</span>}
+          {schedView === "month" && <span style={{ fontSize:13, fontWeight:700, color:T.heading, marginLeft:4 }}>{MONTHS[schedBaseMonth.getMonth()]} {schedBaseMonth.getFullYear()}</span>}
+        </div>
+        <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
+          {[["day","DAY"],["week","WEEK"],["month","MONTH"]].map(([k,l]) => (
+            <button key={k} onClick={() => setSchedView(k)} style={{ padding:"5px 12px", background: schedView===k ? T.navy : "transparent", border:"none", color: schedView===k ? "#fff" : T.muted, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.08em" }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── WEEK VIEW ── */}
+      {schedView === "week" && (() => {
+        const weekDays = Array.from({length:7}, (_, i) => addDays(schedMonday, i));
+        return (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:8, marginBottom:20 }}>
+            {weekDays.map((d, di) => {
+              const wdk = isoDate(d);
+              const tasks = (tasksByDate[wdk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
+              const total = tasks.length;
+              const done = tasks.filter(t => t.done).length;
+              const pct = total > 0 ? Math.round(done/total*100) : null;
+              const isToday = wdk === isoDate(today());
+              const isWeekend = di >= 5;
+              const schBlocks = ((schedule[wdk]||{}).vanja||[]).length + ((schedule[wdk]||{}).oloka||[]).length;
+              return (
+                <div key={wdk} style={{ border:`1px solid ${isToday ? T.gold : T.border}`, borderRadius:8, padding:"10px 12px", background: isWeekend ? T.surface2 : T.cardBg, minHeight:100 }}>
+                  <div style={{ fontWeight:800, fontSize:10, letterSpacing:"0.08em", color: isWeekend ? T.muted : T.heading, marginBottom:4 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][di]}</div>
+                  <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background: isToday ? T.gold : "transparent", color: isToday ? "#fff" : T.ink, fontWeight:700, fontSize:13, marginBottom:8 }}>{d.getDate()}</div>
+                  {total > 0 ? (
+                    <>
+                      <div style={{ fontSize:11, fontWeight:700, color:T.ink, marginBottom:4 }}>{done}/{total} tasks</div>
+                      <div style={{ height:4, background:T.surface2, borderRadius:2, marginBottom:6 }}>
+                        <div style={{ height:"100%", width:`${pct}%`, background: pct===100 ? "#0E9F6E" : T.gold, borderRadius:2 }} />
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize:10, color:T.faint, fontStyle:"italic" }}>No tasks</div>
+                  )}
+                  {schBlocks > 0 && <div style={{ fontSize:9, fontWeight:700, color:T.vanja, letterSpacing:"0.05em" }}>{schBlocks} block{schBlocks!==1?"s":""} scheduled</div>}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ── MONTH VIEW ── */}
+      {schedView === "month" && (() => {
+        const year = schedBaseMonth.getFullYear(), month = schedBaseMonth.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const startDow = (firstDay.getDay() + 6) % 7;
+        const daysInMonth = new Date(year, month+1, 0).getDate();
+        const cells = [];
+        for (let i = 0; i < startDow; i++) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+        while (cells.length % 7 !== 0) cells.push(null);
+        return (
+          <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", marginBottom:20 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => (
+                <div key={d} style={{ padding:"8px 0", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.08em", color: i>=5 ? T.faint : T.muted }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
+              {cells.map((d, i) => {
+                if (!d) return <div key={i} style={{ minHeight:70, background:T.surface2, borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}` }} />;
+                const mdk = isoDate(new Date(year, month, d));
+                const tasks = (tasksByDate[mdk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
+                const total = tasks.length;
+                const done = tasks.filter(t => t.done).length;
+                const pct = total > 0 ? Math.round(done/total*100) : null;
+                const isToday = mdk === isoDate(today());
+                const isWeekend = i % 7 >= 5;
+                const schBlocks = ((schedule[mdk]||{}).vanja||[]).length + ((schedule[mdk]||{}).oloka||[]).length;
+                return (
+                  <div key={i} style={{ minHeight:70, padding:"6px 8px", background: isWeekend ? T.surface2 : T.cardBg, borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}` }}>
+                    <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:20, height:20, borderRadius:"50%", background: isToday ? T.gold : "transparent", color: isToday ? "#fff" : isWeekend ? T.muted : T.ink, fontSize:11, fontWeight:700, marginBottom:3 }}>{d}</span>
+                    {total > 0 && (
+                      <>
+                        <div style={{ height:3, background:T.surface2, borderRadius:2, marginBottom:3 }}>
+                          <div style={{ height:"100%", width:`${pct}%`, background: pct===100 ? "#0E9F6E" : T.gold, borderRadius:2 }} />
+                        </div>
+                        <div style={{ fontSize:9, color:T.muted, fontWeight:600 }}>{done}/{total}</div>
+                      </>
+                    )}
+                    {schBlocks > 0 && <div style={{ fontSize:9, fontWeight:700, color:T.vanja }}>{schBlocks}blk</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── DAY VIEW ── */}
+      {schedView === "day" && <div>
       {/* ── Morning Plan bookend ── */}
       <MorningPlanPanel dk={dk} dayNotes={dayNotes || {}} setDayNotes={setDayNotes} />
 
@@ -4221,6 +4329,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
           />
         );
       })()}
+      </div>}
     </div>
   );
 }
@@ -8521,16 +8630,22 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
 
 // ── Video Schedule View ──
 function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView, videoLabels, onAddToTasks }) {
-  const [adding, setAdding] = useS(null); // date key being added to
+  const [adding, setAdding] = useS(null);
   const [form, setForm] = useS({ talent:"", location:"", type:"BTS", durationMin:60, notes:"", prepTasks:[] });
-  const [expandedEvent, setExpandedEvent] = useS(null); // id of event showing task workflow
-  const [viewMode, setViewMode] = useS("both"); // "schedule" | "tasks" | "both"
+  const [expandedEvent, setExpandedEvent] = useS(null);
+  const [viewMode, setViewMode] = useS("both");
+  const [calView, setCalView] = useS("week");
+  const [vidWeekOffset, setVidWeekOffset] = useS(0);
+  const [monthOffset, setMonthOffset] = useS(0);
+  const [yearOffset, setYearOffset] = useS(0);
   const VIDEO_TYPES = videoLabels || ["BTS","Interview","Promo","Tutorial","Testimonial","Product","Event","Other"];
   const TYPE_COLORS = { BTS:"#E76F1B", Interview:"#2563EB", Promo:"#059669", Tutorial:"#7C3AED", Testimonial:"#D97706", Product:"#0E9F6E", Event:"#FFC030", Other:"#6B7280" };
 
-  const monday = startOfWeek(selDate);
+  const monday = addDays(startOfWeek(selDate), vidWeekOffset * 7);
   const CAL_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const days = Array.from({ length:7 }, (_, i) => addDays(monday, i));
+  const baseMonth = new Date(selDate.getFullYear(), selDate.getMonth() + monthOffset, 1);
+  const baseYear = selDate.getFullYear() + yearOffset;
 
   const DEFAULT_PREP_TASKS = ["Write script","Email talent for approval","Organise filming","Gather assets","Film shoot","Edit content","Finalise captions","Upload & schedule"];
 
@@ -8577,25 +8692,106 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
 
   return (
     <div>
-      <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-        <div>
-          <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>FILMING & PRODUCTION</p>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>VIDEO SCHEDULE</h1>
-          <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Plan filming days — talent, location, type and duration at a glance.</p>
-        </div>
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          {[["both","SCHEDULE + TASKS"],["schedule","SCHEDULE ONLY"],["tasks","TASKS ONLY"]].map(([k,l]) => (
-            <button key={k} onClick={() => setViewMode(k)} style={{
-              padding:"5px 10px", borderRadius:5, fontSize:10, fontWeight:800,
-              background: viewMode===k ? T.gold : "transparent",
-              border:`1px solid ${viewMode===k ? T.gold : T.border}`,
-              color: viewMode===k ? "#fff" : T.muted,
-              cursor:"pointer", fontFamily:"inherit",
-            }}>{l}</button>
-          ))}
+      <div style={{ marginBottom:16 }}>
+        <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:4 }}>FILMING & PRODUCTION</p>
+        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:12 }}>VIDEO SCHEDULE</h1>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+          {/* Nav */}
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <button onClick={() => { if(calView==="week") setVidWeekOffset(o=>o-1); else if(calView==="month") setMonthOffset(o=>o-1); else setYearOffset(o=>o-1); }} style={{ width:28, height:28, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+            <button onClick={() => { setVidWeekOffset(0); setMonthOffset(0); setYearOffset(0); }} style={{ padding:"4px 10px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:10, fontWeight:700, fontFamily:"inherit" }}>Today</button>
+            <button onClick={() => { if(calView==="week") setVidWeekOffset(o=>o+1); else if(calView==="month") setMonthOffset(o=>o+1); else setYearOffset(o=>o+1); }} style={{ width:28, height:28, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+            <span style={{ fontSize:13, fontWeight:700, color:T.heading, marginLeft:4 }}>
+              {calView==="week" ? `${monday.getDate()} ${MONTHS[monday.getMonth()].slice(0,3)} – ${addDays(monday,6).getDate()} ${MONTHS[addDays(monday,6).getMonth()].slice(0,3)} ${addDays(monday,6).getFullYear()}` : calView==="month" ? `${MONTHS[baseMonth.getMonth()]} ${baseMonth.getFullYear()}` : String(baseYear)}
+            </span>
+          </div>
+          {/* View toggle */}
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
+              {[["week","WEEK"],["month","MONTH"],["year","YEAR"]].map(([k,l]) => (
+                <button key={k} onClick={() => setCalView(k)} style={{ padding:"5px 12px", background: calView===k ? T.navy : "transparent", border:"none", color: calView===k ? "#fff" : T.muted, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.08em" }}>{l}</button>
+              ))}
+            </div>
+            {calView==="week" && <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
+              {[["both","S+T"],["schedule","SCH"],["tasks","TSK"]].map(([k,l]) => (
+                <button key={k} onClick={() => setViewMode(k)} style={{ padding:"5px 10px", background: viewMode===k ? T.gold+"33" : "transparent", border:"none", color: viewMode===k ? T.gold : T.muted, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
+              ))}
+            </div>}
+          </div>
         </div>
       </div>
 
+      {/* ── MONTH VIEW ── */}
+      {calView === "month" && (() => {
+        const year = baseMonth.getFullYear(), month = baseMonth.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const startDow = (firstDay.getDay() + 6) % 7; // Monday=0
+        const daysInMonth = new Date(year, month+1, 0).getDate();
+        const cells = [];
+        for (let i = 0; i < startDow; i++) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+        while (cells.length % 7 !== 0) cells.push(null);
+        return (
+          <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => (
+                <div key={d} style={{ padding:"8px 0", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.08em", color: i>=5 ? T.faint : T.muted }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
+              {cells.map((d, i) => {
+                if (!d) return <div key={i} style={{ minHeight:80, background:T.surface2, borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}` }} />;
+                const dk = isoDate(new Date(year, month, d));
+                const evs = videoEvents[dk] || [];
+                const isToday = dk === isoDate(today());
+                const isWeekend = i % 7 >= 5;
+                return (
+                  <div key={i} onClick={() => { setMonthOffset(0); setVidWeekOffset(Math.floor((new Date(year,month,d) - startOfWeek(selDate)) / (7*86400000))); setCalView("week"); }} style={{ minHeight:80, padding:"6px 8px", background: isWeekend ? T.surface2 : T.cardBg, borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}`, cursor: evs.length>0 ? "pointer" : "default", position:"relative" }}>
+                    <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:22, height:22, borderRadius:"50%", background: isToday ? T.gold : "transparent", color: isToday ? "#fff" : isWeekend ? T.muted : T.ink, fontSize:12, fontWeight:700, marginBottom:4 }}>{d}</span>
+                    {evs.slice(0,3).map(ev => (
+                      <div key={ev.id} style={{ fontSize:9, fontWeight:700, color:"#fff", background:(TYPE_COLORS[ev.type]||"#888")+"DD", borderRadius:3, padding:"2px 4px", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{ev.talent||ev.type}</div>
+                    ))}
+                    {evs.length > 3 && <div style={{ fontSize:9, color:T.muted, fontWeight:600 }}>+{evs.length-3} more</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── YEAR VIEW ── */}
+      {calView === "year" && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16 }}>
+          {Array.from({length:12}, (_, mi) => {
+            const year = baseYear, month = mi;
+            const daysInMonth = new Date(year, month+1, 0).getDate();
+            const shootDays = new Set();
+            for (let d = 1; d <= daysInMonth; d++) {
+              const dk = isoDate(new Date(year, month, d));
+              if ((videoEvents[dk]||[]).length > 0) shootDays.add(d);
+            }
+            const total = Array.from({length:daysInMonth}, (_,i) => isoDate(new Date(year,month,i+1))).reduce((s,dk) => s + (videoEvents[dk]||[]).length, 0);
+            return (
+              <div key={mi} onClick={() => { setMonthOffset(mi - selDate.getMonth() + (baseYear - selDate.getFullYear())*12); setCalView("month"); }} style={{ border:`1px solid ${T.border}`, borderRadius:8, padding:"12px 14px", cursor:"pointer", background:T.cardBg }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=T.gold} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                  <p style={{ fontWeight:800, fontSize:13, color:T.heading }}>{MONTHS[mi]}</p>
+                  {total > 0 && <span style={{ fontSize:10, fontWeight:800, color:T.gold, background:T.gold+"22", padding:"2px 6px", borderRadius:10 }}>{total} shoot{total!==1?"s":""}</span>}
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2 }}>
+                  {Array.from({length:daysInMonth}, (_, d) => (
+                    <div key={d} style={{ width:10, height:10, borderRadius:2, background: shootDays.has(d+1) ? T.gold : T.surface2 }} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── WEEK VIEW (original calendar grid) ── */}
+      {calView === "week" && <div>
       {/* Calendar grid */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:10 }}>
         {CAL_DAYS.map((d, i) => (
@@ -8720,6 +8916,7 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
           );
         })}
       </div>
+    </div>}
     </div>
   );
 }
