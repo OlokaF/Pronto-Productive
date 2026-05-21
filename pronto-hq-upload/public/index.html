@@ -4209,6 +4209,10 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [spanModal, setSpanModal] = useSh(null);          // {startDate,endDate,title,color} for new span
   const [newSpan, setNewSpan] = useSh(null);              // for day panel add-span form
   const [schedMobileTab, setSchedMobileTab] = useSh("timeline"); // "timeline" | "tasks" for mobile
+  const [selectedBlock, setSelectedBlock] = useSh(null);        // { owner, taskId, breakId, qeId, _date }
+  const [showFilters, setShowFilters] = useSh(false);
+  const [planDayModal, setPlanDayModal] = useSh(false);
+  const [sideCalOffset, setSideCalOffset] = useSh(0);            // month offset for sidebar mini-calendar
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -4407,361 +4411,686 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     });
   };
 
+  // ── Event colour scheme by type ──
+  const getBlockScheme = (block, task) => {
+    if (!block) return { bg: T.surface, border: T.border, text: T.muted, label:"Event" };
+    if (block.isBreak) {
+      const l = (block.breakLabel || "").toLowerCase();
+      if (l.includes("lunch") || l.includes("dinner")) return { bg:"#FEF9C3", border:"#CA8A04", text:"#713F12", label:"Lunch" };
+      return { bg:"#FFF7ED", border:"#F97316", text:"#9A3412", label:"Break" };
+    }
+    const cat = ((task?.category || "") + " " + (block?.qeTitle || "")).toLowerCase();
+    if (cat.includes("meeting") || cat.includes("huddle") || cat.includes("sync") || cat.includes("standup"))
+      return { bg:"#DCFCE7", border:"#10B981", text:"#065F46", label:"Meeting" };
+    if (cat.includes("site") || cat.includes("visit") || cat.includes("client") || cat.includes("call"))
+      return { bg:"#FEF3C7", border:"#F59E0B", text:"#92400E", label:"Site Visit" };
+    if (cat.includes("content") || cat.includes("social") || cat.includes("post") || cat.includes("media") || cat.includes("creative"))
+      return { bg:"#EDE9FE", border:"#8B5CF6", text:"#4C1D95", label:"Content" };
+    if (cat.includes("review") || cat.includes("report") || cat.includes("analysis") || cat.includes("audit"))
+      return { bg:"#DBEAFE", border:"#3B82F6", text:"#1E40AF", label:"Review" };
+    if (cat.includes("admin") || cat.includes("planning") || cat.includes("finance") || cat.includes("hr"))
+      return { bg:"#F3F4F6", border:"#9CA3AF", text:"#374151", label:"Admin" };
+    const oc = block.owner === "vanja" ? T.vanja : T.oloka;
+    return { bg: oc + "15", border: oc, text: oc, label:"Task" };
+  };
+
   const schedMonday = addDays(startOfWeek(selDate), schedWeekOffset * 7);
   const schedBaseMonth = new Date(selDate.getFullYear(), selDate.getMonth() + schedMonthOffset, 1);
 
   return (
     <div>
-      {/* ── View toggle header ── */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:16 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <button onClick={() => { if(schedView==="week") setSchedWeekOffset(o=>o-1); else if(schedView==="month") setSchedMonthOffset(o=>o-1); }} style={{ width:28, height:28, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", visibility: schedView==="day"?"hidden":"visible" }}>‹</button>
-          <button onClick={() => { setSchedWeekOffset(0); setSchedMonthOffset(0); }} style={{ padding:"4px 10px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:10, fontWeight:700, fontFamily:"inherit", visibility: schedView==="day"?"hidden":"visible" }}>Today</button>
-          <button onClick={() => { if(schedView==="week") setSchedWeekOffset(o=>o+1); else if(schedView==="month") setSchedMonthOffset(o=>o+1); }} style={{ width:28, height:28, background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", visibility: schedView==="day"?"hidden":"visible" }}>›</button>
-          {schedView === "week" && <span style={{ fontSize:13, fontWeight:700, color:T.heading, marginLeft:4 }}>{schedMonday.getDate()} {MONTHS[schedMonday.getMonth()].slice(0,3)} – {addDays(schedMonday,6).getDate()} {MONTHS[addDays(schedMonday,6).getMonth()].slice(0,3)} {addDays(schedMonday,6).getFullYear()}</span>}
-          {schedView === "month" && <span style={{ fontSize:13, fontWeight:700, color:T.heading, marginLeft:4 }}>{MONTHS[schedBaseMonth.getMonth()]} {schedBaseMonth.getFullYear()}</span>}
-        </div>
-        <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
-          {[["day","DAY"],["week","WEEK"],["month","MONTH"]].map(([k,l]) => (
-            <button key={k} onClick={() => setSchedView(k)} style={{ padding:"5px 12px", background: schedView===k ? T.navy : "transparent", border:"none", color: schedView===k ? "#fff" : T.muted, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.08em" }}>{l}</button>
-          ))}
-        </div>
-      </div>
 
-      {/* ── WEEK VIEW ── */}
-      {schedView === "week" && (() => {
-        const weekDays = Array.from({length:7}, (_, i) => addDays(schedMonday, i));
-        // Compute spans that fall in this week
-        const weekStart = isoDate(schedMonday);
-        const weekEnd = isoDate(addDays(schedMonday, 6));
-        const weekSpans = (schedSpans || []).filter(s => s.startDate <= weekEnd && s.endDate >= weekStart);
-        return (
-          <div>
-            {/* All-day / multi-day span row — drag across days to create a span */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:8, marginBottom:8 }}>
-              {weekDays.map((d, di) => {
-                const dkey = isoDate(d);
-                const daySpans = weekSpans.filter(s => s.startDate <= dkey && s.endDate >= dkey);
-                const dragMin = spanDragStart && spanDragEnd ? [spanDragStart, spanDragEnd].sort()[0] : null;
-                const dragMax = spanDragStart && spanDragEnd ? [spanDragStart, spanDragEnd].sort()[1] : null;
-                const inDrag = spanDragStart && dragMin <= dkey && dkey <= dragMax;
-                return (
-                  <div key={dkey}
-                    onMouseDown={e => { e.preventDefault(); setSpanDragStart(dkey); setSpanDragEnd(dkey); }}
-                    onMouseEnter={() => { if (spanDragStart) setSpanDragEnd(dkey); }}
-                    style={{ position:"relative", minHeight:16, cursor:"crosshair", userSelect:"none" }}>
-                    {inDrag && <div style={{ position:"absolute", inset:0, background: SCHED_SPAN_COLORS[0]+"44", borderRadius:3, pointerEvents:"none", zIndex:1 }} />}
-                    {daySpans.map(s => {
-                      const isStart = s.startDate === dkey;
-                      const isEnd = s.endDate === dkey;
-                      return (
-                        <div key={s.id}
-                          onMouseDown={e => e.stopPropagation()}
-                          onClick={e => { e.stopPropagation(); setSchedSpans(prev => prev.filter(x => x.id !== s.id)); }}
-                          title={`${s.title} · click to delete`}
-                          style={{
-                            background: s.color || T.gold, color:"#fff",
-                            fontSize:9, fontWeight:700,
-                            padding:"2px 6px",
-                            borderRadius: isStart && isEnd ? 4 : isStart ? "4px 0 0 4px" : isEnd ? "0 4px 4px 0" : 0,
-                            marginBottom:2,
-                            overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis",
-                            opacity:0.9, cursor:"pointer", position:"relative", zIndex:2,
-                          }}>
-                          {isStart ? s.title : ""}
-                        </div>
-                      );
-                    })}
-                    {daySpans.length === 0 && !inDrag && (
-                      <div style={{ height:14, background: T.surface, borderRadius:3, opacity:0.5 }} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {!spanDragStart && <div style={{ fontSize:9, color:T.faint, textAlign:"center", marginBottom:6 }}>↔ drag across days above to add a multi-day event</div>}
-            {/* Day cells grid */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:8, marginBottom:20 }}>
-              {weekDays.map((d, di) => {
-                const wdk = isoDate(d);
-                const tasks = (tasksByDate[wdk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
-                const total = tasks.length;
-                const done = tasks.filter(t => t.done).length;
-                const pct = total > 0 ? Math.round(done/total*100) : null;
-                const isToday = wdk === isoDate(today());
-                const isWeekend = di >= 5;
-                const schBlocks = ((schedule[wdk]||{}).vanja||[]).length + ((schedule[wdk]||{}).oloka||[]).length;
-                const plan = ((dayNotes || {})[wdk] || {}).plan || {};
-                const priorities = [plan.p1, plan.p2, plan.p3].filter(Boolean);
-                const isSelected = schedSelDay === wdk;
-                return (
-                  <div key={wdk}
-                    onClick={() => setSchedSelDay(isSelected ? null : wdk)}
-                    style={{
-                      border:`1.5px solid ${isSelected ? T.gold : isToday ? T.gold + "88" : T.border}`,
-                      borderRadius:8, padding:"10px 12px",
-                      background: isSelected ? T.gold + "11" : isWeekend ? T.surface2 : T.cardBg,
-                      minHeight:110, cursor:"pointer",
-                      transition:"all 0.15s",
-                    }}>
-                    <div style={{ fontWeight:800, fontSize:10, letterSpacing:"0.08em", color: isWeekend ? T.muted : T.heading, marginBottom:4 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][di]}</div>
-                    <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background: isToday ? T.gold : "transparent", color: isToday ? "#fff" : T.ink, fontWeight:700, fontSize:13, marginBottom:6 }}>{d.getDate()}</div>
-                    {/* Morning plan priorities */}
-                    {priorities.length > 0 && (
-                      <div style={{ marginBottom:6 }}>
-                        {priorities.map((p, i) => (
-                          <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:4, marginBottom:2 }}>
-                            <span style={{ fontSize:8, fontWeight:800, color:T.gold, marginTop:1, flexShrink:0 }}>{i+1}</span>
-                            <span style={{ fontSize:9, color:T.ink, lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:1, WebkitBoxOrient:"vertical" }}>{p}</span>
-                          </div>
-                        ))}
+      {/* ─── 3-PANE LAYOUT ─── */}
+      <div style={{ display:"flex", gap:0, alignItems:"flex-start" }}>
+
+        {/* ── LEFT SIDEBAR ── */}
+        <div style={{ width:260, flexShrink:0, paddingRight:20, borderRight:`1px solid ${T.border}`, marginRight:24 }}>
+
+          {/* Sidebar mini-calendar */}
+          {(() => {
+            const scBase = new Date(selDate.getFullYear(), selDate.getMonth() + sideCalOffset, 1);
+            const scY = scBase.getFullYear(), scM = scBase.getMonth();
+            const scDow = (new Date(scY, scM, 1).getDay() + 6) % 7;
+            const scDays = new Date(scY, scM+1, 0).getDate();
+            const scCells = [];
+            for (let i = 0; i < scDow; i++) scCells.push(null);
+            for (let d = 1; d <= scDays; d++) scCells.push(d);
+            while (scCells.length % 7 !== 0) scCells.push(null);
+            const todayKey2 = isoDate(today());
+            return (
+              <div style={{ marginBottom:20 }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+                  <button onClick={() => setSideCalOffset(o=>o-1)} style={{ width:24, height:24, background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+                  <span style={{ fontSize:12, fontWeight:800, color:T.heading }}>{MONTHS[scM].slice(0,3)} {scY}</span>
+                  <button onClick={() => setSideCalOffset(o=>o+1)} style={{ width:24, height:24, background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, color:T.ink, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", marginBottom:4 }}>
+                  {["M","T","W","T","F","S","S"].map((d,i) => (
+                    <div key={i} style={{ textAlign:"center", fontSize:9, fontWeight:700, color:T.muted, padding:"2px 0" }}>{d}</div>
+                  ))}
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1 }}>
+                  {scCells.map((d, i) => {
+                    if (!d) return <div key={i} />;
+                    const dKey = isoDate(new Date(scY, scM, d));
+                    const isToday2 = dKey === todayKey2;
+                    const isSel = dKey === dk;
+                    const hasBlocks = (((schedule[dKey]||{}).vanja||[]).length + ((schedule[dKey]||{}).oloka||[]).length) > 0;
+                    return (
+                      <div key={i} onClick={() => { if(onPickDay) onPickDay(new Date(dKey+"T12:00:00")); }}
+                        style={{ width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", borderRadius:"50%", cursor:"pointer", margin:"0 auto",
+                          background: isSel ? T.gold : isToday2 ? T.navy : "transparent",
+                          color: isSel || isToday2 ? "#fff" : T.ink,
+                          fontSize:11, fontWeight: isSel || isToday2 ? 800 : 400, position:"relative",
+                        }}>
+                        {d}
+                        {hasBlocks && !isSel && !isToday2 && <div style={{ position:"absolute", bottom:2, left:"50%", transform:"translateX(-50%)", width:4, height:4, borderRadius:"50%", background:T.gold }} />}
                       </div>
-                    )}
-                    {total > 0 ? (
-                      <>
-                        <div style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:3 }}>{done}/{total} tasks</div>
-                        <div style={{ height:3, background:T.surface2, borderRadius:2, marginBottom:4 }}>
-                          <div style={{ height:"100%", width:`${pct}%`, background: pct===100 ? "#0E9F6E" : T.accent, borderRadius:2 }} />
-                        </div>
-                      </>
-                    ) : (
-                      !priorities.length && <div style={{ fontSize:9, color:T.faint, fontStyle:"italic" }}>Tap to plan</div>
-                    )}
-                    {schBlocks > 0 && <div style={{ fontSize:9, fontWeight:700, color:T.vanja, letterSpacing:"0.05em" }}>{schBlocks} block{schBlocks!==1?"s":""}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── MONTH VIEW ── */}
-      {schedView === "month" && (() => {
-        const year = schedBaseMonth.getFullYear(), month = schedBaseMonth.getMonth();
-        const firstDay = new Date(year, month, 1);
-        const startDow = (firstDay.getDay() + 6) % 7;
-        const daysInMonth = new Date(year, month+1, 0).getDate();
-        const cells = [];
-        for (let i = 0; i < startDow; i++) cells.push(null);
-        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-        while (cells.length % 7 !== 0) cells.push(null);
-        const monthKey = `${year}-${String(month+1).padStart(2,"0")}`;
-        const monthStart = `${monthKey}-01`;
-        const monthEnd = isoDate(new Date(year, month+1, 0));
-        const monthSpans = (schedSpans || []).filter(s => s.startDate <= monthEnd && s.endDate >= monthStart);
-        return (
-          <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", marginBottom:20 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
-              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => (
-                <div key={d} style={{ padding:"8px 0", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.08em", color: i>=5 ? T.faint : T.muted }}>{d}</div>
-              ))}
-            </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
-              {cells.map((d, i) => {
-                if (!d) return <div key={i} style={{ minHeight:80, background:T.surface2, borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}` }} />;
-                const mdk = isoDate(new Date(year, month, d));
-                const tasks = (tasksByDate[mdk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
-                const total = tasks.length;
-                const done = tasks.filter(t => t.done).length;
-                const pct = total > 0 ? Math.round(done/total*100) : null;
-                const isToday = mdk === isoDate(today());
-                const isWeekend = i % 7 >= 5;
-                const schBlocks = ((schedule[mdk]||{}).vanja||[]).length + ((schedule[mdk]||{}).oloka||[]).length;
-                const plan = ((dayNotes || {})[mdk] || {}).plan || {};
-                const p1 = plan.p1;
-                const isSelected = schedSelDay === mdk;
-                const daySpans = monthSpans.filter(s => s.startDate <= mdk && s.endDate >= mdk);
-                return (
-                  <div key={i}
-                    onClick={() => !spanDragStart && setSchedSelDay(isSelected ? null : mdk)}
-                    onMouseDown={e => { if(e.button===0 && d) { e.preventDefault(); setSpanDragStart(mdk); setSpanDragEnd(mdk); } }}
-                    onMouseEnter={() => { if (spanDragStart && d) setSpanDragEnd(mdk); }}
-                    style={{
-                      minHeight:80, padding:"5px 6px",
-                      background: (() => { const dragMin2 = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[0]:null; const dragMax2 = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[1]:null; const inD = spanDragStart && dragMin2 <= mdk && mdk <= dragMax2; return inD ? SCHED_SPAN_COLORS[0]+"33" : isSelected ? T.gold + "11" : isWeekend ? T.surface2 : T.cardBg; })(),
-                      borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}`,
-                      cursor:"pointer", transition:"all 0.12s",
-                      outline: isSelected ? `2px solid ${T.gold}` : "none",
-                      outlineOffset:-2,
-                    }}>
-                    <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:20, height:20, borderRadius:"50%", background: isToday ? T.gold : "transparent", color: isToday ? "#fff" : isWeekend ? T.muted : T.ink, fontSize:11, fontWeight:700, marginBottom:2 }}>{d}</span>
-                    {/* Span bars */}
-                    {daySpans.map(s => {
-                      const isStart = s.startDate === mdk;
-                      return (
-                        <div key={s.id}
-                          onMouseDown={e => e.stopPropagation()}
-                          onClick={e => { e.stopPropagation(); setSchedSpans(prev => prev.filter(x => x.id !== s.id)); }}
-                          title={`${s.title} · click to delete`}
-                          style={{
-                            background: s.color || T.gold,
-                            height:5, borderRadius: isStart ? "3px 0 0 3px" : "0 3px 3px 0",
-                            marginBottom:2, opacity:0.85, cursor:"pointer",
-                          }} />
-                      );
-                    })}
-                    {/* Priority 1 only (space is tight) */}
-                    {p1 && <div style={{ fontSize:9, color:T.ink, lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:1, WebkitBoxOrient:"vertical", marginTop:1 }}>⭑ {p1}</div>}
-                    {total > 0 && (
-                      <>
-                        <div style={{ height:3, background:T.surface2, borderRadius:2, marginBottom:2, marginTop:2 }}>
-                          <div style={{ height:"100%", width:`${pct}%`, background: pct===100 ? "#0E9F6E" : T.accent, borderRadius:2 }} />
-                        </div>
-                        <div style={{ fontSize:9, color:T.muted, fontWeight:600 }}>{done}/{total}</div>
-                      </>
-                    )}
-                    {schBlocks > 0 && <div style={{ fontSize:9, fontWeight:700, color:T.vanja }}>{schBlocks}blk</div>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── SELECTED DAY PANEL (week/month view click) ── */}
-      {schedSelDay && schedView !== "day" && (() => {
-        const spk = schedSelDay;
-        const spDate = new Date(spk);
-        const spPlan = ((dayNotes || {})[spk] || {}).plan || {};
-        const setSpField = (field, val) => setDayNotes(prev => {
-          const day = prev[spk] || {};
-          return { ...prev, [spk]: { ...day, plan: { ...(day.plan || {}), [field]: val } } };
-        });
-        const daySpans = (schedSpans || []).filter(s => s.startDate <= spk && s.endDate >= spk);
-        return (
-          <div style={{
-            border:`1.5px solid ${T.gold}`,
-            borderRadius:10,
-            marginBottom:20,
-            background:T.cardBg,
-            overflow:"hidden",
-          }}>
-            {/* Header */}
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 16px", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
-              <div>
-                <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.14em", color:T.gold }}>☀️ DAILY PLAN</div>
-                <div style={{ fontSize:13, fontWeight:700, color:T.heading, marginTop:2 }}>
-                  {spDate.toLocaleDateString("en-AU", { weekday:"long", day:"numeric", month:"long" })}
+                    );
+                  })}
                 </div>
               </div>
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                <button onClick={() => { if(onPickDay) onPickDay(new Date(spk + "T12:00:00")); setSchedView("day"); }} style={{ padding:"5px 10px", background:T.navy, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>OPEN DAY</button>
-                <button onClick={() => setSchedSelDay(null)} style={{ width:24, height:24, background:T.surface2, border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:14, cursor:"pointer", lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+            );
+          })()}
+
+          {/* Legend */}
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:20, fontSize:10, color:T.muted }}>
+            <div style={{ width:8, height:8, borderRadius:"50%", background:T.gold }} />
+            Scheduled
+          </div>
+
+          {/* UP NEXT */}
+          {(() => {
+            const now2 = new Date();
+            const nowMin2 = now2.getHours()*60 + now2.getMinutes();
+            const allTodayBlocks = [
+              ...(daySchedule.vanja || []).map(b => ({...b, owner:"vanja"})),
+              ...(daySchedule.oloka || []).map(b => ({...b, owner:"oloka"})),
+            ].sort((a,b) => a.startMin - b.startMin);
+            const isViewingToday2 = dk === isoDate(today());
+            const nextBlocks = isViewingToday2
+              ? allTodayBlocks.filter(b => (b.startMin + (b.durationMin||30)) > nowMin2).slice(0,3)
+              : allTodayBlocks.slice(0,3);
+            return (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                  <span style={{ fontSize:11, fontWeight:800, letterSpacing:"0.1em", color:T.ink }}>UP NEXT</span>
+                  {allTodayBlocks.length > 3 && <button style={{ background:"none", border:"none", fontSize:10, color:T.gold, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>View all</button>}
+                </div>
+                {nextBlocks.length === 0 ? (
+                  <p style={{ fontSize:11, color:T.faint, fontStyle:"italic" }}>Nothing scheduled</p>
+                ) : nextBlocks.map((block, idx) => {
+                  const task = tasksByIdRef[block.taskId];
+                  const label = block.isBreak ? block.breakLabel : (task?.text || block.qeTitle || "Event");
+                  const scheme = getBlockScheme(block, task);
+                  return (
+                    <div key={idx} onClick={() => setSelectedBlock({...block, _date:dk})}
+                      style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom: idx < nextBlocks.length-1 ? `1px solid ${T.border}` : "none", cursor:"pointer" }}>
+                      <div style={{ width:3, height:36, borderRadius:2, background:scheme.border, flexShrink:0 }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:700, color:T.ink, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</div>
+                        <div style={{ fontSize:10, color:T.muted }}>{fmtTime(block.startMin)} · {block.durationMin || 30}m</div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-            <div style={{ padding:"14px 16px", display:"flex", flexDirection:"column", gap:14 }}>
-              {/* Morning plan priorities */}
-              <div>
-                <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.muted, marginBottom:8 }}>TOP PRIORITIES</div>
-                {[{key:"p1",label:"Priority 1"},{key:"p2",label:"Priority 2"},{key:"p3",label:"Priority 3"}].map(({key, label}, i) => (
-                  <div key={key} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
-                    <div style={{ width:20, height:20, borderRadius:"50%", flexShrink:0, background: spPlan[key] ? T.gold : T.surface, border:`1.5px solid ${spPlan[key] ? T.gold : T.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:800, color: spPlan[key] ? "#fff" : T.muted }}>{i+1}</div>
-                    <input
-                      value={spPlan[key] || ""}
-                      onChange={e => setSpField(key, e.target.value)}
-                      placeholder={`${label}…`}
-                      style={{ flex:1, padding:"6px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }}
-                    />
+            );
+          })()}
+
+          {/* UNSCHEDULED TASKS */}
+          {(() => {
+            const unschAll = [
+              ...(activeUser !== "oloka" ? unscheduledForOwner("vanja").todays : []),
+              ...(activeUser !== "vanja" ? unscheduledForOwner("oloka").todays : []),
+            ];
+            return (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                  <span style={{ fontSize:11, fontWeight:800, letterSpacing:"0.1em", color:T.ink }}>UNSCHEDULED TASKS</span>
+                  {unschAll.length > 4 && <button style={{ background:"none", border:"none", fontSize:10, color:T.gold, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>View all</button>}
+                </div>
+                {unschAll.length === 0 ? (
+                  <p style={{ fontSize:11, color:T.faint, fontStyle:"italic" }}>All scheduled ✓</p>
+                ) : unschAll.slice(0,5).map((task, idx) => (
+                  <div key={task.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom: idx < Math.min(unschAll.length,5)-1 ? `1px solid ${T.border}` : "none" }}>
+                    <span style={{ color:T.faint, fontSize:10 }}>⋮⋮</span>
+                    <p style={{ flex:1, fontSize:11, color:T.ink, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{task.text}</p>
+                    <button onClick={() => addBlock(task.owner, task.id, 9*60, 30)} title="Add to 9am"
+                      style={{ width:22, height:22, borderRadius:5, background:T.surface, border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                   </div>
                 ))}
-                {/* Notes */}
-                <textarea
-                  value={spPlan.notes || ""}
-                  onChange={e => setSpField("notes", e.target.value)}
-                  placeholder="Notes for the day…"
-                  rows={2}
-                  style={{ width:"100%", padding:"7px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", resize:"vertical", boxSizing:"border-box" }}
-                />
               </div>
+            );
+          })()}
 
-              {/* Schedule preview */}
-              {(() => {
-                const spBlocks = [...((schedule[spk] || {}).vanja || []).map(b => ({ ...b, owner:"vanja" })), ...((schedule[spk] || {}).oloka || []).map(b => ({ ...b, owner:"oloka" }))].sort((a,b) => a.startMin - b.startMin);
-                if (spBlocks.length === 0) return null;
+          {/* TEAM FILTER (week/month view only) */}
+          {schedView !== "day" && (
+            <div style={{ marginBottom:24 }}>
+              <div style={{ fontSize:11, fontWeight:800, letterSpacing:"0.1em", color:T.ink, marginBottom:12 }}>TEAM FILTER</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {[
+                  { key:"both",  label: "All team members" },
+                  { key:"vanja", label: todayUser==="vanja" ? "You (Vanja)" : "Vanja" },
+                  { key:"oloka", label: todayUser==="oloka" ? "You (Oloka)" : "Oloka" },
+                ].map(({ key, label }) => (
+                  <label key={key} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12, color:T.ink }}>
+                    <input type="checkbox" checked={activeUser===key} onChange={() => setActiveUser(key)} style={{ accentColor:T.gold }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                <button onClick={() => setActiveUser("both")} style={{ fontSize:10, color:T.muted, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>Clear all</button>
+                <button onClick={() => setActiveUser("both")} style={{ fontSize:10, color:T.gold, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>Select all</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── MAIN AREA ── */}
+        <div style={{ flex:1, minWidth:0 }}>
+
+          {/* ── SCHEDULE HEADER ── */}
+          <div style={{ marginBottom:24 }}>
+            <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.16em", marginBottom:6 }}>TODAY · BUILD MY DAY</p>
+            <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+              <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:34, letterSpacing:"-0.025em", lineHeight:1.05, color:T.heading, margin:0 }}>
+                {schedView === "day"
+                  ? selDate.toLocaleDateString("en-AU", { weekday:"long", day:"numeric", month:"long", year:"numeric" })
+                  : schedView === "week"
+                  ? `${schedMonday.getDate()} – ${addDays(schedMonday,6).getDate()} ${MONTHS[addDays(schedMonday,6).getMonth()].slice(0,3)} ${addDays(schedMonday,6).getFullYear()}`
+                  : `${MONTHS[schedBaseMonth.getMonth()]} ${schedBaseMonth.getFullYear()}`}
+              </h1>
+              <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+
+                {/* Time remaining (today only, day view) */}
+                {schedView === "day" && dk === isoDate(today()) && (() => {
+                  const nowN = new Date();
+                  const nowMinN = nowN.getHours()*60 + nowN.getMinutes();
+                  const dayLeft = Math.max(0, SCHED_END*60 - nowMinN);
+                  const dayTotal = (SCHED_END - SCHED_START) * 60;
+                  const elapsed = Math.min(dayTotal, Math.max(0, nowMinN - SCHED_START*60));
+                  const pct = Math.round((elapsed / dayTotal) * 100);
+                  return (
+                    <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:T.muted }}>{Math.floor(dayLeft/60)}h {dayLeft%60}m left</span>
+                      <div style={{ height:5, width:130, background:T.border, borderRadius:3 }}>
+                        <div style={{ height:"100%", width:`${pct}%`, background:T.gold, borderRadius:3 }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Week/Month navigation */}
+                {schedView !== "day" && (
+                  <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                    <button onClick={() => { if(schedView==="week") setSchedWeekOffset(o=>o-1); else setSchedMonthOffset(o=>o-1); }}
+                      style={{ width:30, height:30, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.ink, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+                    <button onClick={() => { setSchedWeekOffset(0); setSchedMonthOffset(0); }}
+                      style={{ padding:"5px 12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.ink, cursor:"pointer", fontSize:11, fontWeight:700, fontFamily:"inherit" }}>Today</button>
+                    <button onClick={() => { if(schedView==="week") setSchedWeekOffset(o=>o+1); else setSchedMonthOffset(o=>o+1); }}
+                      style={{ width:30, height:30, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.ink, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+                  </div>
+                )}
+
+                {/* View switcher */}
+                <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
+                  {[["day","DAY"],["week","WEEK"],["month","MONTH"]].map(([k,l]) => (
+                    <button key={k} onClick={() => setSchedView(k)} style={{
+                      padding:"8px 16px", background: schedView===k ? T.navy : "transparent",
+                      border:"none", color: schedView===k ? "#fff" : T.muted,
+                      fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.08em",
+                    }}>{l}</button>
+                  ))}
+                </div>
+
+                {/* Filters */}
+                <button onClick={() => setShowFilters(v => !v)} style={{
+                  display:"flex", alignItems:"center", gap:5, padding:"8px 14px",
+                  background: showFilters ? T.navy+"15" : T.surface, border:`1px solid ${showFilters ? T.navy : T.border}`,
+                  borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:11, fontWeight:700,
+                  color: showFilters ? T.navy : T.ink,
+                }}>⊞ Filters</button>
+
+                {/* Plan New Day */}
+                <button onClick={() => setPlanDayModal(true)} style={{
+                  display:"flex", alignItems:"center", gap:6, padding:"8px 18px",
+                  background:T.navy, border:"none", borderRadius:8, cursor:"pointer",
+                  fontFamily:"inherit", fontSize:12, fontWeight:800, color:"#fff",
+                }}>+ Plan New Day</button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── FILTERS PANEL ── */}
+          {showFilters && (
+            <div style={{ marginBottom:16, padding:"14px 18px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-start" }}>
+              <div>
+                <p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:8, letterSpacing:"0.1em" }}>VIEW</p>
+                <div style={{ display:"flex", gap:6 }}>
+                  {[["vanja","Vanja",T.vanja],["both","Both",T.navy],["oloka","Oloka",T.oloka]].map(([k,l,c]) => (
+                    <button key={k} onClick={() => setActiveUser(k)} style={{ padding:"6px 12px", borderRadius:6, border:`1px solid ${activeUser===k ? c : T.border}`, background: activeUser===k ? c+"20" : T.surface, color: activeUser===k ? c : T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:8, letterSpacing:"0.1em" }}>MODE</p>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={() => setActualMode(false)} style={{ padding:"6px 12px", borderRadius:6, border:`1px solid ${!actualMode ? T.navy : T.border}`, background: !actualMode ? T.navy+"20" : T.surface, color: !actualMode ? T.navy : T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Planned</button>
+                  <button onClick={() => setActualMode(true)} style={{ padding:"6px 12px", borderRadius:6, border:`1px solid ${actualMode ? "#0E9F6E" : T.border}`, background: actualMode ? "#0E9F6E20" : T.surface, color: actualMode ? "#0E9F6E" : T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Actual</button>
+                </div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", paddingTop:20 }}>
+                <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12, color:T.ink }}>
+                  <input type="checkbox" checked={includeOther} onChange={e => setIncludeOther(e.target.checked)} style={{ accentColor:T.gold }} />
+                  Show tasks from other days
+                </label>
+              </div>
+              <button onClick={() => setShowFilters(false)} style={{ marginLeft:"auto", alignSelf:"flex-start", marginTop:2, background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:16 }}>×</button>
+            </div>
+          )}
+
+          {/* ── WEEK VIEW ── */}
+          {schedView === "week" && (() => {
+            const weekDays = Array.from({length:7}, (_, i) => addDays(schedMonday, i));
+            const weekStart = isoDate(schedMonday);
+            const weekEnd = isoDate(addDays(schedMonday, 6));
+            const weekSpans = (schedSpans || []).filter(s => s.startDate <= weekEnd && s.endDate >= weekStart);
+            const todayKeyW = isoDate(today());
+            const colHeight = (SCHED_END - SCHED_START) * 60 * PX_PER_MIN;
+            let weekTotalMin = 0, weekTaskCount = 0;
+            weekDays.forEach(d => {
+              const wdk = isoDate(d);
+              const blocks = [...((schedule[wdk]||{}).vanja||[]), ...((schedule[wdk]||{}).oloka||[])];
+              weekTotalMin += blocks.reduce((s,b) => s + (b.durationMin||30), 0);
+              weekTaskCount += blocks.filter(b => !b.isBreak).length;
+            });
+            return (
+              <div>
+                {/* All-day spans row */}
+                <div style={{ display:"grid", gridTemplateColumns:"60px repeat(7,1fr)", gap:0, marginBottom:0, borderBottom:`1px solid ${T.border}` }}>
+                  <div style={{ padding:"4px 0" }} />
+                  {weekDays.map((d, di) => {
+                    const dkey = isoDate(d);
+                    const daySpansHere = weekSpans.filter(s => s.startDate <= dkey && s.endDate >= dkey);
+                    const dragMin = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[0] : null;
+                    const dragMax = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[1] : null;
+                    const inDrag = spanDragStart && dragMin <= dkey && dkey <= dragMax;
+                    return (
+                      <div key={dkey} onMouseDown={e => { e.preventDefault(); setSpanDragStart(dkey); setSpanDragEnd(dkey); }}
+                        onMouseEnter={() => { if(spanDragStart) setSpanDragEnd(dkey); }}
+                        style={{ padding:"2px 4px", minHeight:20, cursor:"crosshair", background: inDrag ? SCHED_SPAN_COLORS[0]+"22" : "transparent", position:"relative" }}>
+                        {daySpansHere.map(s => {
+                          const isStart = s.startDate===dkey;
+                          return <div key={s.id} onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setSchedSpans(prev=>prev.filter(x=>x.id!==s.id));}}
+                            title={`${s.title} · click to delete`}
+                            style={{ background:s.color||T.gold, color:"#fff", fontSize:9, fontWeight:700, padding:"1px 5px", borderRadius:isStart?"3px 0 0 3px":"0 3px 3px 0", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", cursor:"pointer", marginBottom:1 }}>
+                            {isStart ? s.title : ""}
+                          </div>;
+                        })}
+                        {daySpansHere.length===0 && !inDrag && <div style={{ height:16 }} />}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Day headers */}
+                <div style={{ display:"grid", gridTemplateColumns:"60px repeat(7,1fr)", gap:0, borderBottom:`2px solid ${T.border}` }}>
+                  <div />
+                  {weekDays.map((d, di) => {
+                    const wdk = isoDate(d);
+                    const isTodayW = wdk === todayKeyW;
+                    const isWeekend = di >= 5;
+                    const nowW = new Date();
+                    const dayLeftW = Math.max(0, SCHED_END*60 - (nowW.getHours()*60+nowW.getMinutes()));
+                    return (
+                      <div key={wdk} onClick={() => { if(onPickDay) onPickDay(new Date(wdk+"T12:00:00")); setSchedView("day"); }}
+                        style={{ padding:"10px 8px", textAlign:"center", cursor:"pointer", borderLeft:`1px solid ${T.border}`, background: isTodayW ? T.gold+"08" : "transparent" }}>
+                        <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:isWeekend?T.faint:T.muted, marginBottom:2 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][di]}</div>
+                        <div style={{ width:32, height:32, borderRadius:"50%", background: isTodayW ? T.gold : "transparent", color: isTodayW ? "#fff" : isWeekend ? T.muted : T.heading, fontSize:18, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 4px", fontFamily:"'ProximaNova Black', sans-serif" }}>{d.getDate()}</div>
+                        {isTodayW ? <div style={{ fontSize:9, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeftW/60)}h {dayLeftW%60}m left</div> : <div style={{ height:13 }} />}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Time grid */}
+                <div style={{ display:"grid", gridTemplateColumns:"60px repeat(7,1fr)", gap:0, border:`1px solid ${T.border}`, borderTop:"none" }}>
+                  {/* Time gutter */}
+                  <div style={{ position:"relative", height:colHeight, borderRight:`1px solid ${T.border}`, background:T.surface }}>
+                    {Array.from({length:SCHED_END-SCHED_START+1}, (_,i) => (
+                      <div key={i} style={{ position:"absolute", top: i*60*PX_PER_MIN - 8, right:4, left:0, display:"flex", justifyContent:"flex-end" }}>
+                        {i > 0 && <span style={{ fontSize:9, fontWeight:700, color:T.muted, background:T.surface, padding:"0 2px" }}>{fmtTime((SCHED_START+i)*60)}</span>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Day columns */}
+                  {weekDays.map((d, di) => {
+                    const wdk = isoDate(d);
+                    const isTodayW2 = wdk === todayKeyW;
+                    const isWeekend2 = di >= 5;
+                    const nowW2 = new Date();
+                    const nowMinW2 = nowW2.getHours()*60 + nowW2.getMinutes();
+                    const allBlocksW = [
+                      ...(activeUser !== "oloka" ? ((schedule[wdk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})) : []),
+                      ...(activeUser !== "vanja" ? ((schedule[wdk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})) : []),
+                    ];
+                    return (
+                      <div key={wdk} style={{ position:"relative", height:colHeight, borderLeft:`1px solid ${T.border}`, background: isWeekend2 ? T.surface : isTodayW2 ? T.gold+"05" : T.cardBg }}>
+                        {Array.from({length:SCHED_END-SCHED_START+1}, (_,i) => (
+                          <div key={i} style={{ position:"absolute", top:i*60*PX_PER_MIN, left:0, right:0, borderTop:`1px solid ${i===0?"transparent":T.border}` }} />
+                        ))}
+                        {isTodayW2 && nowMinW2 >= SCHED_START*60 && nowMinW2 <= SCHED_END*60 && (
+                          <div style={{ position:"absolute", top:(nowMinW2-SCHED_START*60)*PX_PER_MIN, left:0, right:0, height:2, background:"#EF4444", zIndex:5, display:"flex", alignItems:"center" }}>
+                            <div style={{ width:8, height:8, borderRadius:"50%", background:"#EF4444", marginLeft:-4 }} />
+                          </div>
+                        )}
+                        {allBlocksW.map((block, idx) => {
+                          const topPx = (block.startMin - SCHED_START*60) * PX_PER_MIN;
+                          const heightPx = Math.max(22, (block.durationMin||30)*PX_PER_MIN);
+                          const task = tasksByIdRef[block.taskId];
+                          const label = block.isBreak ? block.breakLabel : (task?.text || block.qeTitle || "Event");
+                          const scheme = getBlockScheme(block, task);
+                          if (topPx < 0 || topPx > colHeight) return null;
+                          return (
+                            <div key={idx} onClick={() => { if(onPickDay) onPickDay(new Date(wdk+"T12:00:00")); setSchedView("day"); setSelectedBlock({...block,_date:wdk}); }}
+                              style={{ position:"absolute", left:3, right:3, top:topPx, height:heightPx,
+                                background:scheme.bg, border:`1px solid ${scheme.border}44`, borderLeft:`3px solid ${scheme.border}`,
+                                borderRadius:5, padding:"3px 6px", cursor:"pointer", overflow:"hidden", zIndex:2 }}>
+                              <div style={{ fontSize:9, fontWeight:800, color:scheme.border, lineHeight:1 }}>{fmtTime(block.startMin)}</div>
+                              {heightPx > 28 && <div style={{ fontSize:10, fontWeight:700, color:scheme.text, lineHeight:1.2, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Week stats bar */}
+                {(() => {
+                  let done = 0, total = 0;
+                  weekDays.forEach(d => {
+                    const wdk = isoDate(d);
+                    const tasks = (tasksByDate[wdk]||[]).filter(t=>t.category!=="Event"&&t.owner!=="event");
+                    total += tasks.length; done += tasks.filter(t=>t.done).length;
+                  });
+                  const pct = total > 0 ? Math.round(done/total*100) : 0;
+                  return (
+                    <div style={{ display:"flex", gap:24, padding:"14px 20px", background:T.surface, border:`1px solid ${T.border}`, borderTop:"none", borderRadius:"0 0 8px 8px", flexWrap:"wrap" }}>
+                      <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{Math.floor(weekTotalMin/60)}h {weekTotalMin%60}m</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Total Planned</div></div>
+                      <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{weekTaskCount}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Tasks Planned</div></div>
+                      <div><div style={{ fontSize:20, fontWeight:900, color:"#10B981", fontFamily:"'ProximaNova Black', sans-serif" }}>{pct}%</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Completion Rate</div></div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+
+          {/* ── MONTH VIEW ── */}
+          {schedView === "month" && (() => {
+            const year = schedBaseMonth.getFullYear(), month = schedBaseMonth.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const startDow = (firstDay.getDay() + 6) % 7;
+            const daysInMonth = new Date(year, month+1, 0).getDate();
+            const cells = [];
+            for (let i = 0; i < startDow; i++) cells.push(null);
+            for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+            while (cells.length % 7 !== 0) cells.push(null);
+            const monthKey2 = `${year}-${String(month+1).padStart(2,"0")}`;
+            const monthStart2 = `${monthKey2}-01`;
+            const monthEnd2 = isoDate(new Date(year, month+1, 0));
+            const monthSpans2 = (schedSpans||[]).filter(s => s.startDate <= monthEnd2 && s.endDate >= monthStart2);
+            const todayKeyM = isoDate(today());
+            let daysPlanned=0, monthTaskCount=0, monthDone=0, monthTotal=0;
+            cells.filter(Boolean).forEach(d => {
+              const mdk = isoDate(new Date(year,month,d));
+              const blocks = [...((schedule[mdk]||{}).vanja||[]),...((schedule[mdk]||{}).oloka||[])];
+              if (blocks.length>0) daysPlanned++;
+              monthTaskCount += blocks.length;
+              const tasks = (tasksByDate[mdk]||[]).filter(t=>t.category!=="Event"&&t.owner!=="event");
+              monthTotal += tasks.length; monthDone += tasks.filter(t=>t.done).length;
+            });
+            const monthPct = monthTotal > 0 ? Math.round(monthDone/monthTotal*100) : 0;
+            return (
+              <div>
+                <div style={{ border:`1px solid ${T.border}`, borderRadius:"8px 8px 0 0", overflow:"hidden" }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
+                    {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => (
+                      <div key={d} style={{ padding:"10px 0", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.08em", color:i>=5?T.faint:T.muted }}>{d}</div>
+                    ))}
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
+                    {cells.map((d, i) => {
+                      if (!d) return <div key={i} style={{ minHeight:100, background:T.surface2, borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}` }} />;
+                      const mdk = isoDate(new Date(year, month, d));
+                      const isTodayM = mdk === todayKeyM;
+                      const isWeekendM = i%7 >= 5;
+                      const allDayBlocks = [
+                        ...(activeUser !== "oloka" ? ((schedule[mdk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})) : []),
+                        ...(activeUser !== "vanja" ? ((schedule[mdk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})) : []),
+                      ].sort((a,b2)=>a.startMin-b2.startMin);
+                      const daySpans2 = monthSpans2.filter(s=>s.startDate<=mdk&&s.endDate>=mdk);
+                      const dragMin2 = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[0] : null;
+                      const dragMax2 = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[1] : null;
+                      const inDrag2 = spanDragStart && dragMin2<=mdk && mdk<=dragMax2;
+                      const nowM = new Date();
+                      const dayLeftM = Math.max(0, SCHED_END*60-(nowM.getHours()*60+nowM.getMinutes()));
+                      return (
+                        <div key={i}
+                          onClick={() => !spanDragStart && (onPickDay && onPickDay(new Date(mdk+"T12:00:00")), setSchedView("day"))}
+                          onMouseDown={e=>{if(e.button===0&&d){e.preventDefault();setSpanDragStart(mdk);setSpanDragEnd(mdk);}}}
+                          onMouseEnter={()=>{if(spanDragStart&&d)setSpanDragEnd(mdk);}}
+                          style={{ minHeight:100, padding:"8px 6px",
+                            background: inDrag2 ? SCHED_SPAN_COLORS[0]+"22" : isTodayM ? T.gold+"08" : isWeekendM ? T.surface : T.cardBg,
+                            borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}`,
+                            cursor:"pointer" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+                            <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background:isTodayM?T.gold:"transparent", color:isTodayM?"#fff":isWeekendM?T.muted:T.ink, fontSize:12, fontWeight:isTodayM?800:500 }}>{d}</span>
+                            {isTodayM && <span style={{ fontSize:8, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeftM/60)}h left</span>}
+                          </div>
+                          {daySpans2.map(s=><div key={s.id} onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setSchedSpans(prev=>prev.filter(x=>x.id!==s.id));}} style={{ height:4, background:s.color||T.gold, borderRadius:2, marginBottom:2, cursor:"pointer" }} />)}
+                          {allDayBlocks.slice(0,3).map((block, bi) => {
+                            const task = tasksByIdRef[block.taskId];
+                            const label = block.isBreak ? block.breakLabel : (task?.text || block.qeTitle || "Event");
+                            const scheme = getBlockScheme(block, task);
+                            return (
+                              <div key={bi} onClick={e=>{e.stopPropagation();if(onPickDay)onPickDay(new Date(mdk+"T12:00:00"));setSchedView("day");setSelectedBlock({...block,_date:mdk});}}
+                                style={{ background:scheme.bg, borderLeft:`3px solid ${scheme.border}`, borderRadius:3, padding:"2px 5px", marginBottom:2, fontSize:10, fontWeight:600, color:scheme.text, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", display:"flex", gap:4, alignItems:"center", cursor:"pointer" }}>
+                                <span style={{ fontSize:8, color:scheme.border, fontWeight:800, flexShrink:0 }}>{fmtTime(block.startMin)}</span>
+                                <span style={{ overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</span>
+                              </div>
+                            );
+                          })}
+                          {allDayBlocks.length > 3 && <div style={{ fontSize:9, color:T.muted, fontWeight:600 }}>+{allDayBlocks.length-3} more</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:24, padding:"14px 20px", background:T.surface, border:`1px solid ${T.border}`, borderTop:"none", borderRadius:"0 0 8px 8px", flexWrap:"wrap" }}>
+                  <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{daysPlanned}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Days Planned</div></div>
+                  <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{monthTaskCount}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Tasks</div></div>
+                  <div><div style={{ fontSize:20, fontWeight:900, color:"#10B981", fontFamily:"'ProximaNova Black', sans-serif" }}>{monthPct}%</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Completion Rate</div></div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── DAY VIEW ── */}
+          {schedView === "day" && <div>
+            {/* Actual mode banner */}
+            {actualMode && (
+              <div style={{ marginBottom:12, padding:"9px 14px", background:"#0E9F6E12", border:`1px solid #0E9F6E44`, borderLeft:`3px solid #0E9F6E`, borderRadius:6, display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:13 }}>📍</span>
+                <p style={{ fontSize:11, color:T.muted }}>
+                  <strong style={{ color:"#0E9F6E" }}>ACTUAL MODE</strong>
+                  {activeUser !== "both" ? " — PLANNED and ACTUAL shown side by side." : " — planned blocks show as outlines. Drop blocks to record what really happened."}
+                </p>
+              </div>
+            )}
+
+            {/* Timeline grid */}
+            {(() => {
+              const showSideBySide = actualMode && activeUser !== "both";
+              const gridCols = (activeUser === "both" || showSideBySide) ? "36px 1fr 1fr" : "36px 1fr";
+
+              const makeTimeColNew = (owner, nameOverride, accentOverride, blocksArr, actualBlocksArr, useActualMode, isActualCol) => {
+                const name2   = nameOverride || (owner === "vanja" ? "Vanja" : "Oloka");
+                const accent2 = accentOverride || (owner === "vanja" ? T.vanja : T.oloka);
+                const addFn       = isActualCol ? addActualBlock      : addBlock;
+                const addBreakFn  = isActualCol ? addActualBreakBlock : addBreakBlock;
+                const removeFn    = isActualCol ? removeActualBlock   : removeBlock;
+                const updateFn    = isActualCol ? updateActualBlock   : updateBlock;
                 return (
-                  <div>
-                    <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.muted, marginBottom:8 }}>SCHEDULE · {spBlocks.length} BLOCK{spBlocks.length!==1?"S":""}</div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                      {spBlocks.map((b, i) => {
-                        const label = b.isBreak ? b.breakLabel : (tasksByIdRef[b.taskId]?.text || "Unknown task");
-                        const oc = b.owner === "vanja" ? T.vanja : T.oloka;
-                        const bc = b.isBreak ? (b.breakLabel === "Lunch" ? "#EF4444" : "#F97316") : oc;
+                  <TimeColumn key={(isActualCol ? "actual_" : "planned_") + owner}
+                    name={name2} owner={owner} accent={accent2}
+                    blocks={blocksArr} actualBlocks={actualBlocksArr}
+                    actualMode={useActualMode} isActualColumn={isActualCol}
+                    tasksByDate={tasksByDate} dk={dk}
+                    drag={drag} setDrag={setDrag}
+                    onAdd={addFn} onAddBreak={addBreakFn}
+                    onRemove={removeFn} onUpdate={updateFn}
+                    onAddActual={addActualBlock} onAddActualBreak={addActualBreakBlock}
+                    onRemoveActual={removeActualBlock} onUpdateActual={updateActualBlock}
+                    onOpenEdit={(taskId) => !isActualCol && setSelectedBlock({ owner, taskId, type:"planned", _date: dk })}
+                    onClickEmpty={(startMin, durationMin) => setQuickAdd({ owner, startMin, isActual: !!isActualCol, durationMin: durationMin || 30 })}
+                  />
+                );
+              };
+
+              return (
+                <div style={{ display:"grid", gridTemplateColumns: gridCols, gap:0, border:`1px solid ${T.border}`, borderRadius:8, background:T.cardBg, alignSelf:"start" }}>
+                  <div style={{ borderRight:`1px solid ${T.border}`, background:T.surface }}>
+                    <div style={{ height:32, borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      {dk === isoDate(today()) && (() => {
+                        const n = new Date();
+                        return <span style={{ fontSize:9, fontWeight:800, color:"#EF4444" }}>{fmtTime(n.getHours()*60+n.getMinutes())}</span>;
+                      })()}
+                    </div>
+                    <div style={{ position:"relative" }}>
+                      <HourGutter />
+                      {dk === isoDate(today()) && (() => {
+                        const n = new Date();
+                        const nowMinD = n.getHours()*60 + n.getMinutes();
+                        if (nowMinD < SCHED_START*60 || nowMinD > SCHED_END*60) return null;
+                        const top5 = (nowMinD - SCHED_START*60) * PX_PER_MIN;
                         return (
-                          <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 8px", background:T.surface, borderRadius:5, borderLeft:`3px solid ${bc}` }}>
-                            <span style={{ fontSize:9, fontWeight:800, color:bc, minWidth:45 }}>{fmtTime(b.startMin)}</span>
-                            <span style={{ fontSize:10, color:T.ink, flex:1, lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:1, WebkitBoxOrient:"vertical" }}>{label}</span>
-                            <span style={{ fontSize:9, color:T.faint }}>{b.durationMin}m</span>
+                          <div style={{ position:"absolute", left:-2, right:-2, top:top5, height:2, background:"#EF4444", pointerEvents:"none", zIndex:10 }}>
+                            <div style={{ width:8, height:8, borderRadius:"50%", background:"#EF4444", marginTop:-3 }} />
                           </div>
                         );
-                      })}
+                      })()}
                     </div>
                   </div>
-                );
-              })()}
-
-              {/* Multi-day spans section */}
-              <div>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-                  <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>EVENTS & SPANS</div>
-                  <button onClick={() => setNewSpan({ title:"", startDate: spk, endDate: spk, color: SCHED_SPAN_COLORS[0] })} style={{ padding:"3px 8px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, fontSize:10, fontWeight:700, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
+                  {showSideBySide ? (
+                    <>
+                      {makeTimeColNew(activeUser, "PLANNED", activeUser==="vanja"?T.vanja:T.oloka, daySchedule[activeUser]||[], [], false, false)}
+                      {makeTimeColNew(activeUser, "ACTUAL", "#0E9F6E", dayActual[activeUser]||[], [], false, true)}
+                    </>
+                  ) : activeUser === "both" ? (
+                    <>
+                      {makeTimeColNew("vanja", null, null, daySchedule.vanja||[], dayActual.vanja||[], actualMode, false)}
+                      {makeTimeColNew("oloka", null, null, daySchedule.oloka||[], dayActual.oloka||[], actualMode, false)}
+                    </>
+                  ) : (
+                    makeTimeColNew(activeUser, null, null, daySchedule[activeUser]||[], dayActual[activeUser]||[], false, false)
+                  )}
                 </div>
-                {/* Existing spans */}
-                {daySpans.map(s => (
-                  <div key={s.id} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, padding:"6px 10px", background:T.surface, borderRadius:6, border:`1px solid ${T.border}` }}>
-                    <div style={{ width:10, height:10, borderRadius:3, background: s.color || T.gold, flexShrink:0 }} />
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:11, fontWeight:700, color:T.ink }}>{s.title || "Untitled"}</div>
-                      <div style={{ fontSize:9, color:T.muted }}>{s.startDate} → {s.endDate}</div>
-                    </div>
-                    <button onClick={() => setSchedSpans(prev => prev.filter(x => x.id !== s.id))} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:13, padding:"0 4px" }}>×</button>
+              );
+            })()}
+
+            <DailyReviewPanel dk={dk} dayNotes={dayNotes||{}} setDayNotes={setDayNotes} />
+          </div>}
+
+        </div>{/* end MAIN AREA */}
+
+        {/* ── RIGHT PANEL (event detail, day view) ── */}
+        {selectedBlock && schedView === "day" && (() => {
+          const sb = selectedBlock;
+          const dayScheduleHere = (schedule[sb._date || dk] || { vanja:[], oloka:[] });
+          const block = sb.taskId ? (dayScheduleHere[sb.owner] || []).find(b => b.taskId === sb.taskId) : null;
+          const task = sb.taskId ? tasksByIdRef[sb.taskId] : null;
+          const label = sb.isBreak ? sb.breakLabel : (task?.text || sb.qeTitle || "Event");
+          const scheme = getBlockScheme(sb, task);
+          const endMin = (sb.startMin||0) + (sb.durationMin||30);
+          const dH = Math.floor((sb.durationMin||30)/60), dM = (sb.durationMin||30) % 60;
+          const durationStr = dH > 0 ? `${dH}h ${dM > 0 ? dM+"m" : ""}`.trim() : `${dM}m`;
+          const todayBlocks2 = [...(daySchedule.vanja||[]).map(b=>({...b,owner:"vanja"})), ...(daySchedule.oloka||[]).map(b=>({...b,owner:"oloka"}))];
+          const scheduledCount = todayBlocks2.filter(b=>!b.isBreak&&!b.isQuickEvent).length;
+          const focusMin = todayBlocks2.filter(b=>!b.isBreak).reduce((s,b)=>s+(b.durationMin||30),0);
+          const nowR = new Date();
+          const dayLeftR = Math.max(0, SCHED_END*60 - (nowR.getHours()*60+nowR.getMinutes()));
+          return (
+            <div style={{ width:290, flexShrink:0, marginLeft:20, paddingLeft:20, borderLeft:`1px solid ${T.border}` }}>
+              <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:12 }}>
+                <button onClick={() => setSelectedBlock(null)} style={{ width:28, height:28, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+              </div>
+              <div style={{ padding:"14px 16px", background:scheme.bg, borderRadius:10, border:`1px solid ${scheme.border}44`, borderTop:`3px solid ${scheme.border}`, marginBottom:16 }}>
+                <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:6 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:15, fontWeight:800, color:scheme.text, lineHeight:1.2, marginBottom:4 }}>{label}</div>
+                    <div style={{ fontSize:11, color:scheme.border, fontWeight:700 }}>{fmtTime(sb.startMin||0)} – {fmtTime(endMin)} · {durationStr}</div>
                   </div>
-                ))}
-                {daySpans.length === 0 && !newSpan && <div style={{ fontSize:10, color:T.faint, fontStyle:"italic" }}>No events spanning this day</div>}
-                {/* New span form */}
-                {newSpan && (
-                  <div style={{ padding:"10px 12px", background:T.surface, borderRadius:8, border:`1px solid ${T.border}`, marginTop:6 }}>
-                    <input
-                      value={newSpan.title}
-                      onChange={e => setNewSpan(s => ({ ...s, title: e.target.value }))}
-                      placeholder="Event title…"
-                      autoFocus
-                      style={{ width:"100%", padding:"7px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box", marginBottom:8 }}
-                    />
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
-                      <div>
-                        <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:3 }}>START DATE</div>
-                        <input type="date" value={newSpan.startDate} onChange={e => setNewSpan(s => ({ ...s, startDate: e.target.value }))}
-                          style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
-                      </div>
-                      <div>
-                        <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:3 }}>END DATE</div>
-                        <input type="date" value={newSpan.endDate} onChange={e => setNewSpan(s => ({ ...s, endDate: e.target.value }))}
-                          style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
-                      </div>
-                    </div>
-                    <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
-                      {SCHED_SPAN_COLORS.map(c => (
-                        <button key={c} onClick={() => setNewSpan(s => ({ ...s, color: c }))}
-                          style={{ width:20, height:20, borderRadius:"50%", background:c, border: newSpan.color===c ? `2px solid ${T.ink}` : "2px solid transparent", cursor:"pointer", flexShrink:0 }} />
-                      ))}
-                    </div>
-                    <div style={{ display:"flex", gap:8 }}>
-                      <button onClick={() => {
-                        if (!newSpan.title.trim()) return;
-                        setSchedSpans(prev => [...prev, { ...newSpan, id: Date.now() + Math.random() }]);
-                        setNewSpan(null);
-                      }} style={{ flex:1, padding:"7px", background:T.navy, border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>SAVE</button>
-                      <button onClick={() => setNewSpan(null)} style={{ padding:"7px 12px", background:T.surface2, border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+                  <span style={{ fontSize:9, fontWeight:800, padding:"3px 8px", borderRadius:4, background:scheme.border, color:"#fff", flexShrink:0 }}>Scheduled</span>
+                </div>
+              </div>
+              {task && (
+                <div style={{ marginBottom:16 }}>
+                  <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>DESCRIPTION</p>
+                  <p style={{ fontSize:12, color:T.ink, lineHeight:1.5 }}>{task.text}</p>
+                </div>
+              )}
+              {task?.owner && (
+                <div style={{ marginBottom:16 }}>
+                  <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>ASSIGNEE</p>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <div style={{ width:28, height:28, borderRadius:"50%", background:task.owner==="vanja"?T.vanja:T.oloka, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:12, fontWeight:800 }}>{task.owner[0].toUpperCase()}</div>
+                    <span style={{ fontSize:12, color:T.ink, fontWeight:600 }}>{task.owner==="vanja"?"Vanja":"Oloka"}</span>
+                  </div>
+                </div>
+              )}
+              <div style={{ marginBottom:20 }}>
+                <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:10 }}>ACTIONS</p>
+                <div style={{ display:"flex", gap:8 }}>
+                  {task && block && (
+                    <button onClick={() => setEditing({ owner: sb.owner, taskId: sb.taskId })} style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, color:T.ink }}>✏ Edit</button>
+                  )}
+                  {block && (
+                    <button onClick={() => { removeBlock(sb.owner, sb.taskId, sb.breakId); setSelectedBlock(null); }} style={{ width:36, height:36, background:"#FEF2F2", border:`1px solid #FCA5A5`, borderRadius:7, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>🗑</button>
+                  )}
+                </div>
+              </div>
+              <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:16 }}>
+                <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:12 }}>DAY SUMMARY</p>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+                  <div style={{ padding:"10px 12px", background:T.surface, borderRadius:8, border:`1px solid ${T.border}` }}>
+                    <div style={{ fontSize:18, fontWeight:900, color:T.navy, fontFamily:"'ProximaNova Black', sans-serif" }}>{scheduledCount}</div>
+                    <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>Tasks Scheduled</div>
+                  </div>
+                  <div style={{ padding:"10px 12px", background:T.surface, borderRadius:8, border:`1px solid ${T.border}` }}>
+                    <div style={{ fontSize:18, fontWeight:900, color:"#3B82F6", fontFamily:"'ProximaNova Black', sans-serif" }}>{Math.floor(focusMin/60)}h {focusMin%60}m</div>
+                    <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>Focus Time</div>
+                  </div>
+                </div>
+                {dk === isoDate(today()) && (
+                  <div style={{ padding:"10px 12px", background:T.gold+"10", borderRadius:8, border:`1px solid ${T.gold}44` }}>
+                    <div style={{ fontSize:16, fontWeight:900, color:T.gold, fontFamily:"'ProximaNova Black', sans-serif" }}>{Math.floor(dayLeftR/60)}h {dayLeftR%60}m</div>
+                    <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>Left in your day</div>
+                    <div style={{ height:4, background:T.border, borderRadius:2, marginTop:6 }}>
+                      <div style={{ height:"100%", width:`${Math.min(100,(dayLeftR/((SCHED_END-SCHED_START)*60))*100).toFixed(0)}%`, background:T.gold, borderRadius:2 }} />
                     </div>
                   </div>
                 )}
               </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
+
+      </div>{/* end 3-PANE LAYOUT */}
 
       {/* Span creation modal */}
       {spanModal && (
@@ -4772,265 +5101,87 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
               <button onClick={() => setSpanModal(null)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18 }}>×</button>
             </div>
             <div style={{ padding:"16px 18px", display:"flex", flexDirection:"column", gap:10 }}>
-              <input autoFocus value={spanModal.title} onChange={e => setSpanModal(s => ({ ...s, title: e.target.value }))}
-                onKeyDown={e => { if(e.key==="Enter" && spanModal.title.trim()) { setSchedSpans(prev => [...prev, { ...spanModal, id: Date.now() + Math.random() }]); setSpanModal(null); } if(e.key==="Escape") setSpanModal(null); }}
+              <input autoFocus value={spanModal.title} onChange={e => setSpanModal(s => ({...s,title:e.target.value}))}
+                onKeyDown={e => { if(e.key==="Enter"&&spanModal.title.trim()){setSchedSpans(prev=>[...prev,{...spanModal,id:Date.now()+Math.random()}]);setSpanModal(null);}if(e.key==="Escape")setSpanModal(null); }}
                 placeholder="Event title…"
                 style={{ width:"100%", padding:"9px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:13, color:T.ink, background:T.bg, fontFamily:"inherit", outline:"none", boxSizing:"border-box" }} />
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
                 <div>
                   <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:3 }}>START</div>
-                  <input type="date" value={spanModal.startDate} onChange={e => setSpanModal(s => ({ ...s, startDate: e.target.value }))}
-                    style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
+                  <input type="date" value={spanModal.startDate} onChange={e => setSpanModal(s => ({...s,startDate:e.target.value}))} style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
                 </div>
                 <div>
                   <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:3 }}>END</div>
-                  <input type="date" value={spanModal.endDate} onChange={e => setSpanModal(s => ({ ...s, endDate: e.target.value }))}
-                    style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
+                  <input type="date" value={spanModal.endDate} onChange={e => setSpanModal(s => ({...s,endDate:e.target.value}))} style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
                 </div>
               </div>
               <div>
                 <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:5 }}>COLOUR</div>
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                   {SCHED_SPAN_COLORS.map(c => (
-                    <button key={c} onClick={() => setSpanModal(s => ({ ...s, color: c }))}
-                      style={{ width:22, height:22, borderRadius:"50%", background:c, border: spanModal.color===c ? `2.5px solid ${T.ink}` : "2.5px solid transparent", cursor:"pointer", flexShrink:0 }} />
+                    <button key={c} onClick={() => setSpanModal(s => ({...s,color:c}))} style={{ width:22, height:22, borderRadius:"50%", background:c, border:spanModal.color===c?"2.5px solid "+T.ink:"2.5px solid transparent", cursor:"pointer", flexShrink:0 }} />
                   ))}
                 </div>
               </div>
             </div>
             <div style={{ padding:"10px 18px 14px", display:"flex", gap:8, justifyContent:"flex-end" }}>
               <button onClick={() => setSpanModal(null)} style={{ padding:"8px 16px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
-              <button onClick={() => { if(spanModal.title.trim()) { setSchedSpans(prev => [...prev, { ...spanModal, id: Date.now() + Math.random() }]); setSpanModal(null); }}} style={{ padding:"8px 20px", background:T.navy, border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Save Event</button>
+              <button onClick={() => { if(spanModal.title.trim()){setSchedSpans(prev=>[...prev,{...spanModal,id:Date.now()+Math.random()}]);setSpanModal(null);}}} style={{ padding:"8px 20px", background:T.navy, border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Save Event</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── DAY VIEW ── */}
-      {schedView === "day" && <div>
-      {/* ── Morning Plan bookend ── */}
-      <MorningPlanPanel dk={dk} dayNotes={dayNotes || {}} setDayNotes={setDayNotes} />
-
-      {/* ── AI Plan ── */}
-      <AIPlanPanel dateKey={dk} onAddBlocks={onAddBlocks} />
-
-      {/* ── Controls row ── */}
-      <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:8, marginBottom:14 }}>
-        <p style={{ fontSize:11.5, color:T.muted, lineHeight:1.5, flex:1, minWidth:160 }}>
-          Drag tasks or break blocks into the timeline. Click empty space to add a block.
-        </p>
-
-        {/* Who am I viewing */}
-        <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
-          {[
-            { key:"vanja", label:"VANJA", color:T.vanja },
-            { key:"both",  label:"BOTH",  color:T.navy  },
-            { key:"oloka", label:"OLOKA", color:T.oloka },
-          ].map(({ key, label, color }, i) => (
-            <button key={key} onClick={() => setActiveUser(key)} style={{
-              padding:"6px 11px", fontSize:10, fontWeight:800, letterSpacing:"0.08em",
-              border:"none", borderLeft: i > 0 ? `1px solid ${T.border}` : "none",
-              cursor:"pointer", fontFamily:"inherit",
-              background: activeUser === key ? color : T.surface,
-              color: activeUser === key ? "#fff" : T.muted,
-              transition:"all 0.15s",
-            }}>{label}</button>
-          ))}
-        </div>
-
-        {/* Planned / Actual toggle */}
-        <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
-          <button onClick={() => setActualMode(false)} style={{
-            padding:"6px 12px", fontSize:10, fontWeight:800, letterSpacing:"0.08em",
-            border:"none", cursor:"pointer", fontFamily:"inherit",
-            background: !actualMode ? T.navy : T.surface,
-            color: !actualMode ? "#fff" : T.muted,
-          }}>PLANNED</button>
-          <button onClick={() => setActualMode(true)} style={{
-            padding:"6px 12px", fontSize:10, fontWeight:800, letterSpacing:"0.08em",
-            border:"none", borderLeft:`1px solid ${T.border}`, cursor:"pointer", fontFamily:"inherit",
-            background: actualMode ? "#0E9F6E" : T.surface,
-            color: actualMode ? "#fff" : T.muted,
-          }}>ACTUAL</button>
-        </div>
-
-        <label style={{
-          display:"inline-flex", alignItems:"center", gap:6,
-          padding:"6px 10px", background: includeOther ? T.gold + "15" : T.surface,
-          border:`1px solid ${includeOther ? T.gold : T.border}`, borderRadius:6,
-          cursor:"pointer", fontSize:10, fontWeight:700,
-          color: includeOther ? T.gold : T.text, letterSpacing:"0.04em",
-        }}>
-          <input type="checkbox" checked={includeOther} onChange={e => setIncludeOther(e.target.checked)}
-            style={{ width:12, height:12, accentColor: T.gold, margin:0 }}
-          />
-          OTHER DAYS
-        </label>
-      </div>
-
-      {/* ── Actual mode banner ── */}
-      {actualMode && (
-        <div style={{
-          marginBottom:12, padding:"9px 14px",
-          background:"#0E9F6E12", border:`1px solid #0E9F6E44`,
-          borderLeft:`3px solid #0E9F6E`, borderRadius:6,
-          display:"flex", alignItems:"center", gap:10,
-        }}>
-          <span style={{ fontSize:13 }}>📍</span>
-          <p style={{ fontSize:11, color:T.muted }}>
-            <strong style={{ color:"#0E9F6E" }}>ACTUAL MODE</strong>
-            {activeUser !== "both"
-              ? " — PLANNED and ACTUAL shown side by side. Drop blocks on the right to record what really happened."
-              : " — planned blocks show as outlines. Drop blocks on top to record what really happened."}
-          </p>
-        </div>
-      )}
-
-      {/* ── Mobile tab toggle ── */}
-      {typeof window !== "undefined" && window.innerWidth < 768 && (
-        <div style={{ display:"flex", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden", marginBottom:12 }}>
-          {[["timeline","📅 Timeline"],["tasks","📋 Tasks"]].map(([k,l]) => (
-            <button key={k} onClick={() => setSchedMobileTab(k)} style={{
-              flex:1, padding:"9px", background: schedMobileTab===k ? T.navy : T.surface,
-              border:"none", color: schedMobileTab===k ? "#fff" : T.muted,
-              fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit",
-            }}>{l}</button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Main layout ── */}
-      {(() => {
-        const showSideBySide = actualMode && activeUser !== "both";
-        const isMobileSched = typeof window !== "undefined" && window.innerWidth < 768;
-
-        const makeTimeCol = (owner, nameOverride, accentOverride, blocksArr, actualBlocksArr, useActualMode, isActualCol) => {
-          const name   = nameOverride || (owner === "vanja" ? "Vanja" : "Oloka");
-          const accent = accentOverride || (owner === "vanja" ? T.vanja : T.oloka);
-          const addFn       = isActualCol ? addActualBlock      : addBlock;
-          const addBreakFn  = isActualCol ? addActualBreakBlock : addBreakBlock;
-          const removeFn    = isActualCol ? removeActualBlock   : removeBlock;
-          const updateFn    = isActualCol ? updateActualBlock   : updateBlock;
-          return (
-            <TimeColumn key={(isActualCol ? "actual_" : "planned_") + owner}
-              name={name} owner={owner} accent={accent}
-              blocks={blocksArr}
-              actualBlocks={actualBlocksArr}
-              actualMode={useActualMode}
-              isActualColumn={isActualCol}
-              tasksByDate={tasksByDate} dk={dk}
-              drag={drag} setDrag={setDrag}
-              onAdd={addFn} onAddBreak={addBreakFn}
-              onRemove={removeFn} onUpdate={updateFn}
-              onAddActual={addActualBlock} onAddActualBreak={addActualBreakBlock}
-              onRemoveActual={removeActualBlock} onUpdateActual={updateActualBlock}
-              onOpenEdit={(taskId) => !isActualCol && setEditing({ owner, taskId })}
-              onClickEmpty={(startMin, durationMin) => setQuickAdd({ owner, startMin, isActual: !!isActualCol, durationMin: durationMin || 30 })}
-            />
-          );
-        };
-
-        // Grid column widths
-        const gridCols = (activeUser === "both" || showSideBySide) ? "36px 1fr 1fr" : "36px 1fr";
-
-        return (
-          <div style={{ display: isMobileSched ? "block" : "grid", gridTemplateColumns:"1fr 2fr", gap:24 }}>
-            {/* Left sidebar */}
-            <div style={{ display: isMobileSched && schedMobileTab === "timeline" ? "none" : "block" }}>
-              {(activeUser === "both" || activeUser === "vanja") && (
-                <UnscheduledColumn name="Vanja" owner="vanja" accent={T.vanja} accentSoft={T.vanjaSoft}
-                  todays={unscheduledForOwner("vanja").todays}
-                  others={unscheduledForOwner("vanja").others}
-                  drag={drag} setDrag={setDrag}
-                  total={totalMins("vanja")}
-                />
-              )}
-              <BreakBlockStrip drag={drag} setDrag={setDrag} />
-              {(activeUser === "both" || activeUser === "oloka") && (
-                <UnscheduledColumn name="Oloka" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
-                  todays={unscheduledForOwner("oloka").todays}
-                  others={unscheduledForOwner("oloka").others}
-                  drag={drag} setDrag={setDrag}
-                  total={totalMins("oloka")}
-                />
-              )}
-            </div>
-
-            {/* Right: time grid */}
-            <div style={{ display: isMobileSched && schedMobileTab === "tasks" ? "none" : "grid", gridTemplateColumns: isMobileSched ? "28px 1fr" : gridCols, gap:0, border:`1px solid ${T.border}`, borderRadius:8, background:T.cardBg, alignSelf:"start" }}>
-              <div style={{ borderRight:`1px solid ${T.border}`, background:T.surface }}>
-                <div style={{ height:32, borderBottom:`1px solid ${T.border}` }}></div>
-                <HourGutter />
-              </div>
-
-              {showSideBySide ? (
-                // Single user: side-by-side PLANNED | ACTUAL
-                <>
-                  {makeTimeCol(activeUser, "PLANNED", activeUser === "vanja" ? T.vanja : T.oloka,
-                    daySchedule[activeUser] || [], [], false, false)}
-                  {makeTimeCol(activeUser, "ACTUAL", "#0E9F6E",
-                    dayActual[activeUser] || [], [], false, true)}
-                </>
-              ) : activeUser === "both" ? (
-                // Both users overlaid
-                <>
-                  {makeTimeCol("vanja", null, null, daySchedule.vanja || [], dayActual.vanja || [], actualMode, false)}
-                  {makeTimeCol("oloka", null, null, daySchedule.oloka || [], dayActual.oloka || [], actualMode, false)}
-                </>
-              ) : (
-                // Single user full-width, planned mode
-                makeTimeCol(activeUser, null, null, daySchedule[activeUser] || [], dayActual[activeUser] || [], false, false)
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Daily Review bookend ── */}
-      <DailyReviewPanel dk={dk} dayNotes={dayNotes || {}} setDayNotes={setDayNotes} />
-
-      {/* ── Quick-add popover ── */}
+      {/* Quick-add popover */}
       {quickAdd && (
         <QuickAddPopover
           owner={quickAdd.owner}
           startMin={quickAdd.startMin}
           isActual={quickAdd.isActual}
-          tasks={(tasksByDate[dk] || []).filter(t => t.owner === quickAdd.owner && !t.done)}
+          tasks={(tasksByDate[dk]||[]).filter(t=>t.owner===quickAdd.owner&&!t.done)}
           onConfirm={({ title, taskId, durationMin }) => {
-            const o = quickAdd.owner;
-            const sm = quickAdd.startMin;
-            const dm = durationMin || 30;
-            if (taskId) {
-              if (quickAdd.isActual) { addActualBlock(o, taskId, sm); updateActualBlock(o, taskId, { durationMin: dm }); }
-              else                   { addBlock(o, taskId, sm);       updateBlock(o, taskId, { durationMin: dm }); }
-            } else if (title) {
-              if (quickAdd.isActual) addActualQuickEvent(o, title, sm, dm);
-              else                   addQuickEvent(o, title, sm, dm);
-            }
+            const o=quickAdd.owner;const sm=quickAdd.startMin;const dm=durationMin||30;
+            if(taskId){if(quickAdd.isActual){addActualBlock(o,taskId,sm);updateActualBlock(o,taskId,{durationMin:dm});}else{addBlock(o,taskId,sm);updateBlock(o,taskId,{durationMin:dm});}}
+            else if(title){if(quickAdd.isActual)addActualQuickEvent(o,title,sm,dm);else addQuickEvent(o,title,sm,dm);}
             setQuickAdd(null);
           }}
-          defaultDuration={quickAdd.durationMin || 30}
+          defaultDuration={quickAdd.durationMin||30}
           onClose={() => setQuickAdd(null)}
         />
       )}
 
-      {/* ── Event edit modal ── */}
+      {/* Event edit modal */}
       {editing && (() => {
-        const block = (daySchedule[editing.owner] || []).find(b => b.taskId === editing.taskId);
+        const block = (daySchedule[editing.owner]||[]).find(b=>b.taskId===editing.taskId);
         const task = tasksByIdRef[editing.taskId];
-        if (!block || !task) return null;
+        if(!block||!task) return null;
         return (
-          <EventModal
-            block={block} task={task}
-            owner={editing.owner}
-            selDate={selDate}
-            onSave={(patch) => { updateBlock(editing.owner, editing.taskId, patch); setEditing(null); }}
-            onDelete={() => { removeBlock(editing.owner, editing.taskId); setEditing(null); }}
-            onClose={() => setEditing(null)}
-          />
+          <EventModal block={block} task={task} owner={editing.owner} selDate={selDate}
+            onSave={(patch) => { updateBlock(editing.owner,editing.taskId,patch);setEditing(null); }}
+            onDelete={() => { removeBlock(editing.owner,editing.taskId);setEditing(null); }}
+            onClose={() => setEditing(null)} />
         );
       })()}
-      </div>}
+
+      {/* Plan New Day modal */}
+      {planDayModal && (
+        <div onClick={() => setPlanDayModal(false)} style={{ position:"fixed", inset:0, zIndex:3000, background:"rgba(15,27,58,0.5)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:12, width:"100%", maxWidth:620, maxHeight:"80vh", overflowY:"auto", boxShadow:"0 24px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ padding:"14px 18px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", position:"sticky", top:0, background:T.cardBg, zIndex:1 }}>
+              <div>
+                <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.14em" }}>PLAN NEW DAY</p>
+                <p style={{ fontSize:13, fontWeight:700, color:T.heading }}>{selDate.toLocaleDateString("en-AU", { weekday:"long", day:"numeric", month:"long" })}</p>
+              </div>
+              <button onClick={() => setPlanDayModal(false)} style={{ width:32, height:32, background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, color:T.muted, cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+            </div>
+            <div style={{ padding:18 }}>
+              <MorningPlanPanel dk={dk} dayNotes={dayNotes||{}} setDayNotes={setDayNotes} />
+              <AIPlanPanel dateKey={dk} onAddBlocks={onAddBlocks} />
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
