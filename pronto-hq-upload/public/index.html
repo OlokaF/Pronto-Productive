@@ -1371,6 +1371,8 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
   const [addingOJ, setAddingOJ] = useStateV(false);
   const [newOJText, setNewOJText] = useStateV("");
   const [newOJOwner, setNewOJOwner] = useStateV("oloka");
+  const [sendingTask, setSendingTask] = useStateV(null); // { id, text, owner, isOJ (boolean) }
+  const [sendDate, setSendDate] = useStateV(dateKey);
 
   // Completion state for today
   const recurringDone = ((dayNotes || {})[dateKey] || {}).recurringDone || {};
@@ -1527,7 +1529,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
                 <div style={{ width:18, height:18, borderRadius:4, border:`1.5px solid ${T.border}`, flexShrink:0 }} />
                 <span style={{ fontSize:12, color:T.ink, flex:1 }}>{t.text}</span>
                 <span style={{ fontSize:9, color: t.owner==="oloka" ? T.oloka : T.vanja, fontWeight:800 }}>{t.owner==="oloka"?"O":"V"}</span>
-                {onAdd && <button onClick={() => { onAdd(dateKey, { text:t.text, owner:t.owner, done:false }); setToBeCompleted(prev => prev.filter(x => x.id !== t.id)); }} title="Send to today" style={{ background:T.navy, border:"none", borderRadius:4, color:"#fff", cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
+                {onAdd && <button onClick={() => { setSendingTask({ id:t.id, text:t.text, owner:t.owner, isOJ:false }); setSendDate(dateKey); }} title="Send to a day" style={{ background:T.navy, border:"none", borderRadius:4, color:"#fff", cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
                 <button onClick={() => setToBeCompleted(prev => prev.filter(x => x.id !== t.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
               </div>
             ))}
@@ -1566,7 +1568,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
                 <OrangeCheckbox done={!!ojDone[oj.id]} onToggle={() => setOJDone(oj.id, !ojDone[oj.id])} />
                 <span style={{ fontSize:12, color: ojDone[oj.id] ? T.muted : T.ink, flex:1, textDecoration: ojDone[oj.id] ? "line-through" : "none" }}>{oj.text}</span>
                 <span style={{ fontSize:9, color: oj.owner==="oloka" ? T.oloka : T.vanja, fontWeight:800 }}>{oj.owner==="oloka"?"O":"V"}</span>
-                {onAdd && <button onClick={() => onAdd(dateKey, { text:oj.text, owner:oj.owner, done:false })} title="Send to today (stays in Ongoing Jobs)" style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
+                {onAdd && <button onClick={() => { setSendingTask({ id:oj.id, text:oj.text, owner:oj.owner, isOJ:true }); setSendDate(dateKey); }} title="Send to a day (stays in Ongoing Jobs)" style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
                 <button onClick={() => setOngoingJobs(prev => prev.filter(x => x.id !== oj.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }} title="Remove permanently">×</button>
               </div>
             ))}
@@ -1586,6 +1588,32 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
         )}
       </div>
 
+      {/* Send to Day modal */}
+      {sendingTask && onAdd && (
+        <div onClick={() => setSendingTask(null)} style={{ position:"fixed", inset:0, zIndex:2000, background:"rgba(15,27,58,0.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:320, boxShadow:"0 20px 50px rgba(0,0,0,0.3)", borderTop:`3px solid ${T.navy}` }}>
+            <div style={{ padding:"14px 18px 10px", borderBottom:`1px solid ${T.border}` }}>
+              <p style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:T.navy, marginBottom:4 }}>SEND TO DAY</p>
+              <p style={{ fontSize:12, color:T.ink, fontWeight:600, lineHeight:1.4 }}>{sendingTask.text}</p>
+              {sendingTask.isOJ && <p style={{ fontSize:10, color:T.muted, marginTop:2 }}>Stays in Ongoing Jobs · adds a copy to the day's task list</p>}
+            </div>
+            <div style={{ padding:"14px 18px" }}>
+              <p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:6 }}>WHICH DAY?</p>
+              <input type="date" value={sendDate} onChange={e => setSendDate(e.target.value)}
+                style={{ width:"100%", padding:"9px 10px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:13, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
+            </div>
+            <div style={{ padding:"0 18px 14px", display:"flex", gap:8 }}>
+              <button onClick={() => setSendingTask(null)} style={{ flex:1, padding:"9px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={() => {
+                if (!sendDate) return;
+                onAdd(sendDate, { text:sendingTask.text, owner:sendingTask.owner, done:false });
+                if (!sendingTask.isOJ) setToBeCompleted(prev => prev.filter(x => x.id !== sendingTask.id));
+                setSendingTask(null);
+              }} style={{ flex:1, padding:"9px", background:T.navy, border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add to Day</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3200,7 +3228,7 @@ function TodayPicker({ onSelect, avatars, onAvatarChange }) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      if (onAvatarChange) onAvatarChange(key, ev.target.result);
+      if (onAvatarChange) compressImage(ev.target.result, 300, 0.85, (compressed) => onAvatarChange(key, compressed));
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -4180,6 +4208,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [spanDragEnd, setSpanDragEnd] = useSh(null);     // dateKey currently hovered
   const [spanModal, setSpanModal] = useSh(null);          // {startDate,endDate,title,color} for new span
   const [newSpan, setNewSpan] = useSh(null);              // for day panel add-span form
+  const [schedMobileTab, setSchedMobileTab] = useSh("timeline"); // "timeline" | "tasks" for mobile
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -4857,9 +4886,23 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         </div>
       )}
 
+      {/* ── Mobile tab toggle ── */}
+      {typeof window !== "undefined" && window.innerWidth < 768 && (
+        <div style={{ display:"flex", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden", marginBottom:12 }}>
+          {[["timeline","📅 Timeline"],["tasks","📋 Tasks"]].map(([k,l]) => (
+            <button key={k} onClick={() => setSchedMobileTab(k)} style={{
+              flex:1, padding:"9px", background: schedMobileTab===k ? T.navy : T.surface,
+              border:"none", color: schedMobileTab===k ? "#fff" : T.muted,
+              fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit",
+            }}>{l}</button>
+          ))}
+        </div>
+      )}
+
       {/* ── Main layout ── */}
       {(() => {
         const showSideBySide = actualMode && activeUser !== "both";
+        const isMobileSched = typeof window !== "undefined" && window.innerWidth < 768;
 
         const makeTimeCol = (owner, nameOverride, accentOverride, blocksArr, actualBlocksArr, useActualMode, isActualCol) => {
           const name   = nameOverride || (owner === "vanja" ? "Vanja" : "Oloka");
@@ -4891,9 +4934,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         const gridCols = (activeUser === "both" || showSideBySide) ? "36px 1fr 1fr" : "36px 1fr";
 
         return (
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:24 }}>
+          <div style={{ display: isMobileSched ? "block" : "grid", gridTemplateColumns:"1fr 2fr", gap:24 }}>
             {/* Left sidebar */}
-            <div>
+            <div style={{ display: isMobileSched && schedMobileTab === "timeline" ? "none" : "block" }}>
               {(activeUser === "both" || activeUser === "vanja") && (
                 <UnscheduledColumn name="Vanja" owner="vanja" accent={T.vanja} accentSoft={T.vanjaSoft}
                   todays={unscheduledForOwner("vanja").todays}
@@ -4914,7 +4957,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
             </div>
 
             {/* Right: time grid */}
-            <div style={{ display:"grid", gridTemplateColumns:gridCols, gap:0, border:`1px solid ${T.border}`, borderRadius:8, background:T.cardBg, alignSelf:"start" }}>
+            <div style={{ display: isMobileSched && schedMobileTab === "tasks" ? "none" : "grid", gridTemplateColumns: isMobileSched ? "28px 1fr" : gridCols, gap:0, border:`1px solid ${T.border}`, borderRadius:8, background:T.cardBg, alignSelf:"start" }}>
               <div style={{ borderRight:`1px solid ${T.border}`, background:T.surface }}>
                 <div style={{ height:32, borderBottom:`1px solid ${T.border}` }}></div>
                 <HourGutter />
@@ -8956,7 +8999,7 @@ function App() {
         {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd}/>}
         {tab === "plan" && <PlanView plan={plan} setPlan={setPlan}/>}
         {tab === "team" && <TeamView staff={staff} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>}
-        {tab === "uniform" && <UniformView uniform={uniform} setUniform={setUniform} />}
+        {tab === "uniform" && <UniformView uniform={uniform} setUniform={setUniform} staff={staff} />}
         {tab === "resources" && <ResourcesView
           ideas={ideas} setIdeas={setIdeas}
           suppliers={suppliers} setSuppliers={setSuppliers}
@@ -9744,6 +9787,23 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
   );
 }
 
+function compressImage(dataUrl, maxSize, quality, callback) {
+  const img = new window.Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    let w = img.width, h = img.height;
+    if (w > maxSize || h > maxSize) {
+      if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+      else { w = Math.round(w * maxSize / h); h = maxSize; }
+    }
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+    callback(canvas.toDataURL("image/jpeg", quality));
+  };
+  img.src = dataUrl;
+}
+
 // ── Settings View ──
 function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels }) {
   const [newCat, setNewCat] = useS("");
@@ -9797,7 +9857,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => onAvatarChange(key, ev.target.result);
+    reader.onload = (ev) => compressImage(ev.target.result, 300, 0.85, (compressed) => onAvatarChange(key, compressed));
     reader.readAsDataURL(file);
     e.target.value = "";
   };
@@ -9973,10 +10033,43 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
 // ─────────────────────────────────────────────────────────────────────────────
 // UniformView — Uniform & Merch inventory tracker
 // ─────────────────────────────────────────────────────────────────────────────
-function UniformView({ uniform, setUniform }) {
+function UniformView({ uniform, setUniform, staff = [] }) {
   const { useState: useU } = React;
   const [expandedSections, setExpandedSections] = useU(() => ({ mens: true, womens: true, merch: true }));
+  const [issueModal, setIssueModal] = useU(null); // { sec, itemKey, itemLabel, size } or null
+  const [issueStaff, setIssueStaff] = useU("");
+  const [issueQty, setIssueQty] = useU(1);
+  const [showLog, setShowLog] = useU(false);
   const toggleSection = (k) => setExpandedSections(prev => ({ ...prev, [k]: !prev[k] }));
+
+  const issueLog = (uniform || {}).log || [];
+
+  const issueItem = () => {
+    if (!issueModal || !issueStaff) return;
+    const { sec, itemKey, size } = issueModal;
+    const k = size || "__qty__";
+    const current = (((uniform || {})[sec] || {})[itemKey] || {})[k] || 0;
+    if (current < issueQty) { alert("Not enough stock"); return; }
+    setUniform(prev => {
+      const next = { ...prev };
+      const s = { ...(next[sec] || {}) };
+      const it = { ...(s[itemKey] || {}) };
+      it[k] = Math.max(0, (it[k] || 0) - issueQty);
+      s[itemKey] = it;
+      next[sec] = s;
+      const entry = {
+        date: new Date().toISOString().slice(0,10),
+        staff: issueStaff,
+        item: issueModal.itemLabel,
+        size: size || null,
+        qty: issueQty,
+        sec,
+      };
+      next.log = [entry, ...(next.log || [])].slice(0, 200);
+      return next;
+    });
+    setIssueModal(null); setIssueStaff(""); setIssueQty(1);
+  };
 
   const getCount = (sec, item, size) => {
     const k = size || "__qty__";
@@ -10039,26 +10132,36 @@ function UniformView({ uniform, setUniform }) {
     </button>
   );
 
-  const Counter = ({ sec, item, size }) => {
+  const Counter = ({ sec, item, size, itemLabel }) => {
     const count = getCount(sec, item, size);
     return (
-      <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"center" }}>
-        <button onClick={() => adjustCount(sec, item, size, -1)} style={{
-          width:22, height:22, borderRadius:4, border:`1px solid ${T.border}`,
-          background:T.surface, color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1,
-          display:"flex", alignItems:"center", justifyContent:"center",
-          opacity: count === 0 ? 0.4 : 1,
-        }}>−</button>
-        <span style={{
-          minWidth:28, textAlign:"center", fontSize:13, fontWeight:700,
-          color: count === 0 ? T.faint : T.ink,
-          fontFamily:"'ProximaNova Black', sans-serif",
-        }}>{count}</span>
-        <button onClick={() => adjustCount(sec, item, size, 1)} style={{
-          width:22, height:22, borderRadius:4, border:`1px solid ${T.border}`,
-          background:T.surface, color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1,
-          display:"flex", alignItems:"center", justifyContent:"center",
-        }}>+</button>
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"center" }}>
+          <button onClick={() => adjustCount(sec, item, size, -1)} style={{
+            width:20, height:20, borderRadius:4, border:`1px solid ${T.border}`,
+            background:T.surface, color:T.muted, cursor:"pointer", fontSize:13, lineHeight:1,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            opacity: count === 0 ? 0.4 : 1,
+          }}>−</button>
+          <span style={{
+            minWidth:26, textAlign:"center", fontSize:13, fontWeight:700,
+            color: count === 0 ? T.faint : count <= 2 ? "#EF4444" : T.ink,
+            fontFamily:"'ProximaNova Black', sans-serif",
+          }}>{count}</span>
+          <button onClick={() => adjustCount(sec, item, size, 1)} style={{
+            width:20, height:20, borderRadius:4, border:`1px solid ${T.border}`,
+            background:T.surface, color:T.muted, cursor:"pointer", fontSize:13, lineHeight:1,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>+</button>
+        </div>
+        {count > 0 && (
+          <button onClick={() => { setIssueModal({ sec, itemKey: item, itemLabel: itemLabel||item, size }); setIssueQty(1); }} style={{
+            fontSize:8, fontWeight:800, color:T.oloka, background:"transparent",
+            border:`1px solid ${T.oloka}`, borderRadius:3, padding:"1px 4px",
+            cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.05em",
+            whiteSpace:"nowrap",
+          }}>Issue</button>
+        )}
       </div>
     );
   };
@@ -10070,7 +10173,7 @@ function UniformView({ uniform, setUniform }) {
       </td>
       {item.sizes.map(sz => (
         <td key={sz} style={{ padding:"8px 6px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`1px solid ${T.border}` }}>
-          <Counter sec={sec} item={item.key} size={sz} />
+          <Counter sec={sec} item={item.key} size={sz} itemLabel={`${item.label} (${sz})`} />
         </td>
       ))}
     </tr>
@@ -10102,7 +10205,7 @@ function UniformView({ uniform, setUniform }) {
                 </td>
                 {item.sizes.map(sz => (
                   <td key={sz} style={{ padding:"8px 6px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`1px solid ${T.border}` }}>
-                    <Counter sec={sectionKey} item={item.key} size={sz} />
+                    <Counter sec={sectionKey} item={item.key} size={sz} itemLabel={`${item.label} (${sz})`} />
                   </td>
                 ))}
                 <td style={{ padding:"8px 10px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`2px solid ${T.navy}` }}>
@@ -10197,6 +10300,74 @@ function UniformView({ uniform, setUniform }) {
         </div>
 
       </div>
+
+      {/* Issue modal */}
+      {issueModal && (
+        <div onClick={() => { setIssueModal(null); setIssueStaff(""); setIssueQty(1); }} style={{ position:"fixed", inset:0, zIndex:3000, background:"rgba(15,27,58,0.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:360, boxShadow:"0 20px 50px rgba(0,0,0,0.3)", borderTop:`3px solid ${T.oloka}` }}>
+            <div style={{ padding:"14px 18px 10px", borderBottom:`1px solid ${T.border}` }}>
+              <p style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:T.oloka, marginBottom:4 }}>ISSUE UNIFORM ITEM</p>
+              <p style={{ fontSize:13, color:T.ink, fontWeight:700 }}>{issueModal.itemLabel}</p>
+              <p style={{ fontSize:11, color:T.muted }}>Stock available: {getCount(issueModal.sec, issueModal.itemKey, issueModal.size)}</p>
+            </div>
+            <div style={{ padding:"14px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+              <div>
+                <p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:5 }}>STAFF MEMBER</p>
+                <select value={issueStaff} onChange={e => setIssueStaff(e.target.value)}
+                  style={{ width:"100%", padding:"9px 10px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:13, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }}>
+                  <option value="">Select staff member…</option>
+                  {staff.map(s => <option key={s.id || s.name} value={s.name}>{s.name}{s.role ? ` — ${s.role}` : ""}</option>)}
+                </select>
+              </div>
+              <div>
+                <p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:5 }}>QUANTITY</p>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <button onClick={() => setIssueQty(q => Math.max(1, q-1))} style={{ width:32, height:32, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:18, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                  <span style={{ fontSize:18, fontWeight:800, color:T.ink, minWidth:40, textAlign:"center" }}>{issueQty}</span>
+                  <button onClick={() => setIssueQty(q => Math.min(getCount(issueModal.sec, issueModal.itemKey, issueModal.size), q+1))} style={{ width:32, height:32, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:18, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:"0 18px 14px", display:"flex", gap:8 }}>
+              <button onClick={() => { setIssueModal(null); setIssueStaff(""); setIssueQty(1); }} style={{ flex:1, padding:"9px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={issueItem} disabled={!issueStaff} style={{ flex:2, padding:"9px", background: issueStaff ? T.oloka : T.faint, border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:800, cursor: issueStaff ? "pointer" : "default", fontFamily:"inherit" }}>Confirm Issue</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Issuance Log */}
+      {issueLog.length > 0 && (
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", marginTop:20 }}>
+          <button onClick={() => setShowLog(v => !v)} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 18px", background:T.surface, border:"none", cursor:"pointer", fontFamily:"inherit" }}>
+            <span style={{ fontSize:11, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>📋 ISSUANCE LOG · {issueLog.length} entries</span>
+            <span style={{ fontSize:11, color:T.muted }}>{showLog ? "▲" : "▼"}</span>
+          </button>
+          {showLog && (
+            <div style={{ overflowX:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                <thead>
+                  <tr style={{ background:T.surface }}>
+                    {["Date","Staff","Item","Size","Qty"].map(h => (
+                      <th key={h} style={{ padding:"8px 14px", textAlign:"left", fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.08em", borderBottom:`1px solid ${T.border}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {issueLog.map((e, i) => (
+                    <tr key={i} style={{ background: i%2===0 ? T.cardBg : T.surface }}>
+                      <td style={{ padding:"8px 14px", fontSize:12, color:T.muted, borderBottom:`1px solid ${T.border}` }}>{e.date}</td>
+                      <td style={{ padding:"8px 14px", fontSize:12, fontWeight:700, color:T.ink, borderBottom:`1px solid ${T.border}` }}>{e.staff}</td>
+                      <td style={{ padding:"8px 14px", fontSize:12, color:T.ink, borderBottom:`1px solid ${T.border}` }}>{e.item}</td>
+                      <td style={{ padding:"8px 14px", fontSize:12, color:T.muted, borderBottom:`1px solid ${T.border}` }}>{e.size || "—"}</td>
+                      <td style={{ padding:"8px 14px", fontSize:12, fontWeight:700, color:T.oloka, borderBottom:`1px solid ${T.border}` }}>{e.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
