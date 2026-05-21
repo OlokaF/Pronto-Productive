@@ -1182,7 +1182,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
         }
         return;
       }
-      if (Date.now() - localWriteAt.current < 3000) return;
+      if (Date.now() - localWriteAt.current < 500) return;
       const { _meta, ...incoming } = data;
       applyState(incoming);
       setLastSync(new Date());
@@ -1231,7 +1231,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
             .set({ ...s, _meta: { updatedAt: Date.now() } })
             .then(() => setLastSync(new Date()))
             .catch(err => console.error("Firebase write:", err));
-        }, 1500);
+        }, 300);
       }
     };
     return () => clearTimeout(writeTimerRef.current);
@@ -1361,7 +1361,7 @@ Object.assign(window, { SyncButton, PresenceAvatars });
 const { useState: useStateV, useRef: useRefV, useEffect: useEffectV, useMemo: useMemoV } = React;
 
 // ── ONGOING SECTION: recurring tasks, to-be-completed, ongoing jobs ──
-function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, dayNotes, setDayNotes, dateKey, staff }) {
+function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, dayNotes, setDayNotes, dateKey, staff, content }) {
   const [addingRecurring, setAddingRecurring] = useStateV(false);
   const [newRecurText, setNewRecurText] = useStateV("");
   const [newRecurOwner, setNewRecurOwner] = useStateV("oloka");
@@ -1383,6 +1383,18 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
     const day = prev[dateKey] || {};
     return { ...prev, [dateKey]: { ...day, ojDone: { ...(day.ojDone||{}), [id]: val } } };
   });
+
+  // Social Post entry — pulls from content calendar, editable override stored in dayNotes
+  const contentEntries = (content || {})[dateKey] || [];
+  const firstContent = contentEntries[0];
+  const contentCalLabel = firstContent ? (firstContent.title || firstContent.text || firstContent.caption || Object.values(firstContent).find(v => typeof v === "string" && v.length > 2) || "") : "";
+  const socialPostOverride = ((dayNotes || {})[dateKey] || {}).socialPostText;
+  const socialPostText = socialPostOverride !== undefined ? socialPostOverride : contentCalLabel;
+  const setSocialPostText = (val) => setDayNotes(prev => {
+    const day = prev[dateKey] || {};
+    return { ...prev, [dateKey]: { ...day, socialPostText: val } };
+  });
+  const socialPostDone = !!recurringDone["__socialpost__"];
 
   // Staff birthdays + start dates for today (annual, MM-DD match)
   const todayMMDD = dateKey ? dateKey.slice(5) : "";
@@ -1440,6 +1452,29 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
           <button onClick={() => setAddingRecurring(true)} style={{ padding:"3px 10px", background:"transparent", border:`1px solid ${ORANGE}`, borderRadius:5, color:ORANGE, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
         </div>
         <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:6 }}>
+          {/* Social Post — links to content calendar */}
+          <div style={{ marginBottom:6 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:3 }}>
+              <OrangeCheckbox done={socialPostDone} onToggle={() => setRecDone("__socialpost__", !socialPostDone)} />
+              <span style={{ fontSize:11, fontWeight:700, color:ORANGE, flexShrink:0 }}>Social Post —</span>
+              <input
+                value={socialPostText}
+                onChange={e => setSocialPostText(e.target.value)}
+                placeholder={contentCalLabel || "Enter post content…"}
+                style={{
+                  flex:1, padding:"3px 7px",
+                  border:`1px solid ${socialPostDone ? T.border : ORANGE+"55"}`,
+                  borderRadius:4, fontSize:11, color:T.ink, background:T.bg,
+                  outline:"none", fontFamily:"inherit",
+                  textDecoration: socialPostDone ? "line-through" : "none",
+                  opacity: socialPostDone ? 0.6 : 1,
+                }}
+              />
+            </div>
+            {contentCalLabel && socialPostOverride === undefined && (
+              <div style={{ fontSize:9, color:T.faint, marginLeft:28 }}>📅 From content calendar · click to edit</div>
+            )}
+          </div>
           {/* Staff events for today */}
           {staffEvents.map(ev => (
             <div key={ev.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1554,24 +1589,29 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
 }
 
 // ── DAY VIEW: split columns Vanja / Oloka for selected date ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted }) {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content }) {
   const [filter, setFilter] = useStateV("All");
   const [visibleCols, setVisibleCols] = useStateV(["vanja","oloka","ongoing"]);
   const toggleCol = (c) => setVisibleCols(prev => prev.includes(c) ? (prev.length > 1 ? prev.filter(x=>x!==c) : prev) : [...prev, c]);
   const dateKey = isoDate(selDate);
   const dayTasks = tasksByDate[dateKey] || [];
+  const isHiddenRecurring = (t) =>
+    t.recurring === true &&
+    /^social (post|stories)/i.test(t.text);
+
   const isWeekend = selDate.getDay() === 0 || selDate.getDay() === 6;
 
   const events = dayTasks.filter(t => t.category === "Event" || t.owner === "event");
   const realTasks = dayTasks.filter(t => !(t.category === "Event" || t.owner === "event"));
 
   const byOwner = {
-    vanja: realTasks.filter(t => t.owner === "vanja"),
-    oloka: realTasks.filter(t => t.owner === "oloka"),
+    vanja: realTasks.filter(t => t.owner === "vanja" && !isHiddenRecurring(t)),
+    oloka: realTasks.filter(t => t.owner === "oloka" && !isHiddenRecurring(t)),
   };
 
-  const total = realTasks.length;
-  const done = realTasks.filter(t => t.done).length;
+  const visibleTasks = realTasks.filter(t => !isHiddenRecurring(t));
+  const total = visibleTasks.length;
+  const done = visibleTasks.filter(t => t.done).length;
   const urgent = realTasks.filter(t => t.priority === "Urgent" && !t.done).length;
 
   const fBtn = (v, label, dot) => (
@@ -1686,6 +1726,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
           dayNotes={dayNotes} setDayNotes={setDayNotes}
           dateKey={dateKey} staff={staff || []}
+          content={content}
         />
       )}
     </div>
@@ -8019,6 +8060,7 @@ const DEFAULT_TABS = [
   { key:"video",     label:"VIDEO SCHED", on:true },
   { key:"plan",      label:"PLAN 2026",   on:true },
   { key:"team",      label:"TEAM",        on:true },
+  { key:"uniform",   label:"UNIFORM",     on:true },
   { key:"resources", label:"RESOURCES",   on:true },
   { key:"activity",  label:"ACTIVITY",    on:true },
   // settings is accessible via ⚙ gear icon in header — not in tab bar by default
@@ -8107,6 +8149,8 @@ function App() {
   ]));
   // To Be Completed — holding area for unscheduled tasks
   const [toBeCompleted, setToBeCompleted] = useS(() => loadOr("toBeCompleted", () => []));
+  // Uniform & Merch inventory — { sectionKey: { itemKey: { sizeKey: count } } }
+  const [uniform, setUniform] = useS(() => loadOr("uniform", () => ({})));
   // Multi-day schedule spans — [{id, title, startDate, endDate, color}]
   const [schedSpans, setSchedSpans] = useS(() => loadOr("schedSpans", () => []));
   // Dismissed notifications: { [key]: true }
@@ -8146,6 +8190,7 @@ function App() {
     avatars, branding, categories, postApprovals, videoEvents, visibleTabs,
     contentLabels, videoLabels,
     recurringTasks, ongoingJobs, toBeCompleted,
+    uniform,
   });
 
   // Sync chatAs to todayUser when user logs in via TodayPicker
@@ -8163,7 +8208,7 @@ function App() {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, avatars, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, avatars, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
 
@@ -8245,6 +8290,7 @@ function App() {
     if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
     if (s.ongoingJobs)    setOngoingJobs(s.ongoingJobs);
     if (s.toBeCompleted)  setToBeCompleted(s.toBeCompleted);
+    if (s.uniform) setUniform(s.uniform);
   };
 
   // ── Export schedule as .ics (for Samsung Calendar / Outlook import) ──
@@ -8706,6 +8752,7 @@ function App() {
             recurringTasks={recurringTasks} setRecurringTasks={setRecurringTasks}
             ongoingJobs={ongoingJobs} setOngoingJobs={setOngoingJobs}
             toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
+            content={content}
           />
         )}
         {tab === "tasks" && view === "week" && (
@@ -8722,6 +8769,7 @@ function App() {
         {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd}/>}
         {tab === "plan" && <PlanView plan={plan} setPlan={setPlan}/>}
         {tab === "team" && <TeamView staff={staff} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>}
+        {tab === "uniform" && <UniformView uniform={uniform} setUniform={setUniform} />}
         {tab === "resources" && <ResourcesView
           ideas={ideas} setIdeas={setIdeas}
           suppliers={suppliers} setSuppliers={setSuppliers}
@@ -9732,6 +9780,237 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UniformView — Uniform & Merch inventory tracker
+// ─────────────────────────────────────────────────────────────────────────────
+function UniformView({ uniform, setUniform }) {
+  const { useState: useU } = React;
+  const [expandedSections, setExpandedSections] = useU(() => ({ mens: true, womens: true, merch: true }));
+  const toggleSection = (k) => setExpandedSections(prev => ({ ...prev, [k]: !prev[k] }));
+
+  const getCount = (sec, item, size) => {
+    const k = size || "__qty__";
+    return (((uniform || {})[sec] || {})[item] || {})[k] || 0;
+  };
+
+  const adjustCount = (sec, item, size, delta) => {
+    const k = size || "__qty__";
+    setUniform(prev => {
+      const next = { ...prev };
+      const s = { ...(next[sec] || {}) };
+      const it = { ...(s[item] || {}) };
+      it[k] = Math.max(0, (it[k] || 0) + delta);
+      s[item] = it;
+      next[sec] = s;
+      return next;
+    });
+  };
+
+  const MENS_ITEMS = [
+    { key:"polo_m",        label:"Polos",                       sizes:["S","M","L","XL","2XL","3XL"] },
+    { key:"hivis_m",       label:"Hi-vis t-shirt",              sizes:["S","M","L","XL","2XL"] },
+    { key:"ls_orange_m",   label:"Long sleeve orange hi-vis",   sizes:["S","M","L","XL","2XL","3XL"] },
+    { key:"jacket_m",      label:"Jackets",                     sizes:["S","M","L","XL","2XL","3XL"] },
+    { key:"swanndri",      label:"Swanndri jerseys (Sales)",     sizes:["S","M","L","XL","2XL","3XL"] },
+  ];
+
+  const WOMENS_ITEMS = [
+    { key:"polo_w",        label:"Polos",                           sizes:["8","10","12","14","16","18","20"] },
+    { key:"ss_blue",       label:"Short sleeve dress shirts (Blue)",sizes:["8","10","12","14","16","18","20"] },
+    { key:"ss_black",      label:"Short sleeve dress shirts (Black)",sizes:["8","10","12","14","16","18","20"] },
+    { key:"ls_blue",       label:"Long sleeve dress shirts (Blue)", sizes:["8","10","12","14","16","18","20"] },
+    { key:"ls_black",      label:"Long sleeve dress shirts (Black)",sizes:["8","10","12","14","16","18","20"] },
+    { key:"jacket_w",      label:"Jackets",                        sizes:["8","10","12","14","16","18","20"] },
+    { key:"merino_w",      label:"Merinos",                        sizes:["8","10","12","14","16","18","20"] },
+  ];
+
+  const MERCH_ITEMS = [
+    { key:"beanies",    label:"Beanies" },
+    { key:"water",      label:"Water bottles" },
+    { key:"bucket",     label:"Bucket hats" },
+    { key:"lollies",    label:"Lollies" },
+    { key:"sunnies",    label:"Sunglasses" },
+    { key:"pens",       label:"Pens" },
+    { key:"caps",       label:"Caps" },
+    { key:"notebooks",  label:"Notebooks" },
+    { key:"catalogues", label:"Catalogues" },
+  ];
+
+  const SectionHeader = ({ sectionKey, title, color, icon }) => (
+    <button onClick={() => toggleSection(sectionKey)} style={{
+      width:"100%", display:"flex", alignItems:"center", gap:10,
+      padding:"14px 18px", background:T.surface, border:"none",
+      borderBottom:`1px solid ${T.border}`, cursor:"pointer", textAlign:"left",
+      borderLeft:`4px solid ${color}`,
+    }}>
+      <span style={{ fontSize:18 }}>{icon}</span>
+      <span style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:15, letterSpacing:"-0.01em", color:T.heading, flex:1 }}>{title}</span>
+      <span style={{ fontSize:11, color:T.muted }}>{expandedSections[sectionKey] ? "▲" : "▼"}</span>
+    </button>
+  );
+
+  const Counter = ({ sec, item, size }) => {
+    const count = getCount(sec, item, size);
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"center" }}>
+        <button onClick={() => adjustCount(sec, item, size, -1)} style={{
+          width:22, height:22, borderRadius:4, border:`1px solid ${T.border}`,
+          background:T.surface, color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          opacity: count === 0 ? 0.4 : 1,
+        }}>−</button>
+        <span style={{
+          minWidth:28, textAlign:"center", fontSize:13, fontWeight:700,
+          color: count === 0 ? T.faint : T.ink,
+          fontFamily:"'ProximaNova Black', sans-serif",
+        }}>{count}</span>
+        <button onClick={() => adjustCount(sec, item, size, 1)} style={{
+          width:22, height:22, borderRadius:4, border:`1px solid ${T.border}`,
+          background:T.surface, color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1,
+          display:"flex", alignItems:"center", justifyContent:"center",
+        }}>+</button>
+      </div>
+    );
+  };
+
+  const SizedItemRow = ({ sec, item }) => (
+    <tr>
+      <td style={{ padding:"10px 16px", fontSize:12, fontWeight:600, color:T.ink, borderBottom:`1px solid ${T.border}`, minWidth:200 }}>
+        {item.label}
+      </td>
+      {item.sizes.map(sz => (
+        <td key={sz} style={{ padding:"8px 6px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`1px solid ${T.border}` }}>
+          <Counter sec={sec} item={item.key} size={sz} />
+        </td>
+      ))}
+    </tr>
+  );
+
+  const SizedTable = ({ sectionKey, items }) => {
+    const sizes = items[0]?.sizes || [];
+    const totalByItem = items.map(it => ({
+      label: it.label,
+      total: it.sizes.reduce((s, sz) => s + getCount(sectionKey, it.key, sz), 0),
+    }));
+    return (
+      <div style={{ overflowX:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+          <thead>
+            <tr style={{ background:T.surface }}>
+              <th style={{ padding:"8px 16px", textAlign:"left", fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.muted, borderBottom:`2px solid ${T.border}` }}>ITEM</th>
+              {sizes.map(sz => (
+                <th key={sz} style={{ padding:"8px 6px", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.06em", color:T.muted, borderBottom:`2px solid ${T.border}`, borderLeft:`1px solid ${T.border}`, minWidth:70 }}>{sz}</th>
+              ))}
+              <th style={{ padding:"8px 10px", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.06em", color:T.navy, borderBottom:`2px solid ${T.border}`, borderLeft:`2px solid ${T.navy}`, minWidth:60 }}>TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr key={item.key} style={{ background: idx % 2 === 0 ? T.cardBg : T.surface }}>
+                <td style={{ padding:"10px 16px", fontSize:12, fontWeight:600, color:T.ink, borderBottom:`1px solid ${T.border}` }}>
+                  {item.label}
+                </td>
+                {item.sizes.map(sz => (
+                  <td key={sz} style={{ padding:"8px 6px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`1px solid ${T.border}` }}>
+                    <Counter sec={sectionKey} item={item.key} size={sz} />
+                  </td>
+                ))}
+                <td style={{ padding:"8px 10px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`2px solid ${T.navy}` }}>
+                  <span style={{ fontSize:14, fontWeight:800, color: totalByItem[idx].total > 0 ? T.navy : T.faint, fontFamily:"'ProximaNova Black', sans-serif" }}>
+                    {totalByItem[idx].total}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const grandTotalMens   = MENS_ITEMS.reduce((s, it) => s + it.sizes.reduce((ss, sz) => ss + getCount("mens", it.key, sz), 0), 0);
+  const grandTotalWomens = WOMENS_ITEMS.reduce((s, it) => s + it.sizes.reduce((ss, sz) => ss + getCount("womens", it.key, sz), 0), 0);
+  const grandTotalMerch  = MERCH_ITEMS.reduce((s, it) => s + getCount("merch", it.key, null), 0);
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:24, flexWrap:"wrap", gap:16 }}>
+        <div>
+          <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:6 }}>INVENTORY</p>
+          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:"-0.025em", lineHeight:0.95, color:T.heading, marginBottom:6 }}>UNIFORM<br/>& MERCH</h1>
+          <p style={{ color:T.muted, fontSize:13 }}>Track stock counts for uniform and branded merchandise</p>
+        </div>
+        <div style={{ display:"flex", gap:12 }}>
+          {[
+            { label:"MEN'S TOTAL",   val:grandTotalMens,   color:T.navy },
+            { label:"WOMEN'S TOTAL", val:grandTotalWomens, color:T.vanja },
+            { label:"MERCH TOTAL",   val:grandTotalMerch,  color:T.gold },
+          ].map(s => (
+            <div key={s.label} style={{ padding:"10px 16px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, textAlign:"center", minWidth:90 }}>
+              <div style={{ fontSize:26, fontWeight:900, color:s.color, fontFamily:"'ProximaNova Black', sans-serif", lineHeight:1 }}>{s.val}</div>
+              <div style={{ fontSize:8.5, color:T.muted, fontWeight:800, letterSpacing:"0.1em", marginTop:3 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+
+        {/* Men's Uniform */}
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden", background:T.cardBg }}>
+          <SectionHeader sectionKey="mens" title="Men's Uniform" color={T.navy} icon="👔" />
+          {expandedSections.mens && <SizedTable sectionKey="mens" items={MENS_ITEMS} />}
+        </div>
+
+        {/* Women's Uniform */}
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden", background:T.cardBg }}>
+          <SectionHeader sectionKey="womens" title="Women's Uniform" color={T.vanja} icon="👗" />
+          {expandedSections.womens && <SizedTable sectionKey="womens" items={WOMENS_ITEMS} />}
+        </div>
+
+        {/* Merch */}
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden", background:T.cardBg }}>
+          <SectionHeader sectionKey="merch" title="Merch" color={T.gold} icon="🎁" />
+          {expandedSections.merch && (
+            <div style={{ padding:"16px 18px" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:12 }}>
+                {MERCH_ITEMS.map(it => {
+                  const count = getCount("merch", it.key, null);
+                  return (
+                    <div key={it.key} style={{
+                      padding:"14px 16px", background:T.surface, borderRadius:8,
+                      border:`1px solid ${count > 0 ? T.gold+"44" : T.border}`,
+                      display:"flex", flexDirection:"column", gap:8, alignItems:"center",
+                    }}>
+                      <span style={{ fontSize:11, fontWeight:700, color:T.ink, textAlign:"center" }}>{it.label}</span>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <button onClick={() => adjustCount("merch", it.key, null, -1)} style={{
+                          width:28, height:28, borderRadius:6, border:`1px solid ${T.border}`,
+                          background:T.cardBg, color:T.muted, cursor:"pointer", fontSize:18, lineHeight:1,
+                          display:"flex", alignItems:"center", justifyContent:"center",
+                          opacity: count === 0 ? 0.4 : 1,
+                        }}>−</button>
+                        <span style={{ minWidth:36, textAlign:"center", fontSize:20, fontWeight:900, color: count === 0 ? T.faint : T.navy, fontFamily:"'ProximaNova Black', sans-serif" }}>{count}</span>
+                        <button onClick={() => adjustCount("merch", it.key, null, 1)} style={{
+                          width:28, height:28, borderRadius:6, border:`1px solid ${T.border}`,
+                          background:T.cardBg, color:T.muted, cursor:"pointer", fontSize:18, lineHeight:1,
+                          display:"flex", alignItems:"center", justifyContent:"center",
+                        }}>+</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
     </div>
   );
 }
