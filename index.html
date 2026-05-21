@@ -10165,55 +10165,49 @@ function UniformView({ uniform, setUniform, staff = [] }) {
     );
   };
 
-  const SizedItemRow = ({ sec, item }) => (
-    <tr>
-      <td style={{ padding:"10px 16px", fontSize:12, fontWeight:600, color:T.ink, borderBottom:`1px solid ${T.border}`, minWidth:200 }}>
-        {item.label}
-      </td>
-      {item.sizes.map(sz => (
-        <td key={sz} style={{ padding:"8px 6px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`1px solid ${T.border}` }}>
-          <Counter sec={sec} item={item.key} size={sz} itemLabel={`${item.label} (${sz})`} />
-        </td>
-      ))}
-    </tr>
-  );
-
   const SizedTable = ({ sectionKey, items }) => {
-    const sizes = items[0]?.sizes || [];
-    const totalByItem = items.map(it => ({
-      label: it.label,
-      total: it.sizes.reduce((s, sz) => s + getCount(sectionKey, it.key, sz), 0),
-    }));
+    // Build union of all sizes across all items so every row has the same columns
+    const allSizes = [];
+    items.forEach(it => { it.sizes.forEach(sz => { if (!allSizes.includes(sz)) allSizes.push(sz); }); });
     return (
       <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
           <thead>
             <tr style={{ background:T.surface }}>
               <th style={{ padding:"8px 16px", textAlign:"left", fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.muted, borderBottom:`2px solid ${T.border}` }}>ITEM</th>
-              {sizes.map(sz => (
+              {allSizes.map(sz => (
                 <th key={sz} style={{ padding:"8px 6px", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.06em", color:T.muted, borderBottom:`2px solid ${T.border}`, borderLeft:`1px solid ${T.border}`, minWidth:70 }}>{sz}</th>
               ))}
               <th style={{ padding:"8px 10px", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.06em", color:T.navy, borderBottom:`2px solid ${T.border}`, borderLeft:`2px solid ${T.navy}`, minWidth:60 }}>TOTAL</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((item, idx) => (
-              <tr key={item.key} style={{ background: idx % 2 === 0 ? T.cardBg : T.surface }}>
-                <td style={{ padding:"10px 16px", fontSize:12, fontWeight:600, color:T.ink, borderBottom:`1px solid ${T.border}` }}>
-                  {item.label}
-                </td>
-                {item.sizes.map(sz => (
-                  <td key={sz} style={{ padding:"8px 6px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`1px solid ${T.border}` }}>
-                    <Counter sec={sectionKey} item={item.key} size={sz} itemLabel={`${item.label} (${sz})`} />
+            {items.map((item, idx) => {
+              const itemTotal = item.sizes.reduce((s, sz) => s + getCount(sectionKey, item.key, sz), 0);
+              return (
+                <tr key={item.key} style={{ background: idx % 2 === 0 ? T.cardBg : T.surface }}>
+                  <td style={{ padding:"10px 16px", fontSize:12, fontWeight:600, color:T.ink, borderBottom:`1px solid ${T.border}` }}>
+                    {item.label}
                   </td>
-                ))}
-                <td style={{ padding:"8px 10px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`2px solid ${T.navy}` }}>
-                  <span style={{ fontSize:14, fontWeight:800, color: totalByItem[idx].total > 0 ? T.navy : T.faint, fontFamily:"'ProximaNova Black', sans-serif" }}>
-                    {totalByItem[idx].total}
-                  </span>
-                </td>
-              </tr>
-            ))}
+                  {allSizes.map(sz => {
+                    const hasSize = item.sizes.includes(sz);
+                    return (
+                      <td key={sz} style={{ padding:"8px 6px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`1px solid ${T.border}`, background: !hasSize ? T.faint+"22" : undefined }}>
+                        {hasSize
+                          ? <Counter sec={sectionKey} item={item.key} size={sz} itemLabel={`${item.label} (${sz})`} />
+                          : <span style={{ color:T.faint, fontSize:11 }}>—</span>
+                        }
+                      </td>
+                    );
+                  })}
+                  <td style={{ padding:"8px 10px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`2px solid ${T.navy}` }}>
+                    <span style={{ fontSize:14, fontWeight:800, color: itemTotal > 0 ? T.navy : T.faint, fontFamily:"'ProximaNova Black', sans-serif" }}>
+                      {itemTotal}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -10225,9 +10219,27 @@ function UniformView({ uniform, setUniform, staff = [] }) {
   const grandTotalMerch  = MERCH_ITEMS.reduce((s, it) => s + getCount("merch", it.key, null), 0);
 
   const issueLog = (uniform || {}).log || [];
-  const filteredLog = logFilter.trim()
-    ? issueLog.filter(e => e.staff && e.staff.toLowerCase().includes(logFilter.toLowerCase()))
-    : issueLog;
+
+  // Track original indices so delete works correctly when filtered
+  const filteredLogWithIdx = logFilter.trim()
+    ? issueLog.map((e, i) => ({ e, i })).filter(({ e }) => e.staff && e.staff.toLowerCase().includes(logFilter.toLowerCase()))
+    : issueLog.map((e, i) => ({ e, i }));
+
+  const deleteLogEntry = (origIdx) => {
+    setUniform(prev => {
+      const next = { ...prev };
+      const log = [...(next.log || [])];
+      log.splice(origIdx, 1);
+      next.log = log;
+      return next;
+    });
+  };
+
+  const clearLog = () => {
+    if (!window.confirm("Clear the entire issuance log? This cannot be undone.")) return;
+    setUniform(prev => ({ ...prev, log: [] }));
+    setLogFilter("");
+  };
 
   // Group log by staff member for summary
   const staffSummary = {};
@@ -10371,7 +10383,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                 </div>
               )}
 
-              {/* Filter bar */}
+              {/* Filter bar + Clear All */}
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <input
                   value={logFilter}
@@ -10380,9 +10392,10 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                   style={{ flex:1, padding:"9px 12px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:12, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }}
                 />
                 {logFilter && (
-                  <button onClick={() => setLogFilter("")} style={{ padding:"8px 12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>Clear</button>
+                  <button onClick={() => setLogFilter("")} style={{ padding:"8px 12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>Clear filter</button>
                 )}
-                <span style={{ fontSize:11, color:T.muted, whiteSpace:"nowrap" }}>{filteredLog.length} record{filteredLog.length !== 1 ? "s" : ""}</span>
+                <span style={{ fontSize:11, color:T.muted, whiteSpace:"nowrap" }}>{filteredLogWithIdx.length} record{filteredLogWithIdx.length !== 1 ? "s" : ""}</span>
+                <button onClick={clearLog} style={{ padding:"8px 14px", background:"transparent", border:`1px solid #EF4444`, borderRadius:6, fontSize:11, fontWeight:700, color:"#EF4444", cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>🗑 Clear All</button>
               </div>
 
               {/* Full log table */}
@@ -10391,23 +10404,31 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                   <table style={{ width:"100%", borderCollapse:"collapse" }}>
                     <thead>
                       <tr style={{ background:T.surface }}>
-                        {["Date","Staff Member","Item","Size","Qty"].map(h => (
+                        {["Date","Staff Member","Item","Size","Qty",""].map(h => (
                           <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", borderBottom:`2px solid ${T.border}`, whiteSpace:"nowrap" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredLog.length === 0 ? (
+                      {filteredLogWithIdx.length === 0 ? (
                         <tr>
-                          <td colSpan={5} style={{ padding:"24px", textAlign:"center", fontSize:12, color:T.muted }}>No records match "{logFilter}"</td>
+                          <td colSpan={6} style={{ padding:"24px", textAlign:"center", fontSize:12, color:T.muted }}>No records match "{logFilter}"</td>
                         </tr>
-                      ) : filteredLog.map((e, i) => (
-                        <tr key={i} style={{ background: i%2===0 ? T.cardBg : T.surface }}>
+                      ) : filteredLogWithIdx.map(({ e, i }, rowIdx) => (
+                        <tr key={i} style={{ background: rowIdx%2===0 ? T.cardBg : T.surface }}>
                           <td style={{ padding:"10px 16px", fontSize:12, color:T.muted, borderBottom:`1px solid ${T.border}`, whiteSpace:"nowrap" }}>{e.date}</td>
                           <td style={{ padding:"10px 16px", fontSize:13, fontWeight:800, color:T.ink, borderBottom:`1px solid ${T.border}` }}>{e.staff}</td>
                           <td style={{ padding:"10px 16px", fontSize:12, color:T.ink, borderBottom:`1px solid ${T.border}` }}>{e.item}</td>
                           <td style={{ padding:"10px 16px", fontSize:12, color:T.muted, borderBottom:`1px solid ${T.border}` }}>{e.size || "—"}</td>
                           <td style={{ padding:"10px 16px", fontSize:13, fontWeight:900, color:T.oloka, borderBottom:`1px solid ${T.border}`, fontFamily:"'ProximaNova Black', sans-serif" }}>{e.qty}</td>
+                          <td style={{ padding:"6px 10px", textAlign:"center", borderBottom:`1px solid ${T.border}` }}>
+                            <button onClick={() => deleteLogEntry(i)} title="Remove this entry" style={{
+                              width:24, height:24, borderRadius:4, border:`1px solid #EF444444`,
+                              background:"transparent", color:"#EF4444", cursor:"pointer",
+                              fontSize:13, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center",
+                              fontFamily:"inherit",
+                            }}>×</button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
