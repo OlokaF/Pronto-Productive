@@ -5100,6 +5100,31 @@ function HourGutter() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// assignLanes — side-by-side columns for overlapping blocks
+// ─────────────────────────────────────────────────────────────────────────────
+function assignLanes(blocks) {
+  if (!blocks || blocks.length === 0) return [];
+  const withIdx = blocks.map((b, i) => ({ b, i })).sort((a, z) => a.b.startMin - z.b.startMin);
+  const laneEnds = [];
+  const laneOf = new Array(blocks.length);
+  for (const { b, i } of withIdx) {
+    const bEnd = b.startMin + (b.durationMin || 30);
+    let lane = laneEnds.findIndex(end => end <= b.startMin);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(bEnd); } else { laneEnds[lane] = bEnd; }
+    laneOf[i] = lane;
+  }
+  return blocks.map((b, i) => {
+    const bEnd = b.startMin + (b.durationMin || 30);
+    let maxLane = 0;
+    for (let j = 0; j < blocks.length; j++) {
+      if (blocks[j].startMin < bEnd && blocks[j].startMin + (blocks[j].durationMin || 30) > b.startMin)
+        maxLane = Math.max(maxLane, laneOf[j]);
+    }
+    return { lane: laneOf[i], totalLanes: maxLane + 1 };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TimeColumn — handles planned + actual blocks, task + break drops
 // ─────────────────────────────────────────────────────────────────────────────
 function TimeColumn({
@@ -5118,6 +5143,8 @@ function TimeColumn({
   const [createEndMin, setCreateEndMin] = useSh(null); // current drag end position
   const tasks = (tasksByDate[dk] || []);
   const taskById = (id) => tasks.find(t => t.id === id);
+  const blockLanes  = React.useMemo(() => assignLanes(blocks || []),          [blocks]);
+  const actualLanes = React.useMemo(() => assignLanes(actualBlocks || []),    [actualBlocks]);
 
   const colHeight = (SCHED_END - SCHED_START) * 60 * PX_PER_MIN;
 
@@ -5264,18 +5291,20 @@ function TimeColumn({
         )}
 
         {/* ── Planned blocks ── */}
-        {blocks.map(b => {
+        {blocks.map((b, idx) => {
           const uid = blockUid(b);
           const task = b.isBreak ? null : b.isQuickEvent ? null : taskById(b.taskId);
           if (!b.isBreak && !b.isQuickEvent && !task) return null;
           const startOff = b.startMin - SCHED_START*60;
           const top = minToY(startOff);
           const height = Math.max(20, b.durationMin * PX_PER_MIN);
+          const li = blockLanes[idx] || { lane: 0, totalLanes: 1 };
           return (
             <ScheduleBlock key={uid}
               task={task} block={b} top={top} height={height} accent={accent}
               owner={owner}
               isGhost={actualMode}
+              lane={li.lane} totalLanes={li.totalLanes}
               onResize={(dur) => onUpdate(owner, b.taskId, { durationMin: dur }, b.breakId)}
               onMoveStart={(min) => onUpdate(owner, b.taskId, { startMin: min }, b.breakId)}
               onRemove={() => onRemove(owner, b.taskId, b.breakId)}
@@ -5287,18 +5316,20 @@ function TimeColumn({
         })}
 
         {/* ── Actual blocks (overlaid in actualMode, or always shown in actual column) ── */}
-        {(actualMode || isActualColumn) && (actualBlocks || []).map(b => {
+        {(actualMode || isActualColumn) && (actualBlocks || []).map((b, idx) => {
           const uid = blockUid(b) + "_actual";
           const task = b.isBreak ? null : b.isQuickEvent ? null : taskById(b.taskId);
           if (!b.isBreak && !b.isQuickEvent && !task) return null;
           const startOff = b.startMin - SCHED_START*60;
           const top = minToY(startOff);
           const height = Math.max(20, b.durationMin * PX_PER_MIN);
+          const li = actualLanes[idx] || { lane: 0, totalLanes: 1 };
           return (
             <ScheduleBlock key={uid}
               task={task} block={b} top={top} height={height} accent={accent}
               owner={owner}
               isActual={true}
+              lane={li.lane} totalLanes={li.totalLanes}
               onResize={(dur) => onUpdateActual(owner, b.taskId, { durationMin: dur }, b.breakId)}
               onMoveStart={(min) => onUpdateActual(owner, b.taskId, { startMin: min }, b.breakId)}
               onRemove={() => onRemoveActual(owner, b.taskId, b.breakId)}
@@ -5316,7 +5347,7 @@ function TimeColumn({
 // ─────────────────────────────────────────────────────────────────────────────
 // ScheduleBlock — renders a single block (task or break, planned or actual)
 // ─────────────────────────────────────────────────────────────────────────────
-function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isActual, onResize, onMoveStart, onRemove, onOpen, onDragStart, onDragEnd }) {
+function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isActual, lane = 0, totalLanes = 1, onResize, onMoveStart, onRemove, onOpen, onDragStart, onDragEnd }) {
   const [resizing, setResizing] = useSh(false);
   const startY = useRh(0);
   const startDur = useRh(block.durationMin);
@@ -5376,7 +5407,9 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
       onDragEnd={onDragEnd}
       onClick={(e) => { e.stopPropagation(); if (resizing || isBreak || isQuickEvent || isActual) return; onOpen && onOpen(); }}
       style={{
-        position:"absolute", left: isActual ? 6 : 4, right: isActual ? 6 : 4,
+        position:"absolute",
+        left: totalLanes > 1 ? `calc(${(lane / totalLanes * 100).toFixed(2)}% + ${isActual ? 3 : 2}px)` : (isActual ? 6 : 4),
+        right: totalLanes > 1 ? `calc(${((totalLanes - lane - 1) / totalLanes * 100).toFixed(2)}% + ${isActual ? 3 : 2}px)` : (isActual ? 6 : 4),
         top, height,
         background: bgPattern,
         border:`${isActual ? 2 : 1}px ${borderStyle} ${blockAccent}${isGhost ? "44" : isActual ? "cc" : "55"}`,
