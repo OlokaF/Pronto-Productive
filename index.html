@@ -1361,7 +1361,7 @@ Object.assign(window, { SyncButton, PresenceAvatars });
 const { useState: useStateV, useRef: useRefV, useEffect: useEffectV, useMemo: useMemoV } = React;
 
 // ── ONGOING SECTION: recurring tasks, to-be-completed, ongoing jobs ──
-function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, dayNotes, setDayNotes, dateKey, staff, content }) {
+function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, dayNotes, setDayNotes, dateKey, staff, content, onAdd }) {
   const [addingRecurring, setAddingRecurring] = useStateV(false);
   const [newRecurText, setNewRecurText] = useStateV("");
   const [newRecurOwner, setNewRecurOwner] = useStateV("oloka");
@@ -1527,6 +1527,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
                 <div style={{ width:18, height:18, borderRadius:4, border:`1.5px solid ${T.border}`, flexShrink:0 }} />
                 <span style={{ fontSize:12, color:T.ink, flex:1 }}>{t.text}</span>
                 <span style={{ fontSize:9, color: t.owner==="oloka" ? T.oloka : T.vanja, fontWeight:800 }}>{t.owner==="oloka"?"O":"V"}</span>
+                {onAdd && <button onClick={() => { onAdd(dateKey, { text:t.text, owner:t.owner, done:false }); setToBeCompleted(prev => prev.filter(x => x.id !== t.id)); }} title="Send to today" style={{ background:T.navy, border:"none", borderRadius:4, color:"#fff", cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
                 <button onClick={() => setToBeCompleted(prev => prev.filter(x => x.id !== t.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
               </div>
             ))}
@@ -1565,6 +1566,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
                 <OrangeCheckbox done={!!ojDone[oj.id]} onToggle={() => setOJDone(oj.id, !ojDone[oj.id])} />
                 <span style={{ fontSize:12, color: ojDone[oj.id] ? T.muted : T.ink, flex:1, textDecoration: ojDone[oj.id] ? "line-through" : "none" }}>{oj.text}</span>
                 <span style={{ fontSize:9, color: oj.owner==="oloka" ? T.oloka : T.vanja, fontWeight:800 }}>{oj.owner==="oloka"?"O":"V"}</span>
+                {onAdd && <button onClick={() => onAdd(dateKey, { text:oj.text, owner:oj.owner, done:false })} title="Send to today (stays in Ongoing Jobs)" style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
                 <button onClick={() => setOngoingJobs(prev => prev.filter(x => x.id !== oj.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }} title="Remove permanently">×</button>
               </div>
             ))}
@@ -1727,6 +1729,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           dayNotes={dayNotes} setDayNotes={setDayNotes}
           dateKey={dateKey} staff={staff || []}
           content={content}
+          onAdd={onAdd}
         />
       )}
     </div>
@@ -4157,14 +4160,14 @@ function BreakBlockStrip({ drag, setDrag }) {
 // ScheduleView
 // ─────────────────────────────────────────────────────────────────────────────
 const SCHED_SPAN_COLORS = ["#F59E0B","#3B82F6","#10B981","#EF4444","#8B5CF6","#F97316","#EC4899","#14B8A6"];
-function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans }) {
+function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans, onPickDay, todayUser }) {
   const dk = isoDate(selDate);
-  const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
+  const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event" && !t.recurring);
   const daySchedule = schedule[dk] || { vanja: [], oloka: [] };
   const dayActual   = ((actualSchedule || {})[dk]) || { vanja: [], oloka: [] };
 
   const [actualMode, setActualMode] = useSh(false);
-  const [activeUser, setActiveUser] = useSh("both"); // "vanja" | "both" | "oloka"
+  const [activeUser, setActiveUser] = useSh(() => (todayUser === "vanja" || todayUser === "oloka") ? todayUser : "both"); // "vanja" | "both" | "oloka"
   const [quickAdd, setQuickAdd] = useSh(null); // { owner, startMin, isActual }
   const [editing, setEditing] = useSh(null);
   const [includeOther, setIncludeOther] = useSh(false);
@@ -4176,6 +4179,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [spanDragStart, setSpanDragStart] = useSh(null); // dateKey where drag started
   const [spanDragEnd, setSpanDragEnd] = useSh(null);     // dateKey currently hovered
   const [spanModal, setSpanModal] = useSh(null);          // {startDate,endDate,title,color} for new span
+  const [newSpan, setNewSpan] = useSh(null);              // for day panel add-span form
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -4218,7 +4222,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   ]);
 
   const unscheduledForOwner = (owner) => {
-    const todays = tasksToday.filter(t => t.owner === owner && !scheduledHere.has(t.id));
+    const todays = tasksToday.filter(t => t.owner === owner && !scheduledHere.has(t.id) && !t.recurring);
     const others = includeOther
       ? allOpenTasks.filter(t => t.owner === owner && t._date !== dk && !scheduledHere.has(t.id))
       : [];
@@ -4597,8 +4601,6 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
           return { ...prev, [spk]: { ...day, plan: { ...(day.plan || {}), [field]: val } } };
         });
         const daySpans = (schedSpans || []).filter(s => s.startDate <= spk && s.endDate >= spk);
-        // New span form state — managed with a hack using data attributes via refs
-        const [newSpan, setNewSpan] = useSh(null); // {title, startDate, endDate, color}
         return (
           <div style={{
             border:`1.5px solid ${T.gold}`,
@@ -4616,7 +4618,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 </div>
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                <button onClick={() => { setSchedView("day"); /* navigate to day view for this date */ }} style={{ padding:"5px 10px", background:T.navy, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>OPEN DAY</button>
+                <button onClick={() => { if(onPickDay) onPickDay(new Date(spk + "T12:00:00")); setSchedView("day"); }} style={{ padding:"5px 10px", background:T.navy, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>OPEN DAY</button>
                 <button onClick={() => setSchedSelDay(null)} style={{ width:24, height:24, background:T.surface2, border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:14, cursor:"pointer", lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
               </div>
             </div>
@@ -5415,7 +5417,7 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
         border:`${isActual ? 2 : 1}px ${borderStyle} ${blockAccent}${isGhost ? "44" : isActual ? "cc" : "55"}`,
         borderLeft:`3px solid ${blockAccent}${isGhost ? "55" : ""}`,
         borderRadius:4,
-        padding:"4px 7px",
+        padding: height < 36 ? "2px 5px" : "4px 7px",
         cursor: isActual ? "default" : (resizing ? "ns-resize" : "grab"),
         overflow:"hidden",
         display:"flex", flexDirection:"column",
@@ -5424,6 +5426,15 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
         zIndex: isActual ? 2 : 1,
         transition:"opacity 0.15s",
       }}>
+      {height < 36 ? (
+        /* Compact layout for tiny blocks — single row showing time + name */
+        <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden", width:"100%" }}>
+          <span style={{ fontSize:8, fontWeight:800, color:blockAccent, flexShrink:0, lineHeight:1 }}>{fmtTime(block.startMin)}</span>
+          <span style={{ fontSize:9, color:isGhost ? T.muted : T.ink, fontWeight:600, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", flex:1, lineHeight:1 }} title={label}>{icon}{label}</span>
+          {!isActual && <button onClick={(e) => { e.stopPropagation(); onRemove(); }} title="Remove" style={{ width:12, height:12, background:"transparent", border:"none", color:blockAccent, opacity:0.7, cursor:"pointer", padding:0, fontSize:11, lineHeight:1, flexShrink:0 }}>&times;</button>}
+        </div>
+      ) : (
+        <>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:4, marginBottom:2 }}>
         <span style={{ fontSize:9, fontWeight:800, color:blockAccent, letterSpacing:"0.06em", opacity: isGhost ? 0.7 : 1 }}>
           {fmtTime(block.startMin)} · {block.durationMin}m
@@ -5451,6 +5462,8 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
         WebkitLineClamp: Math.max(1, Math.floor((height - 24) / 14)),
         WebkitBoxOrient:"vertical",
       }}>{icon}{label}</p>
+        </>
+      )}
       {/* Resize handle */}
       {!isActual && (
         <div onMouseDown={beginResize} style={{
@@ -8239,7 +8252,8 @@ function App() {
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
-  const isMobile = winWidth < 768;
+  const [forceMobile, setForceMobile] = useS(false);
+  const isMobile = forceMobile || winWidth < 768;
 
   // Resource panels
   const [ideas, setIdeas] = useS(() => loadOr("ideas", () => JSON.parse(JSON.stringify(IDEAS))));
@@ -8293,10 +8307,19 @@ function App() {
   const [notifDismissed, setNotifDismissed] = useS(() => loadOr("notifDismissed", () => ({})));
   // Profile avatars — base64 image data per user
   const [avatars, setAvatars] = useS(() => {
-    const stored = loadOr("avatars", () => ({}));
-    return { vanja: stored.vanja || null, oloka: stored.oloka || null };
+    try {
+      const sep = localStorage.getItem("prontoHQ.avatars");
+      if (sep) return JSON.parse(sep);
+    } catch(_) {}
+    return loadOr("avatars", () => ({}));
   });
-  const onAvatarChange = (key, data) => setAvatars(prev => ({ ...prev, [key]: data }));
+  const onAvatarChange = (key, data) => {
+    setAvatars(prev => {
+      const next = { ...prev, [key]: data };
+      try { localStorage.setItem("prontoHQ.avatars", JSON.stringify(next)); } catch(_) {}
+      return next;
+    });
+  };
   // Branding — app name, subtitle, custom logo
   const [branding, setBranding] = useS(() => loadOr("branding", () => ({ appName:"PRONTO", appSubtitle:"PRODUCTIVE", logoUrl:null })));
   // Editable task categories
@@ -8323,7 +8346,7 @@ function App() {
     tasksByDate, content,
     ideas, suppliers, budget, onboarding, courses, testimonials, photos,
     plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog,
-    avatars, branding, categories, postApprovals, videoEvents, visibleTabs,
+    branding, categories, postApprovals, videoEvents, visibleTabs,
     contentLabels, videoLabels,
     recurringTasks, ongoingJobs, toBeCompleted,
     uniform,
@@ -8344,7 +8367,7 @@ function App() {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, avatars, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
 
@@ -8415,7 +8438,7 @@ function App() {
     if (s.dayNotes) setDayNotes(s.dayNotes);
     if (s.schedSpans) setSchedSpans(s.schedSpans);
     if (s.notifDismissed) setNotifDismissed(s.notifDismissed);
-    if (s.avatars) setAvatars(s.avatars);
+    if (s.avatars) { setAvatars(s.avatars); try { localStorage.setItem("prontoHQ.avatars", JSON.stringify(s.avatars)); } catch(_) {} }
     if (s.branding) setBranding(s.branding);
     if (s.categories) setCategories(s.categories);
     if (s.postApprovals) setPostApprovals(s.postApprovals);
@@ -8792,12 +8815,40 @@ function App() {
             </svg>
             IMPORT
           </button>
+          <button onClick={() => setForceMobile(f => !f)} title={forceMobile ? "Switch to desktop view" : "Switch to mobile view"} style={{
+            padding:"7px 10px", background: forceMobile ? T.gold+"22" : "transparent",
+            border:`1px solid ${forceMobile ? T.gold : T.border}`,
+            borderRadius:6, color: forceMobile ? T.gold : T.muted, fontSize:10, fontWeight:700,
+            cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+            display:"flex", alignItems:"center", gap:4,
+          }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            {forceMobile ? "DESKTOP" : "MOBILE"}
+          </button>
           <div style={{ height:18, width:1, background:T.border }}></div>
           <button onClick={goToday} title="Jump to today" style={{
             padding:"7px 14px", background:T.surface, border:`1px solid ${T.border}`,
             borderRadius:6, color:T.text, fontSize:11.5, fontWeight:700,
             cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em",
           }}>{today().toLocaleDateString("en-NZ", { weekday:"short", day:"numeric", month:"short", year:"numeric" })}</button>
+          {/* User avatar circles in header */}
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            {[{key:"vanja",color:T.vanja,soft:T.vanjaSoft},{key:"oloka",color:T.oloka,soft:T.olokaSoft}].map(u => (
+              <div key={u.key} title={u.key === "vanja" ? "Vanja" : "Oloka"} style={{
+                width:30, height:30, borderRadius:"50%", overflow:"hidden", flexShrink:0,
+                border:`2px solid ${todayUser===u.key ? u.color : T.border}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                background: u.soft, cursor:"pointer",
+                transition:"border-color 0.15s",
+              }} onClick={() => { setTab("settings"); }}>
+                {(avatars && avatars[u.key]) ? (
+                  <img src={avatars[u.key]} alt={u.key} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                ) : (
+                  <span style={{ fontFamily:"'ProximaNova Black', sans-serif", fontSize:11, fontWeight:900, color:u.color }}>{u.key==="vanja"?"V":"O"}</span>
+                )}
+              </div>
+            ))}
+          </div>
           <div style={{ height:18, width:1, background:T.border }}></div>
           {/* Settings gear */}
           <button onClick={() => setSettingsOpen(true)} title="Settings" style={{
@@ -8898,7 +8949,7 @@ function App() {
           <MonthView selDate={selDate} tasksByDate={tasksByDate} content={content} onPickDate={onPickDate} onMoveTask={onMoveTask} onAdd={onAdd}/>
         )}
         {tab === "schedule" && (
-          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans}/>
+          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser}/>
         )}
         {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent} view={contentView} setView={setContentView}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
@@ -9740,17 +9791,15 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
     <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:"20px 24px", marginBottom:16 }}>{children}</div>
   );
 
-  const avatarFileRef = useR(null);
-  const [avatarUser, setAvatarUser] = useS(null);
+  const avatarFileRefs = { vanja: useR(null), oloka: useR(null) };
 
-  const handleAvatarUpload = (e) => {
+  const handleAvatarUpload = (key, e) => {
     const file = e.target.files && e.target.files[0];
-    if (!file || !avatarUser) return;
+    if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => onAvatarChange(avatarUser, ev.target.result);
+    reader.onload = (ev) => onAvatarChange(key, ev.target.result);
     reader.readAsDataURL(file);
     e.target.value = "";
-    setAvatarUser(null);
   };
 
   return (
@@ -9773,7 +9822,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
                 ) : (
                   <div style={{ width:64, height:64, borderRadius:"50%", background:u.soft, border:`2px solid ${u.color}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontSize:24, fontWeight:900, color:u.color }}>{u.name[0]}</div>
                 )}
-                <button onClick={() => { setAvatarUser(u.key); avatarFileRef.current && avatarFileRef.current.click(); }} style={{ position:"absolute", bottom:-2, right:-2, width:22, height:22, borderRadius:"50%", background:T.gold, border:`2px solid ${T.cardBg}`, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10 }}>📷</button>
+                <button onClick={() => avatarFileRefs[u.key].current && avatarFileRefs[u.key].current.click()} style={{ position:"absolute", bottom:-2, right:-2, width:22, height:22, borderRadius:"50%", background:T.gold, border:`2px solid ${T.cardBg}`, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10 }}>📷</button>
               </div>
               <p style={{ fontSize:11, fontWeight:700, color:T.ink }}>{u.name}</p>
               {avatars && avatars[u.key] && (
@@ -9782,7 +9831,8 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
             </div>
           ))}
         </div>
-        <input ref={avatarFileRef} type="file" accept="image/*" style={{ display:"none" }} onChange={handleAvatarUpload}/>
+        <input ref={avatarFileRefs.vanja} type="file" accept="image/*" style={{ display:"none" }} onChange={e => handleAvatarUpload("vanja", e)}/>
+        <input ref={avatarFileRefs.oloka} type="file" accept="image/*" style={{ display:"none" }} onChange={e => handleAvatarUpload("oloka", e)}/>
       </Card>
 
       {/* Theme */}
