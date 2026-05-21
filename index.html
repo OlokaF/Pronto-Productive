@@ -4156,6 +4156,7 @@ function BreakBlockStrip({ drag, setDrag }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ScheduleView
 // ─────────────────────────────────────────────────────────────────────────────
+const SCHED_SPAN_COLORS = ["#F59E0B","#3B82F6","#10B981","#EF4444","#8B5CF6","#F97316","#EC4899","#14B8A6"];
 function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans }) {
   const dk = isoDate(selDate);
   const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
@@ -4172,6 +4173,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [schedWeekOffset, setSchedWeekOffset] = useSh(0);
   const [schedMonthOffset, setSchedMonthOffset] = useSh(0);
   const [schedSelDay, setSchedSelDay] = useSh(null); // date key of selected day for panel
+  const [spanDragStart, setSpanDragStart] = useSh(null); // dateKey where drag started
+  const [spanDragEnd, setSpanDragEnd] = useSh(null);     // dateKey currently hovered
+  const [spanModal, setSpanModal] = useSh(null);          // {startDate,endDate,title,color} for new span
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -4192,6 +4196,20 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     }
     return m;
   }, [tasksByDate]);
+
+  // Global mouseup to finalise span drag
+  useEh(() => {
+    if (!spanDragStart) return;
+    const handleUp = () => {
+      if (spanDragStart) {
+        const [sd, ed] = [spanDragStart, spanDragEnd || spanDragStart].sort();
+        setSpanModal({ startDate: sd, endDate: ed, title: "", color: SCHED_SPAN_COLORS[0] });
+        setSpanDragStart(null); setSpanDragEnd(null);
+      }
+    };
+    document.addEventListener("mouseup", handleUp);
+    return () => document.removeEventListener("mouseup", handleUp);
+  }, [spanDragStart, spanDragEnd]);
 
   // Only non-break scheduled tasks count as "scheduled"
   const scheduledHere = new Set([
@@ -4386,37 +4404,49 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         const weekSpans = (schedSpans || []).filter(s => s.startDate <= weekEnd && s.endDate >= weekStart);
         return (
           <div>
-            {/* Multi-day span bars */}
-            {weekSpans.length > 0 && (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:8, marginBottom:6 }}>
-                {weekDays.map((d, di) => {
-                  const dkey = isoDate(d);
-                  const daySpans = weekSpans.filter(s => s.startDate <= dkey && s.endDate >= dkey);
-                  return (
-                    <div key={dkey} style={{ minHeight: daySpans.length > 0 ? undefined : 0 }}>
-                      {daySpans.map(s => {
-                        const isStart = s.startDate === dkey;
-                        const isEnd = s.endDate === dkey;
-                        return (
-                          <div key={s.id} style={{
-                            background: s.color || T.gold,
-                            color:"#fff",
+            {/* All-day / multi-day span row — drag across days to create a span */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:8, marginBottom:8 }}>
+              {weekDays.map((d, di) => {
+                const dkey = isoDate(d);
+                const daySpans = weekSpans.filter(s => s.startDate <= dkey && s.endDate >= dkey);
+                const dragMin = spanDragStart && spanDragEnd ? [spanDragStart, spanDragEnd].sort()[0] : null;
+                const dragMax = spanDragStart && spanDragEnd ? [spanDragStart, spanDragEnd].sort()[1] : null;
+                const inDrag = spanDragStart && dragMin <= dkey && dkey <= dragMax;
+                return (
+                  <div key={dkey}
+                    onMouseDown={e => { e.preventDefault(); setSpanDragStart(dkey); setSpanDragEnd(dkey); }}
+                    onMouseEnter={() => { if (spanDragStart) setSpanDragEnd(dkey); }}
+                    style={{ position:"relative", minHeight:16, cursor:"crosshair", userSelect:"none" }}>
+                    {inDrag && <div style={{ position:"absolute", inset:0, background: SCHED_SPAN_COLORS[0]+"44", borderRadius:3, pointerEvents:"none", zIndex:1 }} />}
+                    {daySpans.map(s => {
+                      const isStart = s.startDate === dkey;
+                      const isEnd = s.endDate === dkey;
+                      return (
+                        <div key={s.id}
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={e => { e.stopPropagation(); setSchedSpans(prev => prev.filter(x => x.id !== s.id)); }}
+                          title={`${s.title} · click to delete`}
+                          style={{
+                            background: s.color || T.gold, color:"#fff",
                             fontSize:9, fontWeight:700,
                             padding:"2px 6px",
                             borderRadius: isStart && isEnd ? 4 : isStart ? "4px 0 0 4px" : isEnd ? "0 4px 4px 0" : 0,
                             marginBottom:2,
                             overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis",
-                            opacity:0.9,
+                            opacity:0.9, cursor:"pointer", position:"relative", zIndex:2,
                           }}>
-                            {isStart ? s.title : ""}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                          {isStart ? s.title : ""}
+                        </div>
+                      );
+                    })}
+                    {daySpans.length === 0 && !inDrag && (
+                      <div style={{ height:14, background: T.surface, borderRadius:3, opacity:0.5 }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {!spanDragStart && <div style={{ fontSize:9, color:T.faint, textAlign:"center", marginBottom:6 }}>↔ drag across days above to add a multi-day event</div>}
             {/* Day cells grid */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:8, marginBottom:20 }}>
               {weekDays.map((d, di) => {
@@ -4511,10 +4541,12 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 const daySpans = monthSpans.filter(s => s.startDate <= mdk && s.endDate >= mdk);
                 return (
                   <div key={i}
-                    onClick={() => setSchedSelDay(isSelected ? null : mdk)}
+                    onClick={() => !spanDragStart && setSchedSelDay(isSelected ? null : mdk)}
+                    onMouseDown={e => { if(e.button===0 && d) { e.preventDefault(); setSpanDragStart(mdk); setSpanDragEnd(mdk); } }}
+                    onMouseEnter={() => { if (spanDragStart && d) setSpanDragEnd(mdk); }}
                     style={{
                       minHeight:80, padding:"5px 6px",
-                      background: isSelected ? T.gold + "11" : isWeekend ? T.surface2 : T.cardBg,
+                      background: (() => { const dragMin2 = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[0]:null; const dragMax2 = spanDragStart && spanDragEnd ? [spanDragStart,spanDragEnd].sort()[1]:null; const inD = spanDragStart && dragMin2 <= mdk && mdk <= dragMax2; return inD ? SCHED_SPAN_COLORS[0]+"33" : isSelected ? T.gold + "11" : isWeekend ? T.surface2 : T.cardBg; })(),
                       borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}`,
                       cursor:"pointer", transition:"all 0.12s",
                       outline: isSelected ? `2px solid ${T.gold}` : "none",
@@ -4525,11 +4557,15 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                     {daySpans.map(s => {
                       const isStart = s.startDate === mdk;
                       return (
-                        <div key={s.id} style={{
-                          background: s.color || T.gold,
-                          height:5, borderRadius: isStart ? "3px 0 0 3px" : "0 3px 3px 0",
-                          marginBottom:2, opacity:0.85,
-                        }} title={s.title} />
+                        <div key={s.id}
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={e => { e.stopPropagation(); setSchedSpans(prev => prev.filter(x => x.id !== s.id)); }}
+                          title={`${s.title} · click to delete`}
+                          style={{
+                            background: s.color || T.gold,
+                            height:5, borderRadius: isStart ? "3px 0 0 3px" : "0 3px 3px 0",
+                            marginBottom:2, opacity:0.85, cursor:"pointer",
+                          }} />
                       );
                     })}
                     {/* Priority 1 only (space is tight) */}
@@ -4562,7 +4598,6 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         });
         const daySpans = (schedSpans || []).filter(s => s.startDate <= spk && s.endDate >= spk);
         // New span form state — managed with a hack using data attributes via refs
-        const SPAN_COLORS = ["#F59E0B","#3B82F6","#10B981","#EF4444","#8B5CF6","#F97316","#EC4899","#14B8A6"];
         const [newSpan, setNewSpan] = useSh(null); // {title, startDate, endDate, color}
         return (
           <div style={{
@@ -4610,11 +4645,36 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 />
               </div>
 
+              {/* Schedule preview */}
+              {(() => {
+                const spBlocks = [...((schedule[spk] || {}).vanja || []).map(b => ({ ...b, owner:"vanja" })), ...((schedule[spk] || {}).oloka || []).map(b => ({ ...b, owner:"oloka" }))].sort((a,b) => a.startMin - b.startMin);
+                if (spBlocks.length === 0) return null;
+                return (
+                  <div>
+                    <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.muted, marginBottom:8 }}>SCHEDULE · {spBlocks.length} BLOCK{spBlocks.length!==1?"S":""}</div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                      {spBlocks.map((b, i) => {
+                        const label = b.isBreak ? b.breakLabel : (tasksByIdRef[b.taskId]?.text || "Unknown task");
+                        const oc = b.owner === "vanja" ? T.vanja : T.oloka;
+                        const bc = b.isBreak ? (b.breakLabel === "Lunch" ? "#EF4444" : "#F97316") : oc;
+                        return (
+                          <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 8px", background:T.surface, borderRadius:5, borderLeft:`3px solid ${bc}` }}>
+                            <span style={{ fontSize:9, fontWeight:800, color:bc, minWidth:45 }}>{fmtTime(b.startMin)}</span>
+                            <span style={{ fontSize:10, color:T.ink, flex:1, lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:1, WebkitBoxOrient:"vertical" }}>{label}</span>
+                            <span style={{ fontSize:9, color:T.faint }}>{b.durationMin}m</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Multi-day spans section */}
               <div>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
                   <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>EVENTS & SPANS</div>
-                  <button onClick={() => setNewSpan({ title:"", startDate: spk, endDate: spk, color: SPAN_COLORS[0] })} style={{ padding:"3px 8px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, fontSize:10, fontWeight:700, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
+                  <button onClick={() => setNewSpan({ title:"", startDate: spk, endDate: spk, color: SCHED_SPAN_COLORS[0] })} style={{ padding:"3px 8px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, fontSize:10, fontWeight:700, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
                 </div>
                 {/* Existing spans */}
                 {daySpans.map(s => (
@@ -4651,7 +4711,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                       </div>
                     </div>
                     <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
-                      {SPAN_COLORS.map(c => (
+                      {SCHED_SPAN_COLORS.map(c => (
                         <button key={c} onClick={() => setNewSpan(s => ({ ...s, color: c }))}
                           style={{ width:20, height:20, borderRadius:"50%", background:c, border: newSpan.color===c ? `2px solid ${T.ink}` : "2px solid transparent", cursor:"pointer", flexShrink:0 }} />
                       ))}
@@ -4671,6 +4731,49 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
           </div>
         );
       })()}
+
+      {/* Span creation modal */}
+      {spanModal && (
+        <div onMouseDown={e => e.stopPropagation()} onClick={() => setSpanModal(null)} style={{ position:"fixed", inset:0, zIndex:2000, background:"rgba(15,27,58,0.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:12, width:"100%", maxWidth:360, boxShadow:"0 24px 60px rgba(15,27,58,0.35)", borderTop:`3px solid ${SCHED_SPAN_COLORS[0]}` }}>
+            <div style={{ padding:"14px 18px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ fontSize:11, fontWeight:800, letterSpacing:"0.12em", color:T.navy }}>NEW ALL-DAY EVENT</div>
+              <button onClick={() => setSpanModal(null)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18 }}>×</button>
+            </div>
+            <div style={{ padding:"16px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+              <input autoFocus value={spanModal.title} onChange={e => setSpanModal(s => ({ ...s, title: e.target.value }))}
+                onKeyDown={e => { if(e.key==="Enter" && spanModal.title.trim()) { setSchedSpans(prev => [...prev, { ...spanModal, id: Date.now() + Math.random() }]); setSpanModal(null); } if(e.key==="Escape") setSpanModal(null); }}
+                placeholder="Event title…"
+                style={{ width:"100%", padding:"9px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:13, color:T.ink, background:T.bg, fontFamily:"inherit", outline:"none", boxSizing:"border-box" }} />
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                <div>
+                  <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:3 }}>START</div>
+                  <input type="date" value={spanModal.startDate} onChange={e => setSpanModal(s => ({ ...s, startDate: e.target.value }))}
+                    style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:3 }}>END</div>
+                  <input type="date" value={spanModal.endDate} onChange={e => setSpanModal(s => ({ ...s, endDate: e.target.value }))}
+                    style={{ width:"100%", padding:"6px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize:9, fontWeight:700, color:T.muted, marginBottom:5 }}>COLOUR</div>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                  {SCHED_SPAN_COLORS.map(c => (
+                    <button key={c} onClick={() => setSpanModal(s => ({ ...s, color: c }))}
+                      style={{ width:22, height:22, borderRadius:"50%", background:c, border: spanModal.color===c ? `2.5px solid ${T.ink}` : "2.5px solid transparent", cursor:"pointer", flexShrink:0 }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:"10px 18px 14px", display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button onClick={() => setSpanModal(null)} style={{ padding:"8px 16px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={() => { if(spanModal.title.trim()) { setSchedSpans(prev => [...prev, { ...spanModal, id: Date.now() + Math.random() }]); setSpanModal(null); }}} style={{ padding:"8px 20px", background:T.navy, border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Save Event</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── DAY VIEW ── */}
       {schedView === "day" && <div>
