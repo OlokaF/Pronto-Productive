@@ -3251,6 +3251,7 @@ function ChatView({ msgs, setMsgs, chatAs, setChatAs, tasksByDate, onJumpToTask 
 
       <style>{`
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </div>
   );
@@ -9858,65 +9859,160 @@ const AVAIL_PLATFORMS = [
   { key:"twitter",    label:"X (Twitter)",      icon:"𝕏",  placeholder:"@yourhandle",        hint:"e.g. @prontohire" },
 ];
 
-function ConnectPlatformModal({ existing, onSave, onClose }) {
-  const [step, setStep] = usePx("pick");      // "pick" | "configure"
+// META_OAUTH platforms — these go through real Facebook Login, not manual handle entry
+const META_OAUTH_KEYS = new Set(["facebook", "instagram"]);
+
+function ConnectPlatformModal({ existing, onSave, onSaveMany, onClose }) {
+  // step: "pick" | "oauth-waiting" | "oauth-select" | "configure"
+  const [step, setStep] = usePx("pick");
   const [chosen, setChosen] = usePx(null);
   const [handle, setHandle] = usePx("");
   const [err, setErr] = usePx("");
+  const [oauthStatus, setOauthStatus] = usePx("idle"); // "idle"|"waiting"|"success"|"error"
+  const [oauthPages, setOauthPages] = usePx([]);         // pages returned from Meta
+  const [selectedPageIds, setSelectedPageIds] = usePx(new Set());
+  const popupRef = useRx(null);
 
   const connectedKeys = new Set(existing.map(p => p.key));
-  // For single-account platforms, hide if already connected. For multi-account, always show.
   const available = AVAIL_PLATFORMS.map(p => ({
     ...p,
     alreadyHas: connectedKeys.has(p.key),
     canAddAnother: p.multi && connectedKeys.has(p.key),
   })).filter(p => p.multi || !p.alreadyHas);
 
-  function pickPlatform(p) { setChosen(p); setHandle(""); setErr(""); setStep("configure"); }
+  // Listen for postMessage from the OAuth popup
+  useEx(() => {
+    function onMessage(e) {
+      if (!e.data || !e.data.type) return;
+      if (e.data.type === "META_AUTH_SUCCESS") {
+        setOauthStatus("success");
+        const pages = e.data.pages || [];
+        setOauthPages(pages);
+        // Pre-select all pages
+        setSelectedPageIds(new Set(pages.map(p => p.id)));
+        setStep("oauth-select");
+      } else if (e.data.type === "META_AUTH_ERROR") {
+        setOauthStatus("error");
+        setErr(e.data.error || "Meta login failed. Please try again.");
+        setStep("configure");
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
-  function handleSave() {
-    if (!handle.trim()) { setErr("Please enter your account handle or name."); return; }
-    onSave({ key: chosen.key, label: chosen.label, sub: handle.trim() });
+  function pickPlatform(p) {
+    setChosen(p);
+    setHandle("");
+    setErr("");
+    setOauthStatus("idle");
+    setOauthPages([]);
+    setSelectedPageIds(new Set());
+    if (META_OAUTH_KEYS.has(p.key)) {
+      setStep("configure"); // show the Meta OAuth button
+    } else {
+      setStep("configure"); // show handle input
+    }
+  }
+
+  function launchMetaOAuth() {
+    setOauthStatus("waiting");
+    setErr("");
+    const w = 620, h = 720;
+    const left = Math.round(window.screenX + (window.outerWidth - w) / 2);
+    const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
+    popupRef.current = window.open(
+      "/api/meta-auth",
+      "pronto_meta_oauth",
+      `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no,resizable=yes`
+    );
+    // Poll for popup closed without completing
+    const poll = setInterval(() => {
+      if (popupRef.current && popupRef.current.closed) {
+        clearInterval(poll);
+        if (oauthStatus === "waiting") {
+          setOauthStatus("idle");
+          setErr("Window closed before completing. Please try again.");
+        }
+      }
+    }, 800);
+  }
+
+  function togglePage(id) {
+    setSelectedPageIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function saveOAuthPages() {
+    const toSave = oauthPages.filter(p => selectedPageIds.has(p.id));
+    if (toSave.length === 0) { setErr("Select at least one page to connect."); return; }
+    for (const p of toSave) {
+      // Save the Facebook page
+      onSave({
+        key: "facebook",
+        label: "Facebook Pages",
+        sub: p.name,
+        pageId: p.id,
+        accessToken: p.accessToken,
+        fanCount: p.fanCount,
+        platform: "facebook",
+      });
+      // If it has a linked Instagram Business Account, save that too
+      if (p.instagram) {
+        onSave({
+          key: "instagram",
+          label: "Instagram",
+          sub: `@${p.instagram.username || p.instagram.name}`,
+          igAccountId: p.instagram.id,
+          igUsername: p.instagram.username,
+          accessToken: p.accessToken, // page token works for linked IG account
+          followersCount: p.instagram.followers_count,
+          platform: "instagram",
+        });
+      }
+    }
     onClose();
   }
 
-  const overlay = {
-    position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9000,
-    display:"flex", alignItems:"center", justifyContent:"center",
-  };
-  const card = {
-    background: T.cardBg, borderRadius:16, padding:"28px 28px 24px",
-    width: step === "pick" ? 480 : 380, maxWidth:"92vw",
-    boxShadow:"0 20px 60px rgba(0,0,0,0.35)", position:"relative",
-  };
+  function handleManualSave() {
+    if (!handle.trim()) { setErr("Please enter your account handle or name."); return; }
+    onSave({ key: chosen.key, label: chosen.label, sub: handle.trim(), platform: chosen.key });
+    onClose();
+  }
+
+  const isMetaPlatform = chosen && META_OAUTH_KEYS.has(chosen.key);
+  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center" };
+  const cardWidth = step === "pick" ? 500 : step === "oauth-select" ? 460 : 400;
+  const card = { background:T.cardBg, borderRadius:16, padding:"28px 28px 24px", width:cardWidth, maxWidth:"94vw", boxShadow:"0 20px 60px rgba(0,0,0,0.35)", position:"relative" };
 
   return (
     <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={card}>
-        {/* Close */}
         <button onClick={onClose} style={{ position:"absolute", top:14, right:16, background:"none", border:"none", fontSize:20, color:T.muted, cursor:"pointer", lineHeight:1 }}>×</button>
 
+        {/* ── PICK PLATFORM ── */}
         {step === "pick" && (<>
           <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", marginBottom:4 }}>Connect a Platform</div>
-          <div style={{ fontSize:13, color:T.muted, marginBottom:20 }}>Choose a platform to link to your analytics dashboard.</div>
-          {available.length === 0 && (
-            <div style={{ textAlign:"center", color:T.muted, fontSize:13, padding:"24px 0" }}>All platforms are already connected ✓</div>
-          )}
+          <div style={{ fontSize:13, color:T.muted, marginBottom:20 }}>Facebook and Instagram connect via official Meta login. Other platforms use a manual handle.</div>
+          {available.length === 0 && <div style={{ textAlign:"center", color:T.muted, fontSize:13, padding:"24px 0" }}>All platforms are already connected ✓</div>}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
             {available.map(p => (
               <button key={p.key} onClick={() => pickPlatform(p)} style={{
-                display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
-                background: p.canAddAnother ? T.navy+"0A" : T.surface,
-                border:`1.5px solid ${p.canAddAnother ? T.navy+"44" : T.border}`,
-                borderRadius:10, cursor:"pointer", textAlign:"left", transition:"border-color 0.15s",
+                display:"flex", alignItems:"center", gap:10, padding:"13px 14px",
+                background: META_OAUTH_KEYS.has(p.key) ? "#1877F222" : p.canAddAnother ? T.navy+"0A" : T.surface,
+                border:`1.5px solid ${META_OAUTH_KEYS.has(p.key) ? "#1877F255" : p.canAddAnother ? T.navy+"44" : T.border}`,
+                borderRadius:10, cursor:"pointer", textAlign:"left", transition:"all 0.15s",
               }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = T.navy}
-              onMouseLeave={e => e.currentTarget.style.borderColor = p.canAddAnother ? T.navy+"44" : T.border}>
-                <span style={{ fontSize:20, flexShrink:0 }}>{p.icon}</span>
+              onMouseEnter={e => { e.currentTarget.style.borderColor = META_OAUTH_KEYS.has(p.key) ? "#1877F2" : T.navy; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = META_OAUTH_KEYS.has(p.key) ? "#1877F255" : p.canAddAnother ? T.navy+"44" : T.border; }}>
+                <span style={{ fontSize:22, flexShrink:0 }}>{p.icon}</span>
                 <div>
                   <div style={{ fontSize:13, fontWeight:700, color:T.ink }}>{p.label}</div>
-                  <div style={{ fontSize:10, color: p.canAddAnother ? T.navy : T.muted }}>
-                    {p.canAddAnother ? "+ Add another account" : p.hint}
+                  <div style={{ fontSize:10, color: META_OAUTH_KEYS.has(p.key) ? "#1877F2" : p.canAddAnother ? T.navy : T.muted }}>
+                    {META_OAUTH_KEYS.has(p.key) ? "🔒 Official login" : p.canAddAnother ? "+ Add another" : p.hint}
                   </div>
                 </div>
               </button>
@@ -9924,44 +10020,107 @@ function ConnectPlatformModal({ existing, onSave, onClose }) {
           </div>
         </>)}
 
+        {/* ── CONFIGURE (Meta OAuth or manual handle) ── */}
         {step === "configure" && chosen && (<>
-          <button onClick={() => setStep("pick")} style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", padding:0, marginBottom:16, display:"flex", alignItems:"center", gap:4 }}>
-            ← Back
-          </button>
+          <button onClick={() => setStep("pick")} style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", padding:0, marginBottom:16, display:"flex", alignItems:"center", gap:4 }}>← Back</button>
           <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
             <span style={{ fontSize:32 }}>{chosen.icon}</span>
             <div>
               <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>Connect {chosen.label}</div>
-              <div style={{ fontSize:12, color:T.muted }}>Enter your account details below</div>
+              <div style={{ fontSize:12, color:T.muted }}>{isMetaPlatform ? "Connects via your Facebook account" : "Enter your account details"}</div>
             </div>
           </div>
 
-          <div style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:10, padding:"12px 14px", marginBottom:18, fontSize:12, color:T.text, lineHeight:1.6 }}>
-            <strong style={{ color:T.ink }}>Note:</strong> Pronto HQ uses your handle to tag and organise content for {chosen.label}. For live stats, connect via the platform's official API in your account settings.
+          {isMetaPlatform ? (<>
+            {/* Meta OAuth path */}
+            <div style={{ background:"#1877F211", border:"1px solid #1877F233", borderRadius:10, padding:"14px 16px", marginBottom:18 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#1877F2", marginBottom:6 }}>How it works</div>
+              <div style={{ fontSize:12, color:T.text, lineHeight:1.7 }}>
+                1. A Meta login popup opens<br/>
+                2. Log in with your Facebook account<br/>
+                3. Approve permissions for Pronto HQ<br/>
+                4. Choose which Pages (and linked Instagram accounts) to connect<br/>
+                5. Done — stats and scheduling are live ✓
+              </div>
+            </div>
+            {err && <div style={{ background:"#FEF2F2", border:"1px solid #FCA5A5", borderRadius:8, padding:"10px 14px", marginBottom:14, fontSize:12, color:"#DC2626" }}>{err}</div>}
+            <button
+              onClick={launchMetaOAuth}
+              disabled={oauthStatus === "waiting"}
+              style={{
+                width:"100%", padding:"13px 0", borderRadius:9,
+                background: oauthStatus === "waiting" ? "#1877F299" : "#1877F2",
+                color:"#fff", border:"none", cursor: oauthStatus === "waiting" ? "default" : "pointer",
+                fontSize:14, fontWeight:800, letterSpacing:"0.03em", fontFamily:"inherit",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:10,
+              }}>
+              {oauthStatus === "waiting" ? (<>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation:"spin 1s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                Waiting for login…
+              </>) : (<>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                Continue with Facebook
+              </>)}
+            </button>
+            <div style={{ fontSize:10, color:T.muted, textAlign:"center", marginTop:12, lineHeight:1.5 }}>
+              Pronto HQ only requests permissions needed to read stats and publish posts. We never store your Facebook password.
+            </div>
+          </>) : (<>
+            {/* Manual handle path for non-Meta platforms */}
+            <label style={{ fontSize:11, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:6 }}>
+              {chosen.key === "ga" ? "WEBSITE URL" : chosen.placeholder.startsWith("@") ? "ACCOUNT HANDLE" : "PAGE / CHANNEL NAME"}
+            </label>
+            <input value={handle} onChange={e => { setHandle(e.target.value); setErr(""); }}
+              placeholder={chosen.hint} onKeyDown={e => { if (e.key === "Enter") handleManualSave(); }} autoFocus
+              style={{ width:"100%", padding:"10px 12px", borderRadius:8, fontSize:14, color:T.ink, border:`1.5px solid ${err ? "#EF4444" : T.border}`, background:T.surface, outline:"none", boxSizing:"border-box", fontFamily:"inherit" }}/>
+            {err && <div style={{ fontSize:11, color:"#EF4444", marginTop:6 }}>{err}</div>}
+            <button onClick={handleManualSave} style={{ marginTop:18, width:"100%", padding:"11px 0", borderRadius:8, background:T.navy, color:"#fff", border:"none", cursor:"pointer", fontSize:14, fontWeight:800, letterSpacing:"0.04em", fontFamily:"inherit" }}>
+              Connect {chosen.label} →
+            </button>
+          </>)}
+        </>)}
+
+        {/* ── SELECT PAGES (after Meta OAuth success) ── */}
+        {step === "oauth-select" && (<>
+          <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", marginBottom:4 }}>Select Pages to Connect</div>
+          <div style={{ fontSize:13, color:T.muted, marginBottom:20 }}>
+            {oauthPages.length} page{oauthPages.length !== 1 ? "s" : ""} found. Tick the ones you want to use in Pronto HQ.
           </div>
-
-          <label style={{ fontSize:11, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:6 }}>
-            {chosen.placeholder.startsWith("@") ? "ACCOUNT HANDLE" : chosen.key === "ga" ? "WEBSITE URL" : "PAGE / CHANNEL NAME"}
-          </label>
-          <input
-            value={handle}
-            onChange={e => { setHandle(e.target.value); setErr(""); }}
-            placeholder={chosen.hint}
-            onKeyDown={e => { if (e.key === "Enter") handleSave(); }}
-            autoFocus
-            style={{
-              width:"100%", padding:"10px 12px", borderRadius:8, fontSize:14, color:T.ink,
-              border:`1.5px solid ${err ? "#EF4444" : T.border}`, background:T.surface,
-              outline:"none", boxSizing:"border-box", fontFamily:"inherit",
-            }}
-          />
-          {err && <div style={{ fontSize:11, color:"#EF4444", marginTop:6 }}>{err}</div>}
-
-          <button onClick={handleSave} style={{
-            marginTop:18, width:"100%", padding:"11px 0", borderRadius:8,
-            background:T.navy, color:"#fff", border:"none", cursor:"pointer",
-            fontSize:14, fontWeight:800, letterSpacing:"0.04em", fontFamily:"inherit",
-          }}>Connect {chosen.label} →</button>
+          <div style={{ display:"flex", flexDirection:"column", gap:10, maxHeight:320, overflowY:"auto", marginBottom:18 }}>
+            {oauthPages.map(p => {
+              const sel = selectedPageIds.has(p.id);
+              return (
+                <div key={p.id} onClick={() => togglePage(p.id)} style={{
+                  display:"flex", alignItems:"center", gap:12, padding:"12px 14px",
+                  background: sel ? "#1877F211" : T.surface,
+                  border:`1.5px solid ${sel ? "#1877F2" : T.border}`, borderRadius:10, cursor:"pointer",
+                }}>
+                  <div style={{ width:20, height:20, borderRadius:4, border:`2px solid ${sel ? "#1877F2" : T.border}`, background: sel ? "#1877F2" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    {sel && <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg>}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:T.ink }}>{p.name}</div>
+                    {p.category && <div style={{ fontSize:10, color:T.muted }}>{p.category}</div>}
+                    {p.fanCount && <div style={{ fontSize:10, color:T.muted }}>{p.fanCount.toLocaleString()} followers</div>}
+                    {p.instagram && (
+                      <div style={{ fontSize:10, color:"#E1306C", marginTop:2 }}>
+                        📸 Instagram @{p.instagram.username} also connected
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize:20 }}>📘</span>
+                </div>
+              );
+            })}
+          </div>
+          {err && <div style={{ fontSize:11, color:"#EF4444", marginBottom:10 }}>{err}</div>}
+          <button onClick={saveOAuthPages} style={{
+            width:"100%", padding:"12px 0", borderRadius:9,
+            background:"#1877F2", color:"#fff", border:"none", cursor:"pointer",
+            fontSize:14, fontWeight:800, letterSpacing:"0.03em", fontFamily:"inherit",
+          }}>
+            Connect {selectedPageIds.size} Page{selectedPageIds.size !== 1 ? "s" : ""} →
+          </button>
         </>)}
       </div>
     </div>
