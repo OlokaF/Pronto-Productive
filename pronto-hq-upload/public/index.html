@@ -36,26 +36,66 @@
     button{font-family:inherit;}
   </style>
   <style>
-    @media (max-width: 768px) {
-      /* ── Scrollable tab bar ── */
-      .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; scrollbar-width: none; }
-      .tab-bar::-webkit-scrollbar { display: none; }
-      .tab-bar button { padding: 9px 12px !important; font-size: 10px !important; letter-spacing: 0.06em !important; white-space: nowrap; }
-      /* ── Header ── */
-      .app-header { padding: 10px 14px !important; flex-wrap: nowrap !important; }
-      .app-header-extras { display: none !important; }
-      /* ── Tab row ── */
-      .tab-row { padding: 0 10px !important; gap: 6px !important; flex-wrap: nowrap !important; }
-      /* ── Date strip ── */
-      .date-strip { gap: 6px !important; }
-      .date-strip-label { min-width: 160px !important; font-size: 10px !important; padding: 0 8px !important; }
-      /* ── Main content ── */
-      .main-content { padding: 12px 12px 80px !important; }
-      /* ── Schedule layout: stack sidebar above timeline ── */
-      .sched-cols { flex-direction: column !important; }
-      .sched-sidebar { width: 100% !important; max-width: 100% !important; flex-shrink: 0 !important; }
-      .sched-timeline { width: 100% !important; min-width: 0 !important; }
-    }
+  /* ── Mobile Responsive Overrides (≤ 768px) ── */
+  @media (max-width: 768px) {
+    /* Tab bar — horizontally scrollable, no wrap */
+    .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; scrollbar-width: none; gap: 0 !important; }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab-bar button { padding: 8px 10px !important; font-size: 9.5px !important; letter-spacing: 0.05em !important; white-space: nowrap; flex-shrink: 0; }
+
+    /* App header — compact mobile header */
+    .app-header { padding: 8px 12px !important; flex-wrap: nowrap !important; min-height: 0 !important; }
+    .app-header-extras { display: none !important; }
+    .app-header-logo { height: 34px !important; }
+    .app-header-title { font-size: 15px !important; }
+    .app-header-subtitle { display: none !important; }
+
+    /* Mobile utility bar — shown only on mobile, holds the things hidden from header */
+    .mobile-utility-bar { display: flex !important; }
+
+    /* Tab row + date strip */
+    .tab-row { padding: 0 8px !important; gap: 4px !important; flex-wrap: wrap !important; flex-direction: column !important; align-items: stretch !important; }
+    .tab-row > div:first-child { overflow-x: auto; }
+    .date-strip { gap: 6px !important; justify-content: center !important; padding: 6px 8px !important; flex-wrap: wrap !important; }
+    .date-strip-label { min-width: 0 !important; font-size: 11px !important; padding: 0 10px !important; }
+    .view-btn-group { flex-wrap: nowrap !important; justify-content: center !important; }
+
+    /* Main content area — full-width, bottom padding for safe area */
+    .main-content { padding: 10px 10px 80px !important; }
+
+    /* Page header — compact on mobile */
+    .page-header-eyebrow { font-size: 9px !important; }
+    .page-header-big { font-size: 18px !important; line-height: 1.15 !important; }
+    .page-header-sub { font-size: 11px !important; }
+    .page-header-block { padding: 14px 12px 12px !important; }
+
+    /* Stats cards row — wrap to 2 cols */
+    .stats-row { gap: 8px !important; }
+    .stat-card { flex: 1 1 calc(50% - 8px) !important; min-width: 0 !important; padding: 10px 12px !important; }
+    .stat-number { font-size: 22px !important; }
+
+    /* Task filter bar — stack search + buttons */
+    .task-filter-bar { flex-direction: column !important; gap: 8px !important; align-items: stretch !important; }
+    .task-filter-bar-actions { justify-content: space-between !important; }
+
+    /* Person columns — stack vertically */
+    .person-cols { flex-direction: column !important; }
+
+    /* Schedule layout */
+    .sched-cols { flex-direction: column !important; }
+    .sched-sidebar { width: 100% !important; max-width: 100% !important; flex-shrink: 0 !important; }
+    .sched-timeline { width: 100% !important; min-width: 0 !important; }
+
+    /* Generic cards */
+    .card { padding: 12px !important; }
+    .card-inner { padding: 10px 12px !important; }
+
+    /* Reduce vertical padding on section headings */
+    .section-heading { padding: 8px 12px !important; font-size: 9px !important; }
+  }
+
+  /* Show mobile utility bar only on mobile */
+  .mobile-utility-bar { display: none; }
   </style>
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
@@ -1767,8 +1807,19 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
 
   const dateKey = isoDate(selDate);
   const dayTasks = tasksByDate[dateKey] || [];
-  // All tasks marked recurring:true are managed in the Recurring Tasks section — hide from main list
-  const isHiddenRecurring = (t) => t.recurring === true;
+  // Recurring-template tasks: hide from main task columns. They live in the Recurring Templates section.
+  const RECUR_TEMPLATE_TEXTS = new Set([
+    "social post -", "social stories - casual", "social stories - machine hire",
+    "social stories - machine for sale", "social stories – casual",
+    "social stories – machine hire", "social stories – machine for sale",
+  ]);
+  const isHiddenRecurring = (t) => {
+    if (t.recurring === true) return true;
+    const lower = (t.text || "").toLowerCase().trim();
+    if (RECUR_TEMPLATE_TEXTS.has(lower)) return true;
+    if (/^social post\s*[-–]?\s*$/i.test(t.text || "")) return true;
+    return false;
+  };
   const events = dayTasks.filter(t => t.category === "Event" || t.owner === "event");
   const realTasks = dayTasks.filter(t => t.category !== "Event" && t.owner !== "event");
   const visibleTasks = realTasks.filter(t => !isHiddenRecurring(t));
@@ -9798,13 +9849,13 @@ function ConnDot() {
 
 // ── Platform connect modal ──
 const AVAIL_PLATFORMS = [
-  { key:"instagram",  label:"Instagram",       icon:"📸", placeholder:"@yourhandle",      hint:"e.g. @prontohire" },
-  { key:"facebook",   label:"Facebook Page",   icon:"📘", placeholder:"Page name",         hint:"e.g. Pronto Hire" },
-  { key:"linkedin",   label:"LinkedIn Page",   icon:"💼", placeholder:"Company page name",  hint:"e.g. Pronto Hire" },
-  { key:"youtube",    label:"YouTube Channel", icon:"▶️", placeholder:"Channel name",       hint:"e.g. Pronto Hire" },
-  { key:"tiktok",     label:"TikTok",          icon:"🎵", placeholder:"@yourhandle",       hint:"e.g. @prontohire" },
-  { key:"ga",         label:"Google Analytics",icon:"📊", placeholder:"Website URL",        hint:"e.g. prontohire.com" },
-  { key:"twitter",    label:"X (Twitter)",     icon:"𝕏",  placeholder:"@yourhandle",       hint:"e.g. @prontohire" },
+  { key:"instagram",  label:"Instagram",        icon:"📸", placeholder:"@yourhandle",      hint:"e.g. @prontohire",      multi:true },
+  { key:"facebook",   label:"Facebook Pages",   icon:"📘", placeholder:"Page name",         hint:"e.g. Pronto Hire",      multi:true },
+  { key:"linkedin",   label:"LinkedIn Page",    icon:"💼", placeholder:"Company page name",  hint:"e.g. Pronto Hire" },
+  { key:"youtube",    label:"YouTube Channel",  icon:"▶️", placeholder:"Channel name",       hint:"e.g. Pronto Hire" },
+  { key:"tiktok",     label:"TikTok",           icon:"🎵", placeholder:"@yourhandle",        hint:"e.g. @prontohire" },
+  { key:"ga",         label:"Google Analytics", icon:"📊", placeholder:"Website URL",        hint:"e.g. prontohire.com" },
+  { key:"twitter",    label:"X (Twitter)",      icon:"𝕏",  placeholder:"@yourhandle",        hint:"e.g. @prontohire" },
 ];
 
 function ConnectPlatformModal({ existing, onSave, onClose }) {
@@ -9813,8 +9864,13 @@ function ConnectPlatformModal({ existing, onSave, onClose }) {
   const [handle, setHandle] = usePx("");
   const [err, setErr] = usePx("");
 
-  const alreadyConnected = new Set(existing.map(p => p.key));
-  const available = AVAIL_PLATFORMS.filter(p => !alreadyConnected.has(p.key));
+  const connectedKeys = new Set(existing.map(p => p.key));
+  // For single-account platforms, hide if already connected. For multi-account, always show.
+  const available = AVAIL_PLATFORMS.map(p => ({
+    ...p,
+    alreadyHas: connectedKeys.has(p.key),
+    canAddAnother: p.multi && connectedKeys.has(p.key),
+  })).filter(p => p.multi || !p.alreadyHas);
 
   function pickPlatform(p) { setChosen(p); setHandle(""); setErr(""); setStep("configure"); }
 
@@ -9850,15 +9906,18 @@ function ConnectPlatformModal({ existing, onSave, onClose }) {
             {available.map(p => (
               <button key={p.key} onClick={() => pickPlatform(p)} style={{
                 display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
-                background: T.surface, border:`1.5px solid ${T.border}`, borderRadius:10,
-                cursor:"pointer", textAlign:"left", transition:"border-color 0.15s",
+                background: p.canAddAnother ? T.navy+"0A" : T.surface,
+                border:`1.5px solid ${p.canAddAnother ? T.navy+"44" : T.border}`,
+                borderRadius:10, cursor:"pointer", textAlign:"left", transition:"border-color 0.15s",
               }}
               onMouseEnter={e => e.currentTarget.style.borderColor = T.navy}
-              onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
+              onMouseLeave={e => e.currentTarget.style.borderColor = p.canAddAnother ? T.navy+"44" : T.border}>
                 <span style={{ fontSize:20, flexShrink:0 }}>{p.icon}</span>
                 <div>
                   <div style={{ fontSize:13, fontWeight:700, color:T.ink }}>{p.label}</div>
-                  <div style={{ fontSize:10, color:T.muted }}>{p.hint}</div>
+                  <div style={{ fontSize:10, color: p.canAddAnother ? T.navy : T.muted }}>
+                    {p.canAddAnother ? "+ Add another account" : p.hint}
+                  </div>
                 </div>
               </button>
             ))}
@@ -9926,13 +9985,23 @@ function AnalyticsView({ postApprovals, content }) {
     try { localStorage.setItem("pronto_connected_platforms", JSON.stringify(list)); } catch {}
   }
 
+  // Multi-account platforms: multiple entries allowed for the same key
+  const MULTI_ACCOUNT_KEYS = new Set(["facebook", "instagram"]);
+
   function addPlatform(p) {
-    const next = [...connectedPlatforms.filter(x => x.key !== p.key), p];
-    saveConnected(next);
+    // Generate a unique instance ID so same-key platforms can coexist
+    const entry = { ...p, instanceId: "pi_" + Date.now() + "_" + Math.random().toString(36).slice(2,6) };
+    if (!MULTI_ACCOUNT_KEYS.has(p.key)) {
+      // Single-account platform: replace any existing entry
+      saveConnected([...connectedPlatforms.filter(x => x.key !== p.key), entry]);
+    } else {
+      // Multi-account platform: append
+      saveConnected([...connectedPlatforms, entry]);
+    }
   }
 
-  function removePlatform(key) {
-    saveConnected(connectedPlatforms.filter(p => p.key !== key));
+  function removePlatform(instanceId) {
+    saveConnected(connectedPlatforms.filter(p => p.instanceId !== instanceId));
   }
 
   const platforms = [
@@ -10014,21 +10083,49 @@ function AnalyticsView({ postApprovals, content }) {
         {connPlatforms.length === 0 && (
           <div style={{ fontSize:12, color:T.muted, padding:"6px 4px", fontStyle:"italic" }}>No platforms connected yet.</div>
         )}
-        {connPlatforms.map(p => (
-          <div key={p.key} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 4px", marginBottom:2, borderRadius:6 }}
-            onMouseEnter={e => e.currentTarget.style.background = T.surface2}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-            <ConnDot/>
-            <div style={{ minWidth:0, flex:1 }}>
-              <div style={{ fontSize:12, fontWeight:600, color:T.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.label}</div>
-              <div style={{ fontSize:10, color:T.muted }}>{p.sub}</div>
-            </div>
-            <button onClick={() => removePlatform(p.key)} title="Disconnect"
-              style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:"2px 4px", borderRadius:4, flexShrink:0 }}
-              onMouseEnter={e => e.currentTarget.style.color = "#EF4444"}
-              onMouseLeave={e => e.currentTarget.style.color = T.muted}>×</button>
-          </div>
-        ))}
+        {(() => {
+          // Group by platform key preserving order
+          const seen = new Set();
+          const groups = [];
+          for (const p of connPlatforms) {
+            if (!seen.has(p.key)) { seen.add(p.key); groups.push(p.key); }
+          }
+          return groups.map(key => {
+            const entries = connPlatforms.filter(p => p.key === key);
+            const platformMeta = AVAIL_PLATFORMS.find(ap => ap.key === key) || {};
+            return (
+              <div key={key} style={{ marginBottom:8 }}>
+                {/* Platform group header */}
+                <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.10em", color:T.muted, textTransform:"uppercase", marginBottom:4 }}>
+                  {platformMeta.label || entries[0].label}
+                </div>
+                {/* Each connected account */}
+                {entries.map(p => (
+                  <div key={p.instanceId || p.key} style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 4px 4px 8px", marginBottom:2, borderRadius:6 }}
+                    onMouseEnter={e => e.currentTarget.style.background = T.surface2}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <ConnDot/>
+                    <div style={{ minWidth:0, flex:1 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:T.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.sub}</div>
+                    </div>
+                    <button onClick={() => removePlatform(p.instanceId || p.key)} title="Disconnect"
+                      style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:"2px 4px", borderRadius:4, flexShrink:0 }}
+                      onMouseEnter={e => e.currentTarget.style.color = "#EF4444"}
+                      onMouseLeave={e => e.currentTarget.style.color = T.muted}>×</button>
+                  </div>
+                ))}
+                {/* Add Another for multi-account platforms */}
+                {platformMeta.multi && (
+                  <button onClick={() => { setShowConnectModal(true); }} style={{
+                    marginLeft:8, marginTop:2, padding:"2px 8px", background:"transparent",
+                    border:`1px dashed ${T.border}`, borderRadius:5, color:T.muted,
+                    fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
+                  }}>+ Add Another</button>
+                )}
+              </div>
+            );
+          });
+        })()}
         <button onClick={() => setShowConnectModal(true)} style={{
           marginTop:8, width:"100%", padding:"7px 0", borderRadius:7,
           background:T.navy, color:"#fff", border:"none", cursor:"pointer",
@@ -10363,7 +10460,27 @@ function App() {
   const [tab, setTab] = useS("tasks");
   const [view, setView] = useS("day");
   const [contentView, setContentView] = useS("week");  // controls Content tab nav & view
-  const [tasksByDate, setTasksByDate] = useS(() => loadOr("tasksByDate", () => buildTasks()));
+  const [tasksByDate, setTasksByDate] = useS(() => {
+    const loaded = loadOr("tasksByDate", () => buildTasks());
+    // Migration: strip any recurring-template tasks that were auto-injected by old code
+    const RECUR_TEXTS = new Set([
+      "social post -", "social stories - casual", "social stories - machine hire",
+      "social stories - machine for sale", "social stories – casual",
+      "social stories – machine hire", "social stories – machine for sale",
+    ]);
+    const cleaned = {};
+    for (const [dk, tasks] of Object.entries(loaded)) {
+      const filtered = tasks.filter(t => {
+        if (t.recurring === true) return false;
+        const lower = (t.text || "").toLowerCase().trim();
+        if (RECUR_TEXTS.has(lower)) return false;
+        if (/^social post\s*[-–]?\s*$/i.test(t.text || "")) return false;
+        return true;
+      });
+      if (filtered.length > 0) cleaned[dk] = filtered;
+    }
+    return cleaned;
+  });
   const [content, setContent] = useS(() => loadOr("content", buildContentState));
   const [chatAs, setChatAs] = useS("vanja");
   const [todayUser, setTodayUser] = useS(() => {
@@ -10422,10 +10539,7 @@ function App() {
   // Day notes — morning plan + daily review per date key
   const [dayNotes, setDayNotes] = useS(() => loadOr("dayNotes", () => ({})));
   // Recurring daily tasks — appear every day with orange checkbox
-  const [recurringTasks, setRecurringTasks] = useS(() => loadOr("recurringTasks", () => [
-    { id:"rt1", text:"Social Stories - Casual",       owner:"oloka" },
-    { id:"rt2", text:"Social Stories - Machine Hire",  owner:"oloka" },
-  ]));
+  const [recurringTasks, setRecurringTasks] = useS(() => loadOr("recurringTasks", () => []));
   // Ongoing Jobs — long-running tasks, tickable daily, never auto-removed
   const [ongoingJobs, setOngoingJobs] = useS(() => loadOr("ongoingJobs", () => [
     { id:"oj1", text:"Edit the video of Mark", owner:"oloka" },
@@ -11000,6 +11114,35 @@ function App() {
       </header>
 
       {/* Tab bar */}
+      {/* Mobile utility bar — shows controls that are hidden from header on mobile */}
+      <div className="mobile-utility-bar" style={{
+        background: T.surface, borderBottom:`1px solid ${T.border}`,
+        padding:"6px 12px", alignItems:"center", justifyContent:"space-between", gap:8,
+      }}>
+        <button onClick={() => setForceMobile(f => !f)} style={{
+          padding:"5px 10px", background: forceMobile ? T.gold+"22" : "transparent",
+          border:`1px solid ${forceMobile ? T.gold : T.border}`,
+          borderRadius:5, color: forceMobile ? T.gold : T.muted, fontSize:10, fontWeight:700,
+          cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:4,
+        }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          {forceMobile ? "DESKTOP" : "MOBILE"}
+        </button>
+        <button onClick={goToday} style={{
+          padding:"5px 12px", background:T.surface2, border:`1px solid ${T.border}`,
+          borderRadius:5, color:T.text, fontSize:11, fontWeight:700,
+          cursor:"pointer", fontFamily:"inherit",
+        }}>Today</button>
+        <button onClick={() => setSettingsOpen(true)} style={{
+          width:28, height:28, borderRadius:5, background:"transparent",
+          border:`1px solid ${T.border}`, color:T.muted,
+          cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+        }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
       <div className="tab-row" style={{
         display:"flex", alignItems:"flex-end", justifyContent:"space-between",
         padding:"0 32px", background:T.cardBg, borderBottom:`1px solid ${T.border}`,
@@ -11029,10 +11172,10 @@ function App() {
       {/* Main */}
       <main className="main-content" style={{ flex:1, padding:"28px 32px 60px", overflowY:"auto", maxWidth:1500, width:"100%", margin:"0 auto", boxSizing:"border-box" }}>
         {heading && (
-          <div style={{ marginBottom:20 }}>
-            <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{heading.eyebrow}</p>
-            <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:8 }}>{heading.big}</h1>
-            <p style={{ color:T.muted, fontSize:13.5 }}>{heading.sub}</p>
+          <div className="page-header-block" style={{ marginBottom:20 }}>
+            <p className="page-header-eyebrow" style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{heading.eyebrow}</p>
+            <h1 className="page-header-big" style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:8 }}>{heading.big}</h1>
+            <p className="page-header-sub" style={{ color:T.muted, fontSize:13.5 }}>{heading.sub}</p>
           </div>
         )}
 
