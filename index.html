@@ -513,7 +513,7 @@ function OwnerToggle({ owner, onChange }) {
 
 function Checkbox({ done, onToggle, accent }) {
   return (
-    <button onClick={onToggle} style={{
+    <button onClick={e => { e.stopPropagation(); onToggle && onToggle(); }} style={{
       width:18, height:18, borderRadius:4, flexShrink:0,
       border:`1.6px solid ${done ? accent : T.borderStrong}`,
       background: done ? accent : T.cardBg,
@@ -1755,7 +1755,7 @@ function TaskInspector({ task, dateKey, onClose, onToggle, onChangePriority, onC
 }
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, schedule, onPickDate }) {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, schedule, onPickDate, avatars }) {
   const [personView, setPersonView] = useStateV("both"); // "both"|"vanja"|"oloka"
   const [viewFilter, setViewFilter] = useStateV("all");
   const [activeTag, setActiveTag] = useStateV(null);
@@ -1969,9 +1969,22 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
         {/* PERSON SWITCHER */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, flexWrap:"wrap", gap:10 }}>
           <div style={{ display:"flex", background:T.surface, borderRadius:8, padding:3, gap:2 }}>
-            {[{key:"both",label:"⊞ Both"},{key:"vanja",label:"V  Vanja"},{key:"oloka",label:"O  Oloka (Me)"}].map(opt => (
-              <button key={opt.key} onClick={() => setPersonView(opt.key)} style={{ padding:"7px 18px", borderRadius:6, background:personView===opt.key?T.navy:"transparent", color:personView===opt.key?"#fff":T.muted, border:"none", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s" }}>{opt.label}</button>
-            ))}
+            {/* Both */}
+            <button onClick={() => setPersonView("both")} style={{ padding:"7px 16px", borderRadius:6, background:personView==="both"?T.navy:"transparent", color:personView==="both"?"#fff":T.muted, border:"none", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:6 }}>⊞ Both</button>
+            {/* Vanja */}
+            <button onClick={() => setPersonView("vanja")} style={{ padding:"7px 16px", borderRadius:6, background:personView==="vanja"?T.vanja+"22":"transparent", border:`1px solid ${personView==="vanja"?T.vanja:"transparent"}`, color:personView==="vanja"?T.vanja:T.muted, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:7 }}>
+              <div style={{ width:22, height:22, borderRadius:"50%", overflow:"hidden", border:`2px solid ${personView==="vanja"?T.vanja:T.border}`, background:T.vanjaSoft, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                {(avatars&&avatars.vanja)?<img src={avatars.vanja} alt="V" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>:<span style={{ fontSize:10, fontWeight:900, color:T.vanja }}>V</span>}
+              </div>
+              Vanja
+            </button>
+            {/* Oloka */}
+            <button onClick={() => setPersonView("oloka")} style={{ padding:"7px 16px", borderRadius:6, background:personView==="oloka"?T.oloka+"22":"transparent", border:`1px solid ${personView==="oloka"?T.oloka:"transparent"}`, color:personView==="oloka"?T.oloka:T.muted, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:7 }}>
+              <div style={{ width:22, height:22, borderRadius:"50%", overflow:"hidden", border:`2px solid ${personView==="oloka"?T.oloka:T.border}`, background:T.olokaSoft, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                {(avatars&&avatars.oloka)?<img src={avatars.oloka} alt="O" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>:<span style={{ fontSize:10, fontWeight:900, color:T.oloka }}>O</span>}
+              </div>
+              Oloka (Me)
+            </button>
           </div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             <span style={{ fontSize:11, color:T.muted }}>Group by:</span>
@@ -2009,7 +2022,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete}
+                onAdd={onAdd} onDelete={onDelete} avatars={avatars}
               />}
               {showOloka && <PersonColumn name="Oloka" role="Content · Photo, Video, Social" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
                 tasks={olokaFiltered} allTasks={olokaAll} dateKey={dateKey}
@@ -2017,7 +2030,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete}
+                onAdd={onAdd} onDelete={onDelete} avatars={avatars}
               />}
             </div>
           );
@@ -2049,7 +2062,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, selectedTaskId, onSelectTask }) {
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, selectedTaskId, onSelectTask, avatars }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
@@ -2084,7 +2097,9 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
       <div style={{ padding:"14px 16px", borderBottom:`1px solid ${T.border}`, background:T.surface }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:38, height:38, borderRadius:"50%", background:accentSoft, border:`2px solid ${accent}`, display:"flex", alignItems:"center", justifyContent:"center", color:accent, fontWeight:900, fontSize:15, fontFamily:"'ProximaNova Black', sans-serif" }}>{name[0]}</div>
+            <div style={{ width:38, height:38, borderRadius:"50%", background:accentSoft, border:`2px solid ${accent}`, display:"flex", alignItems:"center", justifyContent:"center", color:accent, fontWeight:900, fontSize:15, fontFamily:"'ProximaNova Black', sans-serif", overflow:"hidden", flexShrink:0 }}>
+              {(avatars&&avatars[owner])?<img src={avatars[owner]} alt={name} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>:<span>{name[0]}</span>}
+            </div>
             <div>
               <p style={{ margin:0, color:T.heading, fontWeight:800, fontSize:14, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:"0.02em", textTransform:"uppercase" }}>{name}</p>
               <p style={{ margin:"1px 0 0", color:T.muted, fontSize:10.5 }}>{role}</p>
@@ -2112,8 +2127,9 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
       <div style={{ padding:"10px 10px 0" }}>
         <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
           {visible.map(t => (
-            <div key={t.id} onClick={() => onSelectTask && onSelectTask(t.id)}
-              style={{ cursor:"pointer", borderRadius:8, outline:selectedTaskId===t.id?`2px solid ${accent}50`:"none", outlineOffset:2 }}>
+            <div key={t.id} onDoubleClick={() => onSelectTask && onSelectTask(t.id)}
+              style={{ cursor:"pointer", borderRadius:8, outline:selectedTaskId===t.id?`2px solid ${accent}50`:"none", outlineOffset:2 }}
+              title="Double-click to open details">
               <TaskRow task={t} dateKey={dateKey}
                 onToggle={() => onToggle(t.id)}
                 onChangePriority={(p) => onChangePriority(t.id, p)}
@@ -5281,6 +5297,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [showFilters, setShowFilters] = useSh(false);
   const [planDayModal, setPlanDayModal] = useSh(false);
   const [sideCalOffset, setSideCalOffset] = useSh(0);            // month offset for sidebar mini-calendar
+  const [sidebarSearch, setSidebarSearch] = useSh("");           // task search in sidebar
+  const [sidebarFilter, setSidebarFilter] = useSh("all");        // all|unscheduled|overdue|scheduled|completed
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -5606,28 +5624,121 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
             );
           })()}
 
-          {/* UNSCHEDULED TASKS */}
+          {/* FULL TASK BACKLOG */}
           {(() => {
-            const unschAll = [
-              ...(activeUser !== "oloka" ? unscheduledForOwner("vanja").todays : []),
-              ...(activeUser !== "vanja" ? unscheduledForOwner("oloka").todays : []),
-            ];
+            const allTasks = [];
+            for (const date of Object.keys(tasksByDate||{})) {
+              for (const t of (tasksByDate[date]||[])) {
+                if (t.category==="Event"||t.owner==="event"||t.recurring) continue;
+                allTasks.push({...t, _date:date});
+              }
+            }
+            const filtered = allTasks.filter(t => {
+              if (activeUser!=="both" && t.owner!==activeUser) return false;
+              if (!sidebarSearch) return true;
+              return t.text&&t.text.toLowerCase().includes(sidebarSearch.toLowerCase());
+            });
+            const unscheduled = filtered.filter(t=>!scheduledHere.has(t.id)&&!t.done);
+            const scheduled   = filtered.filter(t=>scheduledHere.has(t.id)&&!t.done);
+            const completed   = filtered.filter(t=>t.done);
+            const overdue     = unscheduled.filter(t=>t._date<dk);
+            const todayTasks  = unscheduled.filter(t=>t._date===dk);
+            const upcoming    = unscheduled.filter(t=>t._date>dk&&t._date!==dk);
+
+            const visGroups = sidebarFilter==="unscheduled"
+              ? [["UNSCHEDULED TODAY",todayTasks],["OVERDUE",overdue],["UPCOMING",upcoming]]
+              : sidebarFilter==="overdue"
+              ? [["OVERDUE",overdue]]
+              : sidebarFilter==="completed"
+              ? [["COMPLETED",completed]]
+              : sidebarFilter==="scheduled"
+              ? [["SCHEDULED TODAY",scheduled]]
+              : [["TODAY",todayTasks],["OVERDUE",overdue],["UPCOMING",upcoming.slice(0,5)],["SCHEDULED",scheduled.slice(0,3)]];
+
+            const fmtPriority = (p) => {
+              const cols = { Urgent:"#EF4444", High:"#F59E0B", Normal:T.muted, Low:T.faint };
+              return cols[p]||T.muted;
+            };
+
             return (
               <div style={{ marginBottom:24 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-                  <span style={{ fontSize:11, fontWeight:800, letterSpacing:"0.1em", color:T.ink }}>UNSCHEDULED TASKS</span>
-                  {unschAll.length > 4 && <button style={{ background:"none", border:"none", fontSize:10, color:T.gold, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>View all</button>}
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                  <span style={{ fontSize:11, fontWeight:800, letterSpacing:"0.1em", color:T.ink }}>TASK BACKLOG</span>
+                  <span style={{ fontSize:9, fontWeight:700, color:T.muted }}>{unscheduled.length} unscheduled</span>
                 </div>
-                {unschAll.length === 0 ? (
-                  <p style={{ fontSize:11, color:T.faint, fontStyle:"italic" }}>All scheduled ✓</p>
-                ) : unschAll.slice(0,5).map((task, idx) => (
-                  <div key={task.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom: idx < Math.min(unschAll.length,5)-1 ? `1px solid ${T.border}` : "none" }}>
-                    <span style={{ color:T.faint, fontSize:10 }}>⋮⋮</span>
-                    <p style={{ flex:1, fontSize:11, color:T.ink, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{task.text}</p>
-                    <button onClick={() => addBlock(task.owner, task.id, 9*60, 30)} title="Add to 9am"
-                      style={{ width:22, height:22, borderRadius:5, background:T.surface, border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
-                  </div>
-                ))}
+
+                {/* Search */}
+                <div style={{ position:"relative", marginBottom:8 }}>
+                  <input value={sidebarSearch} onChange={e=>setSidebarSearch(e.target.value)}
+                    placeholder="Search tasks…"
+                    style={{ width:"100%", padding:"7px 10px 7px 28px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, color:T.ink, fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
+                  />
+                  <span style={{ position:"absolute", left:9, top:"50%", transform:"translateY(-50%)", color:T.faint, fontSize:11, pointerEvents:"none" }}>🔍</span>
+                  {sidebarSearch&&<button onClick={()=>setSidebarSearch("")} style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:13, padding:0, fontFamily:"inherit" }}>×</button>}
+                </div>
+
+                {/* Filter pills */}
+                <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
+                  {[["all","All"],["unscheduled","Unscheduled"],["overdue","Overdue"],["scheduled","Scheduled"],["completed","Done"]].map(([k,l])=>(
+                    <button key={k} onClick={()=>setSidebarFilter(k)}
+                      style={{ padding:"3px 8px", background:sidebarFilter===k?T.gold+"22":"transparent", border:`1px solid ${sidebarFilter===k?T.gold:T.border}`, borderRadius:20, color:sidebarFilter===k?T.gold:T.muted, fontSize:9.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}
+                    >{l}</button>
+                  ))}
+                </div>
+
+                {/* Include other days toggle */}
+                <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:10, color:T.muted, marginBottom:10 }}>
+                  <input type="checkbox" checked={includeOther} onChange={e=>setIncludeOther(e.target.checked)} style={{ accentColor:T.gold }}/>
+                  Include tasks from other days
+                </label>
+
+                {/* Task groups */}
+                {visGroups.map(([groupLabel, groupTasks]) => {
+                  if (!groupTasks.length) return null;
+                  return (
+                    <div key={groupLabel} style={{ marginBottom:10 }}>
+                      <div style={{ fontSize:8.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", marginBottom:5, display:"flex", alignItems:"center", gap:6 }}>
+                        {groupLabel}
+                        <span style={{ background:T.surface2, borderRadius:8, padding:"0 5px", fontSize:8 }}>{groupTasks.length}</span>
+                      </div>
+                      {groupTasks.map(task=>{
+                        const ac=task.owner==="vanja"?T.vanja:T.oloka;
+                        const isScheduled=scheduledHere.has(task.id);
+                        const catColor=(window.prontoCatColors||CAT_COLOR)[task.category]||T.muted;
+                        return (
+                          <div key={task.id} draggable
+                            onDragStart={e=>{
+                              try{e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",String(task.id));}catch(_){}
+                            }}
+                            style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", background:isScheduled?T.surface:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, marginBottom:4, cursor:"grab", opacity:task.done?0.5:1 }}
+                            onMouseEnter={e=>e.currentTarget.style.borderColor=ac+"60"}
+                            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
+                          >
+                            <span style={{ width:4, height:4, borderRadius:"50%", background:ac, flexShrink:0 }}></span>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <p style={{ margin:0, fontSize:10.5, color:task.done?T.faint:T.ink, textDecoration:task.done?"line-through":"none", lineHeight:1.3, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{task.text}</p>
+                              <div style={{ display:"flex", gap:4, marginTop:2, alignItems:"center" }}>
+                                {task.category&&<span style={{ fontSize:8, color:catColor, background:catColor+"18", padding:"0 4px", borderRadius:3, fontWeight:700 }}>{task.category}</span>}
+                                {task.priority&&task.priority!=="Normal"&&<span style={{ fontSize:8, color:fmtPriority(task.priority), fontWeight:700 }}>{task.priority}</span>}
+                                {isScheduled&&<span style={{ fontSize:8, color:"#10B981", fontWeight:700 }}>✓ Scheduled</span>}
+                              </div>
+                            </div>
+                            {!isScheduled&&(
+                              <button onClick={()=>addBlock(task.owner||"oloka", task.id, 9*60, 30)}
+                                title="Add to 9am"
+                                style={{ width:20, height:20, borderRadius:4, background:T.surface, border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, padding:0, fontFamily:"inherit" }}
+                              >+</button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+
+                {unscheduled.length===0&&!sidebarSearch&&(
+                  <p style={{ fontSize:11, color:T.faint, fontStyle:"italic", textAlign:"center", padding:"12px 0" }}>All tasks scheduled ✓</p>
+                )}
               </div>
             );
           })()}
@@ -5791,11 +5902,22 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                         style={{ padding:"2px 4px", minHeight:20, cursor:"crosshair", background: inDrag ? SCHED_SPAN_COLORS[0]+"22" : "transparent", position:"relative" }}>
                         {daySpansHere.map(s => {
                           const isStart = s.startDate===dkey;
-                          return <div key={s.id} onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setSchedSpans(prev=>prev.filter(x=>x.id!==s.id));}}
-                            title={`${s.title} · click to delete`}
-                            style={{ background:s.color||T.gold, color:"#fff", fontSize:9, fontWeight:700, padding:"1px 5px", borderRadius:isStart?"3px 0 0 3px":"0 3px 3px 0", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", cursor:"pointer", marginBottom:1 }}>
-                            {isStart ? s.title : ""}
-                          </div>;
+                          const isEnd   = s.endDate===dkey;
+                          const showLabel = isStart || di===0;
+                          const spanCol = s.color||T.gold;
+                          const br = isStart&&isEnd?"4px":isStart?"4px 0 0 4px":isEnd?"0 4px 4px 0":"0";
+                          return (
+                            <div key={s.id} onMouseDown={e=>e.stopPropagation()}
+                              onClick={e=>{e.stopPropagation();}}
+                              title={`${s.title||"Event"}\n${s.startDate} → ${s.endDate}\nClick × to remove`}
+                              style={{ background:spanCol+"CC", color:"#fff", fontSize:9.5, fontWeight:700, padding:"2px 6px", borderRadius:br, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", cursor:"default", marginBottom:2, display:"flex", alignItems:"center", gap:4, height:18 }}
+                              onMouseEnter={e=>e.currentTarget.style.background=spanCol}
+                              onMouseLeave={e=>e.currentTarget.style.background=spanCol+"CC"}
+                            >
+                              <span style={{ flex:1, overflow:"hidden", textOverflow:"ellipsis" }}>{showLabel ? (s.title||"") : ""}</span>
+                              {isEnd && <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setSchedSpans(prev=>prev.filter(x=>x.id!==s.id));}} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.7)", cursor:"pointer", fontSize:11, padding:"0 1px", fontFamily:"inherit" }}>×</button>}
+                            </div>
+                          );
                         })}
                         {daySpansHere.length===0 && !inDrag && <div style={{ height:16 }} />}
                       </div>
@@ -5960,7 +6082,34 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                             <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background:isTodayM?T.gold:"transparent", color:isTodayM?"#fff":isWeekendM?T.muted:T.ink, fontSize:12, fontWeight:isTodayM?800:500 }}>{d}</span>
                             {isTodayM && <span style={{ fontSize:8, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeftM/60)}h left</span>}
                           </div>
-                          {daySpans2.map(s=><div key={s.id} onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setSchedSpans(prev=>prev.filter(x=>x.id!==s.id));}} style={{ height:4, background:s.color||T.gold, borderRadius:2, marginBottom:2, cursor:"pointer" }} />)}
+                          {daySpans2.map(s => {
+                            const isStart = s.startDate === mdk;
+                            const isEnd   = s.endDate   === mdk;
+                            const spanColor = s.color || T.gold;
+                            const br = isStart && isEnd ? "6px" : isStart ? "6px 0 0 6px" : isEnd ? "0 6px 6px 0" : "0";
+                            // label only on start day or first visible day of a row
+                            const showLabel = isStart || (i % 7 === 0);
+                            return (
+                              <div key={s.id}
+                                onMouseDown={e=>e.stopPropagation()}
+                                onClick={e=>{e.stopPropagation();}}
+                                title={`${s.title||"Event"}\n${s.startDate} → ${s.endDate}`}
+                                style={{ height:20, background:spanColor+"CC", borderRadius:br, marginBottom:3, cursor:"pointer", display:"flex", alignItems:"center", paddingLeft:showLabel?7:3, paddingRight:4, overflow:"hidden", position:"relative", marginLeft:isStart?0:-6, marginRight:isEnd?0:-6 }}
+                                onMouseEnter={e=>{ e.currentTarget.style.background=spanColor; e.currentTarget.style.opacity="1"; }}
+                                onMouseLeave={e=>{ e.currentTarget.style.background=spanColor+"CC"; e.currentTarget.style.opacity="1"; }}
+                              >
+                                {showLabel && s.title && (
+                                  <span style={{ fontSize:9.5, fontWeight:700, color:"#fff", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", lineHeight:1, textShadow:"0 1px 2px rgba(0,0,0,0.3)", flex:1, minWidth:0 }}>{s.title}</span>
+                                )}
+                                {isEnd && (
+                                  <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setSchedSpans(prev=>prev.filter(x=>x.id!==s.id));}}
+                                    style={{ background:"none", border:"none", color:"rgba(255,255,255,0.7)", cursor:"pointer", fontSize:11, lineHeight:1, padding:"0 2px", flexShrink:0, fontFamily:"inherit" }}
+                                    title="Remove event"
+                                  >×</button>
+                                )}
+                              </div>
+                            );
+                          })}
                           {allDayBlocks.slice(0,3).map((block, bi) => {
                             const task = tasksByIdRef[block.taskId];
                             const label = block.isBreak ? block.breakLabel : (task?.text || block.qeTitle || "Event");
@@ -10205,6 +10354,7 @@ function App() {
             content={content}
             schedule={schedule}
             onPickDate={onPickDate}
+            avatars={avatars}
           />
         )}
         {tab === "tasks" && view === "week" && (
