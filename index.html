@@ -203,58 +203,9 @@ function buildTasks() {
       });
     }
   }
-  // 2) ensure recurring tasks for every weekday from Jan 1 to Dec 31 2026
-  const start = new Date(2026, 0, 1);
-  const end = new Date(2026, 11, 31);
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
-    const dow = d.getDay(); // 0 Sun, 1 Mon...6 Sat
-    if (dow === 0 || dow === 6) continue;
-    const dk = isoDateBuild(d);
-    if (!out[dk]) out[dk] = [];
-    for (const rec of RECURRING) {
-      if (!rec.weekdays.includes(dow)) continue;
-      // skip if already present (match by case-insensitive prefix of text)
-      const exists = out[dk].some(t => {
-        const tt = t.text.trim().toLowerCase();
-        const recT = rec.text.trim().toLowerCase();
-        // "Social Post - X" matches any "Social Post" entry
-        if (rec.text === "Social Post -") return /^social post/.test(tt);
-        return tt === recT;
-      });
-      if (exists) continue;
-      out[dk].push({
-        id: _uid++,
-        text: rec.text,
-        done: false,
-        owner: rec.owner,
-        category: rec.category,
-        priority: "Normal",
-        recurring: true,
-      });
-    }
-    // Add the alternating photo/video competition on Mondays
-    const alt = weeklyAlternatingTaskFor(d);
-    if (alt) {
-      const exists = out[dk].some(t => /(photo|video) competition/i.test(t.text));
-      if (!exists) {
-        out[dk].push({
-          id: _uid++,
-          text: alt.text,
-          done: false,
-          owner: alt.owner,
-          category: alt.category,
-          priority: "Normal",
-          recurring: true,
-        });
-      }
-    }
-    // sort: Social Post / Stories first, then everything else
-    out[dk].sort((a,b) => {
-      const sa = /^social/i.test(a.text) ? 0 : 1;
-      const sb = /^social/i.test(b.text) ? 0 : 1;
-      return sa - sb;
-    });
-  }
+  // NOTE: Recurring tasks (Social Post, Stories etc.) are intentionally NOT auto-injected
+  // into the daily task list. They live in the dedicated Recurring Tasks section (OngoingSection)
+  // and can be manually added to Today from there. This keeps the daily list clean and intentional.
   return out;
 }
 
@@ -1034,6 +985,7 @@ const TAB_LABELS = {
   today:"Today", tasks:"Tasks", schedule:"Schedule", content:"Content",
   plan:"Plan 2026", team:"Team", resources:"Resources", chat:"Chat",
   "brain-dump":"Brain Dump",
+  "analytics":"Analytics",
 };
 
 function loadFbConf() {
@@ -1449,8 +1401,8 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
       <div style={{ border:`1px solid ${ORANGE}33`, borderLeft:`3px solid ${ORANGE}`, borderRadius:8, overflow:"hidden", background:T.cardBg }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
           <div>
-            <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:ORANGE }}>🔁 RECURRING DAILY</span>
-            <span style={{ fontSize:10, color:T.muted, marginLeft:8 }}>Resets each day · delete to remove permanently</span>
+            <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:ORANGE }}>🔁 RECURRING TEMPLATES</span>
+            <span style={{ fontSize:10, color:T.muted, marginLeft:8 }}>Tick off here · or press → to add to today's task list</span>
           </div>
           <button onClick={() => setAddingRecurring(true)} style={{ padding:"3px 10px", background:"transparent", border:`1px solid ${ORANGE}`, borderRadius:5, color:ORANGE, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
         </div>
@@ -1473,11 +1425,35 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
                   opacity: socialPostDone ? 0.6 : 1,
                 }}
               />
+              {onAdd && !socialPostDone && (
+                <button onClick={() => onAdd(dateKey, { text:"Social Post" + (socialPostText?" - "+socialPostText:""), owner:"oloka", category:"Social Post", priority:"Normal" })}
+                  title="Add as a task for today"
+                  style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+              )}
             </div>
             {contentCalLabel && socialPostOverride === undefined && (
               <div style={{ fontSize:9, color:T.faint, marginLeft:28 }}>📅 From content calendar · click to edit</div>
             )}
           </div>
+          {/* Built-in RECURRING templates (Social Stories etc.) shown as templates */}
+          {[
+            { id:"__stories_casual__",   text:"Social Stories – Casual",        owner:"oloka", category:"Social Post" },
+            { id:"__stories_hire__",     text:"Social Stories – Machine Hire",   owner:"oloka", category:"Social Post" },
+          ].map(tpl => {
+            const done = !!recurringDone[tpl.id];
+            return (
+              <div key={tpl.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <OrangeCheckbox done={done} onToggle={() => setRecDone(tpl.id, !done)} />
+                <span style={{ fontSize:12, color: done ? T.muted : T.ink, flex:1, textDecoration: done ? "line-through" : "none" }}>{tpl.text}</span>
+                <span style={{ fontSize:9, fontWeight:700, color:ORANGE, background:ORANGE+"18", padding:"1px 5px", borderRadius:3 }}>TEMPLATE</span>
+                {onAdd && !done && (
+                  <button onClick={() => onAdd(dateKey, { text:tpl.text, owner:tpl.owner, category:tpl.category, priority:"Normal" })}
+                    title="Add as a task for today"
+                    style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                )}
+              </div>
+            );
+          })}
           {/* Staff events for today */}
           {staffEvents.map(ev => (
             <div key={ev.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1492,11 +1468,17 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
               <OrangeCheckbox done={!!recurringDone[rt.id]} onToggle={() => setRecDone(rt.id, !recurringDone[rt.id])} />
               <span style={{ fontSize:12, color: recurringDone[rt.id] ? T.muted : T.ink, flex:1, textDecoration: recurringDone[rt.id] ? "line-through" : "none" }}>{rt.text}</span>
               <span style={{ fontSize:9, color: rt.owner==="oloka" ? T.oloka : T.vanja, fontWeight:800 }}>{rt.owner==="oloka"?"O":"V"}</span>
+              <span style={{ fontSize:9, fontWeight:700, color:ORANGE, background:ORANGE+"18", padding:"1px 5px", borderRadius:3 }}>TEMPLATE</span>
+              {onAdd && !recurringDone[rt.id] && (
+                <button onClick={() => onAdd(dateKey, { text:rt.text, owner:rt.owner||"oloka", category:"Admin", priority:"Normal" })}
+                  title="Add as a task for today"
+                  style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+              )}
               <button onClick={() => setRecurringTasks(prev => prev.filter(x => x.id !== rt.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }} title="Remove permanently">×</button>
             </div>
           ))}
           {recurringTasks.length === 0 && staffEvents.length === 0 && (
-            <p style={{ fontSize:10, color:T.faint, fontStyle:"italic" }}>No recurring tasks for today</p>
+            <p style={{ fontSize:10, color:T.faint, fontStyle:"italic" }}>No user-added recurring tasks · use + Add above</p>
           )}
           {/* Add form */}
           {addingRecurring && (
@@ -1766,7 +1748,8 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
 
   const dateKey = isoDate(selDate);
   const dayTasks = tasksByDate[dateKey] || [];
-  const isHiddenRecurring = (t) => t.recurring === true && /^social (post|stories)/i.test(t.text);
+  // All tasks marked recurring:true are managed in the Recurring Tasks section — hide from main list
+  const isHiddenRecurring = (t) => t.recurring === true;
   const events = dayTasks.filter(t => t.category === "Event" || t.owner === "event");
   const realTasks = dayTasks.filter(t => t.category !== "Event" && t.owner !== "event");
   const visibleTasks = realTasks.filter(t => !isHiddenRecurring(t));
@@ -9588,6 +9571,568 @@ Object.assign(window, { ResourcesView });
 
 </script>
 <script type="text/babel">
+// ── Analytics + Publishing View ──
+(function(){
+const { useState: usePx, useEffect: useEx, useMemo: useMx, useRef: useRx } = React;
+
+// ── Platform colours ──
+const PC = {
+  instagram: "#E1306C",
+  facebook:  "#1877F2",
+  linkedin:  "#0A66C2",
+  youtube:   "#FF0000",
+  ga:        "#F9AB00",
+};
+
+// ── Simulated weekly data (7 days: 18–24 May) ──
+const WEEK_LABELS = ["18 May","19 May","20 May","21 May","22 May","23 May","24 May"];
+const WEEK_DATA = {
+  instagram: [18200, 20100, 21500, 23800, 24600, 22900, 24600],
+  facebook:  [25000, 27300, 28900, 30100, 31700, 30500, 31700],
+  linkedin:  [6200,  7100,  7800,  8400,  8900,  8600,  8900],
+  youtube:   [8900,  9800,  10500, 11200, 12400, 11800, 12400],
+  ga:        [3800,  4100,  4600,  4900,  5200,  5000,  5200],
+};
+
+const TOP_CONTENT = [
+  { id:1, title:"New 30T Excavator Walkaround",      platform:"instagram", reach:12400 },
+  { id:2, title:"Behind the Build: Site Prep",        platform:"facebook",  reach:9800  },
+  { id:3, title:"Team Day Out! Building Together",    platform:"linkedin",  reach:8700  },
+  { id:4, title:"How We Move Big Machines",           platform:"youtube",   reach:7100  },
+  { id:5, title:"Concrete Pour Timelapse",            platform:"instagram", reach:6300  },
+];
+
+const SCHEDULED_POSTS = [
+  { time:"8:00 AM",  title:"New Excavator Reel",       platform:"instagram", day:"WED" },
+  { time:"10:00 AM", title:"Site Update Photo",         platform:"facebook",  day:"WED" },
+  { time:"12:30 PM", title:"Team Spotlight",            platform:"linkedin",  day:"WED" },
+  { time:"2:00 PM",  title:"How We Move Big Machines",  platform:"youtube",   day:"WED" },
+  { time:"4:15 PM",  title:"Weekend Project Update",    platform:"instagram", day:"WED" },
+];
+
+const INSIGHTS = [
+  { icon:"📈", text:"Instagram Reels are performing 32% better than feed posts this week." },
+  { icon:"⏰", text:"Your audience is most active 7am–9am on weekdays." },
+  { icon:"🏗️", text:"Construction updates and behind-the-scenes content drive the most engagement." },
+  { icon:"🌐", text:"Your website traffic from social is up 18% this week." },
+];
+
+const AUDIENCE_GROWTH = [120, 95, 180, 210, 165, 240, 195]; // new followers per day
+
+// ── Sparkline helper ──
+function Sparkline({ data, color, width=60, height=24 }) {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg width={width} height={height} style={{ display:"block" }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// ── Multi-line performance chart ──
+function PerformanceChart({ platforms }) {
+  const W = 520, H = 220;
+  const PAD = { top:16, right:16, bottom:32, left:44 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const allVals = platforms.flatMap(p => WEEK_DATA[p.key]);
+  const maxV = Math.max(...allVals);
+  const yTicks = [0, 10000, 20000, 30000, 40000];
+
+  const toX = (i) => PAD.left + (i / 6) * chartW;
+  const toY = (v) => PAD.top + chartH - (v / 40000) * chartH;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible" }}>
+      {/* Y grid lines */}
+      {yTicks.map(tick => (
+        <g key={tick}>
+          <line x1={PAD.left} x2={PAD.left + chartW} y1={toY(tick)} y2={toY(tick)}
+            stroke={T.border} strokeWidth="1" strokeDasharray="3,3"/>
+          <text x={PAD.left - 6} y={toY(tick) + 4} textAnchor="end" fontSize="9" fill={T.muted}>
+            {tick === 0 ? "0" : `${tick/1000}K`}
+          </text>
+        </g>
+      ))}
+      {/* X labels */}
+      {WEEK_LABELS.map((lbl, i) => (
+        <text key={lbl} x={toX(i)} y={H - 4} textAnchor="middle" fontSize="9" fill={T.muted}>{lbl}</text>
+      ))}
+      {/* Lines */}
+      {platforms.map(p => {
+        const pts = WEEK_DATA[p.key].map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
+        return (
+          <polyline key={p.key} points={pts} fill="none" stroke={PC[p.key]}
+            strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+        );
+      })}
+      {/* Dots on last point */}
+      {platforms.map(p => {
+        const v = WEEK_DATA[p.key][6];
+        return <circle key={p.key} cx={toX(6)} cy={toY(v)} r="3" fill={PC[p.key]}/>;
+      })}
+    </svg>
+  );
+}
+
+// ── Donut chart ──
+function DonutChart({ segments, size=90 }) {
+  const r = 32, cx = size/2, cy = size/2;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  const total = segments.reduce((a, s) => a + s.value, 0);
+  return (
+    <svg width={size} height={size}>
+      {segments.map((s, i) => {
+        const frac = s.value / total;
+        const dash = frac * circ;
+        const gap  = circ - dash;
+        const el = (
+          <circle key={i} cx={cx} cy={cy} r={r}
+            fill="none" stroke={s.color} strokeWidth="14"
+            strokeDasharray={`${dash} ${gap}`}
+            strokeDashoffset={-offset * circ}
+            style={{ transform:`rotate(-90deg)`, transformOrigin:`${cx}px ${cy}px` }}
+          />
+        );
+        offset += frac;
+        return el;
+      })}
+    </svg>
+  );
+}
+
+// ── Audience stacked bar chart ──
+function AudienceBarChart() {
+  const W = 240, H = 100;
+  const days = ["S","M","T","W","T","F","S"];
+  const bars = [
+    [40, 30, 25, 25],
+    [30, 25, 20, 20],
+    [55, 45, 35, 45],
+    [65, 50, 45, 50],
+    [45, 40, 35, 45],
+    [70, 55, 50, 65],
+    [55, 45, 40, 55],
+  ];
+  const colors = [PC.instagram, PC.facebook, PC.linkedin, PC.youtube];
+  const barW = 24, gap = (W - bars.length * barW) / (bars.length + 1);
+  const maxTotal = Math.max(...bars.map(b => b.reduce((a,v)=>a+v,0)));
+  return (
+    <svg width={W} height={H + 16} style={{ overflow:"visible" }}>
+      {bars.map((segs, i) => {
+        const x = gap + i * (barW + gap);
+        let y = H;
+        return (
+          <g key={i}>
+            {segs.map((val, j) => {
+              const bh = (val / maxTotal) * H;
+              y -= bh;
+              return <rect key={j} x={x} y={y} width={barW} height={bh} fill={colors[j]} rx="2"/>;
+            })}
+            <text x={x + barW/2} y={H + 12} textAnchor="middle" fontSize="9" fill={T.muted}>{days[i]}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ── Platform icon text ──
+function PlatIcon({ platform, size=13 }) {
+  const icons = { instagram:"IG", facebook:"FB", linkedin:"LI", youtube:"YT", ga:"GA" };
+  return (
+    <span style={{
+      display:"inline-flex", alignItems:"center", justifyContent:"center",
+      width:size+6, height:size+6, borderRadius:3,
+      background: PC[platform], color:"#fff",
+      fontSize:size-3, fontWeight:800, letterSpacing:"-0.02em",
+    }}>{icons[platform]}</span>
+  );
+}
+
+// ── Connected dot ──
+function ConnDot() {
+  return <span style={{ display:"inline-block", width:7, height:7, borderRadius:"50%", background:"#10B981", marginRight:4, flexShrink:0 }}/>;
+}
+
+// ── Main AnalyticsView ──
+function AnalyticsView({ postApprovals, content }) {
+  const [analyticsPage, setAnalyticsPage] = usePx("Overview");
+  const [scheduleView, setScheduleView] = usePx("Calendar");
+  const [weekOffset, setWeekOffset] = usePx(0);
+  const [reachMetric, setReachMetric] = usePx("Reach");
+
+  const platforms = [
+    { key:"instagram", name:"@prontohire",        label:"Instagram", metric:"Reach",       value:"24.6K", pct:"+18.6%", data: WEEK_DATA.instagram },
+    { key:"facebook",  name:"Pronto Hire",         label:"Facebook",  metric:"Reach",       value:"31.7K", pct:"+12.3%", data: WEEK_DATA.facebook  },
+    { key:"linkedin",  name:"Pronto Hire",         label:"LinkedIn",  metric:"Impressions", value:"8.9K",  pct:"+15.7%", data: WEEK_DATA.linkedin  },
+    { key:"youtube",   name:"Pronto Hire",         label:"YouTube",   metric:"Views",       value:"12.4K", pct:"+22.1%", data: WEEK_DATA.youtube   },
+    { key:"ga",        name:"prontohire.com",      label:"Website",   metric:"Users",       value:"5.2K",  pct:"+16.8%", data: WEEK_DATA.ga        },
+  ];
+
+  const navItems = [
+    { section:"ANALYTICS", items:["Overview","Performance","Audience","Competitors","Reports","Google Analytics"] },
+    { section:"PUBLISH & SCHEDULE", items:[
+        { label:"Calendar" },
+        { label:"Scheduled", badge:24 },
+        { label:"Drafts", badge:7 },
+        { label:"Needs Approval", badge:3 },
+    ]},
+  ];
+
+  const connPlatforms = [
+    { label:"Instagram", sub:"@prontohire" },
+    { label:"Facebook Page", sub:"Pronto Hire" },
+    { label:"LinkedIn Page", sub:"Pronto Hire" },
+    { label:"YouTube Channel", sub:"Pronto Hire" },
+    { label:"Google Analytics", sub:"prontohire.com" },
+  ];
+
+  const thumbColors = ["#C4A35A","#4A90D9","#7B68EE","#E8624A","#50C878"];
+
+  // Sidebar
+  const Sidebar = () => (
+    <div style={{
+      width:220, minWidth:220, flexShrink:0,
+      background:T.cardBg, borderRight:`1px solid ${T.border}`,
+      display:"flex", flexDirection:"column", overflowY:"auto", padding:"20px 0 16px",
+    }}>
+      {/* ANALYTICS section */}
+      <div style={{ padding:"0 16px", marginBottom:4 }}>
+        <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", color:T.muted, marginBottom:8 }}>ANALYTICS</div>
+        {["Overview","Performance","Audience","Competitors","Reports","Google Analytics"].map(item => (
+          <div key={item} onClick={() => setAnalyticsPage(item)}
+            style={{
+              display:"flex", alignItems:"center", padding:"7px 10px",
+              borderRadius:7, cursor:"pointer", marginBottom:2,
+              background: analyticsPage === item ? T.surface : "transparent",
+              borderLeft: analyticsPage === item ? `3px solid ${T.navy}` : "3px solid transparent",
+              fontSize:13, fontWeight: analyticsPage === item ? 700 : 500,
+              color: analyticsPage === item ? T.ink : T.text,
+            }}>{item}</div>
+        ))}
+      </div>
+
+      <div style={{ height:1, background:T.border, margin:"10px 0" }}/>
+
+      {/* PUBLISH & SCHEDULE section */}
+      <div style={{ padding:"0 16px", marginBottom:4 }}>
+        <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", color:T.muted, marginBottom:8 }}>PUBLISH & SCHEDULE</div>
+        {[
+          { label:"Calendar" },
+          { label:"Scheduled", badge:24 },
+          { label:"Drafts", badge:7 },
+          { label:"Needs Approval", badge:3 },
+        ].map(item => (
+          <div key={item.label}
+            style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+              padding:"7px 10px", borderRadius:7, cursor:"pointer", marginBottom:2,
+              fontSize:13, fontWeight:500, color:T.text,
+            }}>
+            <span>{item.label}</span>
+            {item.badge && (
+              <span style={{ background:T.navy, color:"#fff", fontSize:10, fontWeight:700,
+                borderRadius:10, padding:"1px 7px" }}>{item.badge}</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ height:1, background:T.border, margin:"10px 0" }}/>
+
+      {/* CONNECT PLATFORMS */}
+      <div style={{ padding:"0 16px", marginBottom:4 }}>
+        <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", color:T.muted, marginBottom:8 }}>CONNECT PLATFORMS</div>
+        {connPlatforms.map(p => (
+          <div key={p.label} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 4px", marginBottom:2 }}>
+            <ConnDot/>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:12, fontWeight:600, color:T.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.label}</div>
+              <div style={{ fontSize:10, color:T.muted }}>{p.sub}</div>
+            </div>
+          </div>
+        ))}
+        <button style={{
+          marginTop:8, width:"100%", padding:"7px 0", borderRadius:7,
+          background:T.navy, color:"#fff", border:"none", cursor:"pointer",
+          fontSize:12, fontWeight:700, letterSpacing:"0.04em",
+        }}>+ Connect Platform</button>
+      </div>
+
+      <div style={{ flex:1 }}/>
+
+      {/* Pro Tip */}
+      <div style={{ margin:"12px 16px 0", background:T.surface2, border:`1px solid ${T.border}`, borderRadius:10, padding:"12px 12px" }}>
+        <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", color:T.navy, marginBottom:4 }}>🚀 PRO TIP</div>
+        <div style={{ fontSize:11, color:T.text, lineHeight:1.5 }}>
+          Post consistently 3–5x per week for best engagement growth.
+        </div>
+      </div>
+    </div>
+  );
+
+  // Overview main content
+  const OverviewContent = () => (
+    <div style={{ flex:1, overflowY:"auto", padding:"24px 24px 24px 0", display:"flex", flexDirection:"column", gap:20 }}>
+      {/* Header row */}
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <div style={{ fontSize:22, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", letterSpacing:"-0.01em" }}>Analytics Overview</div>
+          <div style={{ fontSize:13, color:T.muted, marginTop:2 }}>Track, analyse and grow your social media performance.</div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:600, color:T.ink, cursor:"pointer" }}>
+            18 May – 24 May 2026
+          </div>
+          <button style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:700, color:T.ink, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M2 8l4.5 4 4.5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M1 12h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            Export Report
+          </button>
+          <button style={{ background:T.navy, border:"none", borderRadius:8, padding:"7px 16px", fontSize:12, fontWeight:800, color:"#fff", cursor:"pointer", letterSpacing:"0.04em" }}>
+            + CREATE
+          </button>
+        </div>
+      </div>
+
+      {/* Platform cards row */}
+      <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+        {platforms.map(p => (
+          <div key={p.key} style={{
+            flex:"1 1 160px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px",
+          }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:8 }}>
+              <PlatIcon platform={p.key} size={14}/>
+              <div>
+                <div style={{ fontSize:11, fontWeight:700, color:T.ink, lineHeight:1.2 }}>{p.label}</div>
+                <div style={{ fontSize:10, color:T.muted }}>{p.name}</div>
+              </div>
+            </div>
+            <div style={{ fontSize:10, color:T.muted, marginBottom:2 }}>{p.metric}</div>
+            <div style={{ fontSize:24, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", lineHeight:1 }}>{p.value}</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:6 }}>
+              <span style={{ fontSize:11, fontWeight:700, color:"#10B981" }}>▲ {p.pct}</span>
+              <Sparkline data={p.data} color={PC[p.key]} width={52} height={22}/>
+            </div>
+            <div style={{ fontSize:9, color:T.muted, marginTop:4 }}>vs prev 7 days</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts row */}
+      <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
+        {/* Performance over time */}
+        <div style={{ flex:"3", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+            <div style={{ fontSize:14, fontWeight:800, color:T.heading }}>Performance Over Time</div>
+            <div style={{ display:"flex", alignItems:"center", gap:6, background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, padding:"4px 10px", fontSize:12, fontWeight:600, color:T.ink, cursor:"pointer" }}>
+              {reachMetric} <span style={{ fontSize:10, color:T.muted }}>▾</span>
+            </div>
+          </div>
+          {/* Legend */}
+          <div style={{ display:"flex", gap:14, marginBottom:12, flexWrap:"wrap" }}>
+            {platforms.map(p => (
+              <div key={p.key} style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, color:T.text }}>
+                <span style={{ display:"inline-block", width:20, height:2.5, background:PC[p.key], borderRadius:2 }}/>
+                {p.label}
+              </div>
+            ))}
+          </div>
+          <PerformanceChart platforms={platforms}/>
+        </div>
+
+        {/* Top performing content */}
+        <div style={{ flex:"2", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+            <div style={{ fontSize:14, fontWeight:800, color:T.heading }}>Top Performing Content</div>
+            <span style={{ fontSize:12, color:T.navy, fontWeight:600, cursor:"pointer" }}>View all</span>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {TOP_CONTENT.map((item, i) => (
+              <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:12, fontWeight:700, color:T.muted, width:14, textAlign:"right", flexShrink:0 }}>{i+1}</span>
+                <div style={{ width:38, height:28, borderRadius:5, background:thumbColors[i], flexShrink:0 }}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:T.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.title}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:2 }}>
+                    <PlatIcon platform={item.platform} size={11}/>
+                    <span style={{ fontSize:11, color:T.muted }}>{(item.reach/1000).toFixed(1)}K reach</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom row */}
+      <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
+        {/* Audience Growth */}
+        <div style={{ flex:"2", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:4 }}>Audience Growth</div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:12 }}>
+            <span style={{ fontSize:26, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>18.7K</span>
+            <span style={{ fontSize:13, fontWeight:700, color:"#10B981" }}>▲ 24.7%</span>
+            <span style={{ fontSize:11, color:T.muted }}>Total Followers</span>
+          </div>
+          <AudienceBarChart/>
+          <div style={{ display:"flex", gap:12, marginTop:8, flexWrap:"wrap" }}>
+            {[["instagram","Instagram"],["facebook","Facebook"],["linkedin","LinkedIn"],["youtube","YouTube"]].map(([k,lbl]) => (
+              <div key={k} style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, color:T.text }}>
+                <span style={{ display:"inline-block", width:10, height:10, borderRadius:2, background:PC[k] }}/>
+                {lbl}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Audience Demographics */}
+        <div style={{ flex:"2", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:14 }}>Audience Demographics</div>
+          <div style={{ display:"flex", gap:20, alignItems:"flex-start" }}>
+            {/* Age donut */}
+            <div>
+              <div style={{ fontSize:11, fontWeight:700, color:T.muted, marginBottom:8 }}>Age</div>
+              <DonutChart size={90} segments={[
+                { value:2,  color:"#6366F1" },
+                { value:38, color:"#8B5CF6" },
+                { value:28, color:"#A78BFA" },
+                { value:11, color:"#C4B5FD" },
+                { value:5,  color:"#DDD6FE" },
+              ]}/>
+              <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:3 }}>
+                {[["18–24","2%","#6366F1"],["25–34","38%","#8B5CF6"],["35–44","28%","#A78BFA"],["45–54","11%","#C4B5FD"],["55+","5%","#DDD6FE"]].map(([lbl,pct,col]) => (
+                  <div key={lbl} style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, color:T.text }}>
+                    <span style={{ width:8, height:8, borderRadius:2, background:col, flexShrink:0, display:"inline-block" }}/>
+                    <span style={{ width:32 }}>{lbl}</span>
+                    <span style={{ fontWeight:700, color:T.ink }}>{pct}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Gender donut */}
+            <div>
+              <div style={{ fontSize:11, fontWeight:700, color:T.muted, marginBottom:8 }}>Gender</div>
+              <DonutChart size={90} segments={[
+                { value:61, color:T.navy },
+                { value:36, color:T.gold || "#C4A35A" },
+                { value:3,  color:"#94A3B8" },
+              ]}/>
+              <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:3 }}>
+                {[["Male","61%",T.navy],["Female","36%",T.gold||"#C4A35A"],["Other","3%","#94A3B8"]].map(([lbl,pct,col]) => (
+                  <div key={lbl} style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, color:T.text }}>
+                    <span style={{ width:8, height:8, borderRadius:2, background:col, flexShrink:0, display:"inline-block" }}/>
+                    <span style={{ width:40 }}>{lbl}</span>
+                    <span style={{ fontWeight:700, color:T.ink }}>{pct}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Schedule & Publish panel */}
+        <div style={{ flex:"2", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px", minWidth:260 }}>
+          <div style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:12 }}>Schedule & Publish</div>
+          {/* Toggle */}
+          <div style={{ display:"flex", gap:0, marginBottom:12, background:T.surface, borderRadius:8, padding:3, width:"fit-content" }}>
+            {["Calendar","List"].map(v => (
+              <button key={v} onClick={() => setScheduleView(v)}
+                style={{ padding:"4px 12px", borderRadius:6, border:"none", cursor:"pointer", fontSize:11, fontWeight:700,
+                  background: scheduleView === v ? T.navy : "transparent",
+                  color: scheduleView === v ? "#fff" : T.muted,
+                }}>{v} View</button>
+            ))}
+          </div>
+          {/* Week nav */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+            <button onClick={() => setWeekOffset(w => w - 1)}
+              style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.muted, padding:"0 4px" }}>‹</button>
+            <span style={{ fontSize:11, fontWeight:700, color:T.ink }}>18 May – 24 May 2026</span>
+            <button onClick={() => setWeekOffset(w => w + 1)}
+              style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.muted, padding:"0 4px" }}>›</button>
+          </div>
+          {/* Day headers */}
+          <div style={{ display:"flex", gap:3, marginBottom:8 }}>
+            {["SUN","MON","TUE","WED","THU","FRI","SAT"].map(d => (
+              <div key={d} style={{ flex:1, textAlign:"center", fontSize:8, fontWeight:800,
+                color: d === "WED" ? T.navy : T.muted,
+                background: d === "WED" ? T.surface2 : "transparent",
+                borderRadius:4, padding:"3px 0",
+              }}>{d}</div>
+            ))}
+          </div>
+          {/* Posts list */}
+          <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+            {SCHEDULED_POSTS.map((post, i) => (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:8, background:T.surface, borderRadius:8, padding:"7px 10px" }}>
+                <div style={{ width:30, height:24, borderRadius:4, background:thumbColors[i], flexShrink:0 }}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:10, color:T.muted }}>{post.time}</div>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{post.title}</div>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:3 }}>
+                  <PlatIcon platform={post.platform} size={11}/>
+                  <span style={{ fontSize:9, color:"#10B981", fontWeight:700 }}>Scheduled</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Insights & Recommendations */}
+      <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px" }}>
+        <div style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:14 }}>Insights & Recommendations</div>
+        <div style={{ display:"flex", gap:14, flexWrap:"wrap" }}>
+          {INSIGHTS.map((ins, i) => (
+            <div key={i} style={{ flex:"1 1 200px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:"14px 16px" }}>
+              <div style={{ fontSize:20, marginBottom:8 }}>{ins.icon}</div>
+              <div style={{ fontSize:12, color:T.text, lineHeight:1.6 }}>{ins.text}</div>
+            </div>
+          ))}
+        </div>
+        <button style={{ marginTop:16, background:T.navy, border:"none", borderRadius:8, padding:"9px 20px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>
+          View Full Report
+        </button>
+      </div>
+    </div>
+  );
+
+  // Placeholder for other pages
+  const PlaceholderContent = ({ page }) => (
+    <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:12, color:T.muted }}>
+      <div style={{ fontSize:40 }}>📊</div>
+      <div style={{ fontSize:18, fontWeight:800, color:T.heading }}>{page}</div>
+      <div style={{ fontSize:13 }}>Coming soon — data will appear here.</div>
+    </div>
+  );
+
+  return (
+    <div style={{ display:"flex", height:"100%", fontFamily:"inherit", overflow:"hidden" }}>
+      <Sidebar/>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", overflowY:"auto", padding:"0 0 0 24px", background:T.bg }}>
+        {analyticsPage === "Overview"
+          ? <OverviewContent/>
+          : <PlaceholderContent page={analyticsPage}/>
+        }
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { AnalyticsView });
+})();
+</script>
+<script type="text/babel">
 // ── Pronto HQ — root app ──
 const { useState: useS, useRef: useR, useEffect: useE, useMemo: useM } = React;
 
@@ -9623,6 +10168,7 @@ const DEFAULT_TABS = [
   { key:"uniform",    label:"UNIFORM",     on:true },
   { key:"resources",  label:"RESOURCES",   on:true },
   { key:"activity",   label:"ACTIVITY",    on:true },
+  { key:"analytics",  label:"ANALYTICS",   on:true },
   { key:"brain-dump", label:"BRAIN DUMP",  on:true },
   // settings is accessible via ⚙ gear icon in header — not in tab bar by default
   { key:"settings",   label:"SETTINGS",    on:false },
@@ -10383,6 +10929,7 @@ function App() {
           onAddToTasks={onAdd}
         />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
+        {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
         {tab === "brain-dump" && <BrainDumpView tasksByDate={tasksByDate} onAdd={onAdd} user={todayUser} avatars={avatars}/>}
         {tab === "settings" && <SettingsView
           theme={theme} setTheme={(t) => { applyTheme(t); try { localStorage.setItem("prontoHQ.theme", t); } catch(_) {} setTheme(t); }}
