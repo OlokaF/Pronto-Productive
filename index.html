@@ -37,13 +37,24 @@
   </style>
   <style>
     @media (max-width: 768px) {
-      /* Scrollable tab bar */
-      .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; }
+      /* ── Scrollable tab bar ── */
+      .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; scrollbar-width: none; }
       .tab-bar::-webkit-scrollbar { display: none; }
-      /* Reduce main padding */
-      .main-content { padding: 16px 16px 60px !important; }
-      /* Stack header */
-      .app-header { padding: 12px 16px !important; }
+      .tab-bar button { padding: 9px 12px !important; font-size: 10px !important; letter-spacing: 0.06em !important; white-space: nowrap; }
+      /* ── Header ── */
+      .app-header { padding: 10px 14px !important; flex-wrap: nowrap !important; }
+      .app-header-extras { display: none !important; }
+      /* ── Tab row ── */
+      .tab-row { padding: 0 10px !important; gap: 6px !important; flex-wrap: nowrap !important; }
+      /* ── Date strip ── */
+      .date-strip { gap: 6px !important; }
+      .date-strip-label { min-width: 160px !important; font-size: 10px !important; padding: 0 8px !important; }
+      /* ── Main content ── */
+      .main-content { padding: 12px 12px 80px !important; }
+      /* ── Schedule layout: stack sidebar above timeline ── */
+      .sched-cols { flex-direction: column !important; }
+      .sched-sidebar { width: 100% !important; max-width: 100% !important; flex-shrink: 0 !important; }
+      .sched-timeline { width: 100% !important; min-width: 0 !important; }
     }
   </style>
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
@@ -1435,25 +1446,32 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
               <div style={{ fontSize:9, color:T.faint, marginLeft:28 }}>📅 From content calendar · click to edit</div>
             )}
           </div>
-          {/* Built-in RECURRING templates (Social Stories etc.) shown as templates */}
-          {[
-            { id:"__stories_casual__",   text:"Social Stories – Casual",        owner:"oloka", category:"Social Post" },
-            { id:"__stories_hire__",     text:"Social Stories – Machine Hire",   owner:"oloka", category:"Social Post" },
-          ].map(tpl => {
-            const done = !!recurringDone[tpl.id];
-            return (
-              <div key={tpl.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
-                <OrangeCheckbox done={done} onToggle={() => setRecDone(tpl.id, !done)} />
-                <span style={{ fontSize:12, color: done ? T.muted : T.ink, flex:1, textDecoration: done ? "line-through" : "none" }}>{tpl.text}</span>
-                <span style={{ fontSize:9, fontWeight:700, color:ORANGE, background:ORANGE+"18", padding:"1px 5px", borderRadius:3 }}>TEMPLATE</span>
-                {onAdd && !done && (
-                  <button onClick={() => onAdd(dateKey, { text:tpl.text, owner:tpl.owner, category:tpl.category, priority:"Normal" })}
-                    title="Add as a task for today"
-                    style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
-                )}
-              </div>
-            );
-          })}
+          {/* Built-in RECURRING templates — day-of-week aware */}
+          {(() => {
+            const dow = new Date(dateKey + "T12:00:00").getDay(); // 0=Sun,1=Mon...
+            const BUILTIN_TEMPLATES = [
+              { id:"__stories_casual__",   text:"Social Stories – Casual",          owner:"oloka", category:"Social Post", weekdays:[1,2,3,4,5] },
+              { id:"__stories_hire__",     text:"Social Stories – Machine Hire",     owner:"oloka", category:"Social Post", weekdays:[1,2,3,4,5] },
+              { id:"__stories_forsale__",  text:"Social Stories – Machine For Sale", owner:"oloka", category:"Social Post", weekdays:[2,4] }, // Tue + Thu only
+            ];
+            const todayTemplates = BUILTIN_TEMPLATES.filter(tpl => tpl.weekdays.includes(dow));
+            if (todayTemplates.length === 0) return null;
+            return todayTemplates.map(tpl => {
+              const done = !!recurringDone[tpl.id];
+              return (
+                <div key={tpl.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <OrangeCheckbox done={done} onToggle={() => setRecDone(tpl.id, !done)} />
+                  <span style={{ fontSize:12, color: done ? T.muted : T.ink, flex:1, textDecoration: done ? "line-through" : "none" }}>{tpl.text}</span>
+                  <span style={{ fontSize:9, fontWeight:700, color:ORANGE, background:ORANGE+"18", padding:"1px 5px", borderRadius:3 }}>TEMPLATE</span>
+                  {onAdd && !done && (
+                    <button onClick={() => onAdd(dateKey, { text:tpl.text, owner:tpl.owner, category:tpl.category, priority:"Normal" })}
+                      title="Add as a task for today"
+                      style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                  )}
+                </div>
+              );
+            });
+          })()}
           {/* Staff events for today */}
           {staffEvents.map(ev => (
             <div key={ev.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1745,6 +1763,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   const [sideCalOffset, setSideCalOffset] = useStateV(0);
   const [taskSearch, setTaskSearch] = useStateV("");
   const [statsFilter, setStatsFilter] = useStateV(null);
+  const [mobileDayTab, setMobileDayTab] = useStateV("tasks");
 
   const dateKey = isoDate(selDate);
   const dayTasks = tasksByDate[dateKey] || [];
@@ -1993,8 +2012,19 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           </div>
         )}
 
+        {/* MOBILE SECTION TAB TOGGLE */}
+        {isMobile && (
+          <div style={{ display:"flex", background:T.surface, borderRadius:8, padding:2, gap:2, marginBottom:12 }}>
+            {[["tasks","📋 Tasks"],["recurring","🔁 Recurring"]].map(([k,l]) => (
+              <button key={k} onClick={() => setMobileDayTab(k)}
+                style={{ flex:1, padding:"8px 12px", background:mobileDayTab===k?T.navy:"transparent", color:mobileDayTab===k?"#fff":T.muted, border:"none", borderRadius:6, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}
+              >{l}</button>
+            ))}
+          </div>
+        )}
+
         {/* TASK COLUMNS */}
-        {(() => {
+        {(!isMobile || mobileDayTab === "tasks") && (() => {
           const cols = [showVanja, showOloka].filter(Boolean).length;
           const gc = isMobile ? "1fr" : (cols === 2 ? "1fr 1fr" : "1fr");
           return (
@@ -2020,6 +2050,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
         })()}
 
         {/* WORKFLOW SECTIONS */}
+        {(!isMobile || mobileDayTab === "recurring") && (
         <div style={{ marginTop:28 }}>
           <OngoingSection
             recurringTasks={recurringTasks} setRecurringTasks={setRecurringTasks}
@@ -2030,6 +2061,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
             content={content} onAdd={onAdd}
           />
         </div>
+        )}
       </div>
 
       {/* ── RIGHT INSPECTOR ── */}
@@ -5255,7 +5287,7 @@ function BreakBlockStrip({ drag, setDrag }) {
 // ScheduleView
 // ─────────────────────────────────────────────────────────────────────────────
 const SCHED_SPAN_COLORS = ["#F59E0B","#3B82F6","#10B981","#EF4444","#8B5CF6","#F97316","#EC4899","#14B8A6"];
-function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans, onPickDay, todayUser }) {
+function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans, onPickDay, todayUser, isMobile = false }) {
   const dk = isoDate(selDate);
   const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event" && !t.recurring);
   const daySchedule = schedule[dk] || { vanja: [], oloka: [] };
@@ -5510,10 +5542,10 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     <div>
 
       {/* ─── 3-PANE LAYOUT ─── */}
-      <div style={{ display:"flex", gap:0, alignItems:"flex-start" }}>
+      <div className="sched-cols" style={{ display:"flex", gap:0, alignItems:"flex-start", flexDirection: isMobile ? "column" : "row" }}>
 
         {/* ── LEFT SIDEBAR ── */}
-        <div style={{ width:260, flexShrink:0, paddingRight:20, borderRight:`1px solid ${T.border}`, marginRight:24 }}>
+        <div className="sched-sidebar" style={{ width: isMobile ? "100%" : 260, flexShrink:0, paddingRight: isMobile ? 0 : 20, borderRight: isMobile ? "none" : `1px solid ${T.border}`, borderBottom: isMobile ? `1px solid ${T.border}` : "none", marginRight: isMobile ? 0 : 24, marginBottom: isMobile ? 20 : 0, paddingBottom: isMobile ? 16 : 0 }}>
 
           {/* Sidebar mini-calendar */}
           {(() => {
@@ -5751,7 +5783,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         </div>
 
         {/* ── MAIN AREA ── */}
-        <div style={{ flex:1, minWidth:0 }}>
+        <div className="sched-timeline" style={{ flex:1, minWidth:0, width: isMobile ? "100%" : undefined }}>
 
           {/* ── SCHEDULE HEADER ── */}
           <div style={{ marginBottom:24 }}>
@@ -10637,13 +10669,13 @@ function App() {
 
   const tabBtn = (key, label) => (
     <button key={key} onClick={() => setTab(key)} style={{
-      padding:"11px 20px",
+      padding: isMobile ? "9px 11px" : "11px 20px",
       background: tab===key ? T.navy : "transparent",
       border:"none",
       color: tab===key ? "#fff" : T.muted,
       fontFamily:"'ProximaNova Black', sans-serif",
-      fontWeight:800, fontSize:12, letterSpacing:"0.1em",
-      cursor:"pointer",
+      fontWeight:800, fontSize: isMobile ? 10 : 12, letterSpacing: isMobile ? "0.06em" : "0.1em",
+      cursor:"pointer", whiteSpace:"nowrap",
       borderBottom: tab===key ? `3px solid ${T.gold}` : "3px solid transparent",
       transition:"all 0.15s",
     }}>{label}</button>
@@ -10700,7 +10732,7 @@ function App() {
             <p style={{ color:T.muted, fontSize:9.5, letterSpacing:"0.16em", fontWeight:700, marginTop:3 }}>{branding.appSubtitle || "PRODUCTIVE"}</p>
           </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+        <div className="app-header-extras" style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
           <SearchBar tasksByDate={tasksByDate} content={content} ideas={ideas} suppliers={suppliers} staff={staff}
             onJumpTask={(dk) => { setSelDate(parseISO(dk)); setView("day"); setTab("tasks"); }}
             onJumpContent={(dk) => { setSelDate(parseISO(dk)); setTab("content"); }}
@@ -10825,7 +10857,7 @@ function App() {
       </header>
 
       {/* Tab bar */}
-      <div style={{
+      <div className="tab-row" style={{
         display:"flex", alignItems:"flex-end", justifyContent:"space-between",
         padding:"0 32px", background:T.cardBg, borderBottom:`1px solid ${T.border}`,
         gap:20, flexWrap:"wrap",
@@ -10834,10 +10866,10 @@ function App() {
           {TABS.filter(t => visibleTabs.includes(t.key)).map(t => tabBtn(t.key, t.label))}
         </div>
         {showDateStrip && (
-          <div style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10 }}>
+          <div className="date-strip" style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10 }}>
             <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden", background:T.cardBg }}>
               <IconBtn onClick={() => navigateDate(-1)} label="Previous" style={{ border:"none", borderRadius:0, borderRight:`1px solid ${T.border}` }}><Chev dir="left"/></IconBtn>
-              <span style={{ padding:"0 16px", fontSize:12, fontWeight:700, color:T.ink, fontFamily:"inherit", letterSpacing:"0.02em", minWidth:240, textAlign:"center" }}>{dateLabel}</span>
+              <span className="date-strip-label" style={{ padding:"0 16px", fontSize:12, fontWeight:700, color:T.ink, fontFamily:"inherit", letterSpacing:"0.02em", minWidth:240, textAlign:"center" }}>{dateLabel}</span>
               <IconBtn onClick={() => navigateDate(1)} label="Next" style={{ border:"none", borderRadius:0, borderLeft:`1px solid ${T.border}` }}><Chev dir="right"/></IconBtn>
             </div>
             {tab === "tasks" && (
@@ -10910,7 +10942,7 @@ function App() {
           <MonthView selDate={selDate} tasksByDate={tasksByDate} content={content} onPickDate={onPickDate} onMoveTask={onMoveTask} onAdd={onAdd}/>
         )}
         {tab === "schedule" && (
-          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser}/>
+          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser} isMobile={isMobile}/>
         )}
         {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent} view={contentView} setView={setContentView}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
