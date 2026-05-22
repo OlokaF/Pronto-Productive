@@ -3610,179 +3610,491 @@ function getGreeting(name) {
 function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avatars, onJumpTask, onJumpSchedule, onJumpContent, onJumpStaff }) {
   const todayD = today();
   const dk = isoDate(todayD);
+
+  // Local state
+  const [quoteIdx, setQuoteIdx] = useSx(null); // null = use daily, number = user-cycled
+  const [brainOpen, setBrainOpen] = useSx(false);
+  const [brainText, setBrainText] = useSx("");
+  const [brainType, setBrainType] = useSx("Task");
+  const [brainDest, setBrainDest] = useSx("Inbox");
+  const [brainTag, setBrainTag] = useSx("");
+  const [brainItems, setBrainItems] = useSx(() => { try { return JSON.parse(localStorage.getItem("prontoHQ.brainDump")||"[]"); } catch(_) { return []; } });
+  const [sideCalOffset, setSideCalOffset] = useSx(0);
+  const [activeView, setActiveView] = useSx("myDay");
+
+  // Data
   const tasks = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
-  const open = tasks.filter(t => !t.done && (!todayUser || t.owner === todayUser));
-  const done = tasks.filter(t => t.done && (!todayUser || t.owner === todayUser));
-  const urgent = tasks.filter(t => !t.done && t.priority === "Urgent" && (!todayUser || t.owner === todayUser));
-  const high = open.filter(t => t.priority === "High");
-  const topThree = [...urgent, ...high, ...open.filter(t => !todayUser || t.owner === todayUser)].slice(0, 3);
-
+  const myTasks = tasks.filter(t => !todayUser || t.owner === todayUser);
+  const openTasks = myTasks.filter(t => !t.done);
+  const doneTasks = myTasks.filter(t => t.done);
+  const urgentTasks = myTasks.filter(t => !t.done && t.priority === "Urgent");
   const todaySched = schedule[dk] || { vanja: [], oloka: [] };
-  const allBlocks = [...(todaySched.vanja||[]).map(b => ({...b, owner:"vanja"})), ...(todaySched.oloka||[]).map(b => ({...b, owner:"oloka"}))].sort((a,b) => a.startMin - b.startMin);
+  const allBlocks = [
+    ...(todaySched.vanja||[]).map(b => ({...b, owner:"vanja"})),
+    ...(todaySched.oloka||[]).map(b => ({...b, owner:"oloka"}))
+  ].sort((a,b) => a.startMin - b.startMin);
+  const schedHours = Math.round(allBlocks.reduce((s,b) => s + (b.durationMin||0), 0) / 60 * 10) / 10;
   const taskById = {};
-  for (const d of Object.keys(tasksByDate || {})) for (const t of (tasksByDate[d] || [])) taskById[t.id] = t;
+  for (const d of Object.keys(tasksByDate||{})) for (const t of (tasksByDate[d]||[])) taskById[t.id] = t;
+  const todayPosts = content[dk] || [];
 
-  const post = (content[dk] || []);
-
-  // Today's birthdays / anniversaries
-  const events = [];
-  for (const s of staff || []) {
-    const dob = (s.dob || "").match(/^\d{4}-(\d{2})-(\d{2})$/);
-    if (dob && parseInt(dob[1]) === todayD.getMonth()+1 && parseInt(dob[2]) === todayD.getDate()) {
-      events.push({ name: s.name, kind: "Birthday", photo: s.photo });
+  // Overdue (tasks from past dates not done)
+  const overdueItems = useMx(() => {
+    const res = [];
+    const todayStr = isoDate(todayD);
+    for (const [d, tasks] of Object.entries(tasksByDate||{})) {
+      if (d < todayStr) {
+        tasks.filter(t => !t.done && t.category !== "Event" && t.owner !== "event" && (!todayUser || t.owner === todayUser))
+          .forEach(t => res.push({ ...t, date: d }));
+      }
     }
-    const start = (s.started || "").match(/^\d{4}-(\d{2})-(\d{2})$/);
-    if (start && parseInt(start[1]) === todayD.getMonth()+1 && parseInt(start[2]) === todayD.getDate()) {
-      const years = todayD.getFullYear() - parseInt(s.started.slice(0,4));
-      events.push({ name: s.name, kind: `${years}yr Prontoversary`, photo: s.photo });
-    }
-  }
+    return res.slice(0, 5);
+  }, [tasksByDate, todayUser]);
 
-  const Card = ({ title, color, children, action }) => (
-    <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:"18px 20px", display:"flex", flexDirection:"column", minHeight:180 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:14 }}>
-        <span style={{ width:4, height:18, background:color }}></span>
-        <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.12em" }}>{title}</p>
-        {action && <button onClick={action.onClick} style={{
-          marginLeft:"auto", background:"transparent", border:"none", color:color,
-          fontSize:10, fontWeight:800, letterSpacing:"0.06em", cursor:"pointer", fontFamily:"inherit",
-        }}>{action.label} →</button>}
+  // Assigned to me (all dates, not done)
+  const assignedToMe = useMx(() => {
+    const res = [];
+    for (const [d, ts] of Object.entries(tasksByDate||{})) {
+      ts.filter(t => !t.done && t.owner === todayUser && t.category !== "Event" && t.owner !== "event").forEach(t => res.push(t));
+    }
+    return res;
+  }, [tasksByDate, todayUser]);
+
+  // Top priorities (for this user, today)
+  const PRI_ORDER = { Urgent:0, High:1, Normal:2, Low:3 };
+  const topPriorities = [...openTasks].sort((a,b) => (PRI_ORDER[a.priority]??99) - (PRI_ORDER[b.priority]??99)).slice(0,6);
+
+  // Quote cycling
+  const dailyQuote = getDailyQuote();
+  const currentQuote = quoteIdx !== null ? DAILY_QUOTES[quoteIdx % DAILY_QUOTES.length] : dailyQuote;
+  const cycleQuote = () => {
+    const d = new Date();
+    const dayOfYear = Math.floor((d - new Date(d.getFullYear(),0,0)) / 86400000);
+    const current = quoteIdx !== null ? quoteIdx : dayOfYear % DAILY_QUOTES.length;
+    setQuoteIdx((current + 1) % DAILY_QUOTES.length);
+  };
+
+  // Brain dump capture
+  const captureBrain = () => {
+    if (!brainText.trim()) return;
+    const item = { id: Date.now(), text: brainText.trim(), type: brainType, dest: brainDest, tag: brainTag.trim(), time: new Date().toLocaleTimeString("en-NZ", { hour:"2-digit", minute:"2-digit" }) };
+    const next = [item, ...brainItems];
+    setBrainItems(next);
+    try { localStorage.setItem("prontoHQ.brainDump", JSON.stringify(next)); } catch(_) {}
+    setBrainText(""); setBrainTag("");
+  };
+  const deleteBrainItem = (id) => {
+    const next = brainItems.filter(i => i.id !== id);
+    setBrainItems(next);
+    try { localStorage.setItem("prontoHQ.brainDump", JSON.stringify(next)); } catch(_) {}
+  };
+
+  // Sidebar mini-calendar
+  const sideBase = new Date(todayD.getFullYear(), todayD.getMonth() + sideCalOffset, 1);
+  const sideCy = sideBase.getFullYear(), sideCm = sideBase.getMonth();
+  const sideDow = (new Date(sideCy, sideCm, 1).getDay() + 6) % 7;
+  const sideDays = new Date(sideCy, sideCm + 1, 0).getDate();
+
+  // Detect schedule gaps
+  const schedGap = useMx(() => {
+    if (allBlocks.length < 2) return null;
+    const now = new Date();
+    const nowMin = now.getHours()*60 + now.getMinutes();
+    for (let i = 0; i < allBlocks.length - 1; i++) {
+      const end = allBlocks[i].startMin + allBlocks[i].durationMin;
+      const next = allBlocks[i+1].startMin;
+      const gap = next - end;
+      if (gap >= 60 && end >= nowMin) {
+        const h = Math.floor(gap/60), m = gap%60;
+        return m ? `${h}h ${m}m` : `${h}h`;
+      }
+    }
+    return null;
+  }, [allBlocks]);
+
+  // Person info
+  const userName = todayUser === "vanja" ? "Vanja" : todayUser === "oloka" ? "Oloka" : "";
+  const userAccent = todayUser === "vanja" ? T.vanja : T.oloka;
+  const userSoft = todayUser === "vanja" ? T.vanjaSoft : T.olokaSoft;
+  const userAvatar = avatars && todayUser ? avatars[todayUser] : null;
+  const greetingWord = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 17 ? "Afternoon" : "Evening"; })();
+  const dayOfWeek = todayD.toLocaleDateString("en-NZ", { weekday:"long" });
+
+  // MY VIEWS counts
+  const MY_VIEWS = [
+    { key:"myDay",    label:"My Day",         icon:"📋", count:openTasks.length },
+    { key:"assigned", label:"Assigned to Me", icon:"👤", count:assignedToMe.length },
+    { key:"scheduled",label:"Scheduled",      icon:"📅", count:allBlocks.filter(b => !todayUser || b.owner === todayUser).length },
+    { key:"completed",label:"Completed",      icon:"✓",  count:doneTasks.length },
+    { key:"overdue",  label:"Overdue",        icon:"⚠",  count:overdueItems.length },
+  ];
+
+  const SCard = ({ color, bg, icon, label, val, sub, onClick }) => (
+    <button onClick={onClick} style={{ padding:"16px 18px", textAlign:"left", cursor:"pointer", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, fontFamily:"inherit", transition:"all 0.15s", flex:1 }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = color+"60"; e.currentTarget.style.background = bg||T.cardBg; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.cardBg; }}
+    >
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+        <div style={{ width:36, height:36, borderRadius:10, background:bg||color+"20", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>{icon}</div>
+        <span style={{ fontSize:32, fontWeight:900, fontFamily:"'ProximaNova Black', sans-serif", color, lineHeight:1 }}>{val}</span>
       </div>
-      <div style={{ flex:1 }}>{children}</div>
-    </div>
+      <p style={{ fontSize:12, fontWeight:700, color:T.heading, marginBottom:2 }}>{label}</p>
+      <p style={{ fontSize:10.5, color:T.muted }}>{sub}</p>
+    </button>
   );
 
-  const quote = getDailyQuote();
-  const userName = todayUser === "vanja" ? "Vanja" : todayUser === "oloka" ? "Oloka" : "";
-  const greeting = todayUser ? getGreeting(userName) : "";
-  const userAvatar = avatars && todayUser ? avatars[todayUser] : null;
-
   return (
-    <div>
-      <div style={{ marginBottom:24 }}>
-        <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{todayD.toLocaleDateString("en-NZ", { weekday:"long" }).toUpperCase()} · {todayD.toLocaleDateString("en-NZ", { day:"numeric", month:"long", year:"numeric" }).toUpperCase()}</p>
-        {/* Greeting row */}
-        {greeting && (
-          <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:6 }}>
-            {userAvatar ? (
-              <img src={userAvatar} alt={userName} style={{ width:52, height:52, borderRadius:"50%", objectFit:"cover", border:`2px solid ${todayUser==="vanja"?T.vanja:T.oloka}`, flexShrink:0 }}/>
-            ) : (
-              <div style={{ width:52, height:52, borderRadius:"50%", background: todayUser==="vanja"?T.vanjaSoft:T.olokaSoft, border:`2px solid ${todayUser==="vanja"?T.vanja:T.oloka}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontSize:20, fontWeight:900, color: todayUser==="vanja"?T.vanja:T.oloka, flexShrink:0 }}>{userName[0]}</div>
-            )}
-            <div>
-              <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:38, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>{greeting.toUpperCase()}</h1>
-              <p style={{ color:T.muted, fontSize:12.5, marginTop:6 }}>Here's your day at a glance.</p>
-            </div>
+    <div style={{ display:"flex", gap:0, alignItems:"flex-start" }}>
+
+      {/* ── LEFT SIDEBAR ── */}
+      <div style={{ width:220, flexShrink:0, paddingRight:20, borderRight:`1px solid ${T.border}`, marginRight:24 }}>
+
+        {/* Mini calendar */}
+        <div style={{ marginBottom:24 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+            <button onClick={() => setSideCalOffset(o => o-1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:17, padding:"2px 5px", lineHeight:1 }}>‹</button>
+            <span style={{ fontSize:11, fontWeight:800, color:T.heading, letterSpacing:"0.08em" }}>{MONTHS[sideCm].slice(0,3).toUpperCase()} {sideCy}</span>
+            <button onClick={() => setSideCalOffset(o => o+1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:17, padding:"2px 5px", lineHeight:1 }}>›</button>
           </div>
-        )}
-        {/* Daily quote */}
-        <div style={{ background:T.gold+"12", borderLeft:`3px solid ${T.gold}`, borderRadius:4, padding:"10px 14px", marginTop:greeting?10:0 }}>
-          <p style={{ fontSize:12.5, color:T.ink, fontStyle:"italic", lineHeight:1.5, margin:0 }}>"{quote.q}"</p>
-          <p style={{ fontSize:10.5, color:T.gold, fontWeight:800, letterSpacing:"0.06em", marginTop:4 }}>— {quote.a}</p>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1, marginBottom:3 }}>
+            {["M","T","W","T","F","S","S"].map((d,i) => <div key={i} style={{ textAlign:"center", fontSize:9, fontWeight:800, color:T.faint }}>{d}</div>)}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1 }}>
+            {Array.from({length:sideDow}, (_,i) => <div key={"e"+i}/>)}
+            {Array.from({length:sideDays}, (_,i) => {
+              const d = new Date(sideCy, sideCm, i+1);
+              const isToday = sameDay(d, todayD);
+              const dk2 = isoDate(d);
+              const hasWork = (tasksByDate[dk2]||[]).filter(t => t.category!=="Event" && t.owner!=="event" && !t.done).length > 0;
+              return (
+                <div key={i+1}
+                  style={{ width:"100%", aspectRatio:"1/1", borderRadius:4, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1,
+                    background: isToday ? userAccent : "transparent",
+                    border: `1.5px solid ${isToday ? userAccent : "transparent"}`,
+                    color: isToday ? "#fff" : T.text,
+                    fontSize:10.5, fontWeight: isToday ? 800 : 400,
+                  }}>
+                  {i+1}
+                  {hasWork && !isToday && <span style={{ width:3, height:3, borderRadius:"50%", background:T.navy }}></span>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:10 }}>
+            <span style={{ width:8, height:8, borderRadius:"50%", background:userAccent }}></span>
+            <span style={{ fontSize:10, color:T.muted }}>Today</span>
+            <span style={{ width:8, height:8, borderRadius:"50%", background:T.navy, marginLeft:10 }}></span>
+            <span style={{ fontSize:10, color:T.muted }}>Selected Date</span>
+          </div>
+        </div>
+
+        {/* MY VIEWS */}
+        <div style={{ marginBottom:24 }}>
+          <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", marginBottom:8 }}>MY VIEWS</p>
+          {MY_VIEWS.map(v => (
+            <button key={v.key} onClick={() => setActiveView(v.key)}
+              style={{ display:"flex", alignItems:"center", gap:9, width:"100%", padding:"8px 10px", borderRadius:7, marginBottom:2, background:activeView===v.key?T.navy+"12":"transparent", border:activeView===v.key?`1px solid ${T.navy}28`:"1px solid transparent", cursor:"pointer", textAlign:"left", fontFamily:"inherit", transition:"all 0.1s" }}>
+              <span style={{ fontSize:13, width:18, textAlign:"center" }}>{v.icon}</span>
+              <span style={{ flex:1, fontSize:12, fontWeight:activeView===v.key?700:400, color:activeView===v.key?T.navy:T.text }}>{v.label}</span>
+              <span style={{ fontSize:10, fontWeight:700, color:activeView===v.key?T.navy:T.faint, background:activeView===v.key?T.navy+"18":T.surface2, padding:"1px 7px", borderRadius:10 }}>{v.count}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* QUICK ACTIONS */}
+        <div>
+          <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", marginBottom:8 }}>QUICK ACTIONS</p>
+          {[
+            { label:"Add Task", icon:"+ ", onClick:() => onJumpTask(dk) },
+            { label:"Add Post", icon:"+ ", onClick:() => onJumpContent(dk) },
+            { label:"Start Planning Day", icon:"⊞ ", onClick:onJumpSchedule },
+            { label:"Open Schedule", icon:"☰ ", onClick:onJumpSchedule },
+            { label:"Brain Dump", icon:"🧠 ", onClick:() => setBrainOpen(o => !o), badge:brainItems.length > 0 ? `${brainItems.length}` : null, isNew:true },
+          ].map((a,i) => (
+            <button key={i} onClick={a.onClick}
+              style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"8px 10px", borderRadius:7, marginBottom:2, background:"transparent", border:"1px solid transparent", cursor:"pointer", textAlign:"left", fontFamily:"inherit", transition:"all 0.1s", color:T.text, fontSize:12 }}
+              onMouseEnter={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; }}
+            >
+              <span style={{ color:T.muted }}>{a.icon}</span>
+              <span style={{ flex:1 }}>{a.label}</span>
+              {a.isNew && !a.badge && <span style={{ fontSize:8.5, fontWeight:800, background:userAccent, color:"#fff", padding:"2px 6px", borderRadius:3, letterSpacing:"0.06em" }}>NEW</span>}
+              {a.badge && <span style={{ fontSize:10, fontWeight:700, background:userAccent, color:"#fff", padding:"1px 7px", borderRadius:10 }}>{a.badge}</span>}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Stats strip */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap:10, marginBottom:18 }}>
-        {[
-          { label:"OPEN", val:open.length, color:T.heading },
-          { label:"URGENT", val:urgent.length, color:T.urgent },
-          { label:"DONE", val:done.length, color:T.oloka },
-          { label:"SCHEDULED", val:`${Math.round(allBlocks.reduce((s,b)=>s+b.durationMin,0)/60*10)/10}h`, color:T.vanja },
-        ].map(s => (
-          <div key={s.label} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${s.color}`, borderRadius:6, padding:"12px 16px" }}>
-            <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:26, color:s.color, lineHeight:1, letterSpacing:"-0.01em" }}>{s.val}</p>
-            <p style={{ fontSize:9.5, color:T.muted, letterSpacing:"0.12em", fontWeight:800, marginTop:5 }}>{s.label}</p>
+      {/* ── MAIN CONTENT ── */}
+      <div style={{ flex:1, minWidth:0 }}>
+
+        {/* GREETING */}
+        <div style={{ marginBottom:20 }}>
+          <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.14em", marginBottom:8 }}>
+            {dayOfWeek.toUpperCase()} · {todayD.toLocaleDateString("en-NZ", { day:"numeric", month:"long", year:"numeric" }).toUpperCase()}
+          </p>
+          <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14 }}>
+            {userAvatar
+              ? <img src={userAvatar} alt={userName} style={{ width:52, height:52, borderRadius:"50%", objectFit:"cover", border:`2px solid ${userAccent}`, flexShrink:0 }}/>
+              : <div style={{ width:52, height:52, borderRadius:"50%", background:userSoft, border:`2px solid ${userAccent}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontSize:20, fontWeight:900, color:userAccent, flexShrink:0 }}>{userName[0]||"?"}</div>
+            }
+            <div>
+              <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.02em", lineHeight:1, color:T.heading, margin:0 }}>
+                Good {greetingWord}, {userName} 👋
+              </h1>
+              <p style={{ color:T.muted, fontSize:13, marginTop:4 }}>Let's make today count.</p>
+            </div>
           </div>
-        ))}
-      </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:14 }}>
-        <Card title="TOP PRIORITIES" color={T.urgent} action={{ label:"All tasks", onClick:() => onJumpTask(dk) }}>
-          {topThree.length === 0 ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic" }}>Nothing pressing. 🎉</p> :
-            topThree.map(t => (
-              <button key={t.id} onClick={() => onJumpTask(dk)} style={{
-                width:"100%", display:"flex", alignItems:"flex-start", gap:9, padding:"8px 0",
-                background:"transparent", border:"none", borderTop:`1px solid ${T.border}`,
-                cursor:"pointer", textAlign:"left", fontFamily:"inherit",
-              }}>
-                <span style={{ width:6, height:6, borderRadius:"50%", background: (PR[t.priority]||PR.Normal).color, marginTop:6, flexShrink:0 }}></span>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.35 }}>{t.text}</p>
-                  <p style={{ fontSize:9.5, color:T.muted, marginTop:2, letterSpacing:"0.06em", fontWeight:700 }}>
-                    {t.owner === "vanja" ? "VANJA" : "OLOKA"} · {t.priority.toUpperCase()}
-                  </p>
-                </div>
-              </button>
-            ))
-          }
-        </Card>
+          {/* Quote card */}
+          <div style={{ background:T.gold+"10", border:`1px solid ${T.gold}28`, borderRadius:10, padding:"14px 18px", display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
+            <div style={{ flex:1 }}>
+              <p style={{ fontSize:13.5, color:T.ink, fontStyle:"italic", lineHeight:1.6, margin:0 }}>"{currentQuote.q}"</p>
+              <p style={{ fontSize:11, color:T.gold, fontWeight:800, letterSpacing:"0.06em", marginTop:6 }}>– {currentQuote.a}</p>
+            </div>
+            <button onClick={cycleQuote} style={{ background:"transparent", border:"none", color:T.gold, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em", whiteSpace:"nowrap", paddingTop:2, display:"flex", alignItems:"center", gap:4 }}>
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.9"/></svg>
+              New quote
+            </button>
+          </div>
+        </div>
 
-        <Card title="SCHEDULE" color={T.vanja} action={{ label:"Open schedule", onClick:onJumpSchedule }}>
-          {allBlocks.length === 0 ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic" }}>Nothing planned. Drag tasks into the schedule.</p> :
-            allBlocks.slice(0, 6).map((b, i) => {
-              const task = taskById[b.taskId];
-              const c = b.owner === "vanja" ? T.vanja : T.oloka;
-              return (
-                <button key={i} onClick={onJumpSchedule} style={{
-                  width:"100%", display:"flex", alignItems:"flex-start", gap:9, padding:"7px 0",
-                  background:"transparent", border:"none", borderTop:`1px solid ${T.border}`,
-                  cursor:"pointer", textAlign:"left", fontFamily:"inherit",
-                }}>
-                  <span style={{
-                    fontSize:10, fontWeight:800, color:c, background:c+"15",
-                    padding:"3px 7px", borderRadius:3, letterSpacing:"0.06em", whiteSpace:"nowrap",
-                  }}>{fmtSchedTime(b.startMin)}</span>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ fontSize:12, color:T.ink, fontWeight:600, lineHeight:1.3 }}>{(b.title || (task && task.text)) || "(no task)"}</p>
-                    <p style={{ fontSize:9.5, color:T.muted, marginTop:1, letterSpacing:"0.06em", fontWeight:700 }}>
-                      {b.owner === "vanja" ? "VANJA" : "OLOKA"} · {b.durationMin}m
-                    </p>
+        {/* STATS STRIP */}
+        <div style={{ display:"flex", gap:10, marginBottom:22 }}>
+          <SCard icon="📋" label="Open" val={openTasks.length} sub={`↑ ${Math.max(0, openTasks.length-14)} from yesterday`} color={T.navy} bg={T.navy+"10"} onClick={() => onJumpTask(dk)} />
+          <SCard icon="✅" label="Done" val={doneTasks.length} sub={`${openTasks.length ? Math.round(doneTasks.length/(doneTasks.length+openTasks.length)*100) : 0}% of open`} color="#10B981" bg="#D1FAE520" onClick={() => onJumpTask(dk)} />
+          <SCard icon="🕐" label="Scheduled" val={`${schedHours}h`} sub={`${Math.round(schedHours/11*100)}% of day`} color="#8B5CF6" bg="#EDE9FE20" onClick={onJumpSchedule} />
+          <SCard icon="🚩" label="Urgent" val={urgentTasks.length} sub={urgentTasks.length===0?"Great job! 🎉":"Needs attention"} color="#EF4444" bg="#FEE2E220" onClick={() => onJumpTask(dk)} />
+        </div>
+
+        {/* TWO-COLUMN GRID */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+
+          {/* LEFT: TOP PRIORITIES */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, overflow:"hidden" }}>
+            <div style={{ padding:"14px 16px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:16 }}>⭐</span>
+                <p style={{ fontWeight:800, fontSize:12.5, color:T.heading, letterSpacing:"0.06em", margin:0 }}>TOP PRIORITIES</p>
+              </div>
+              <button onClick={() => onJumpTask(dk)} style={{ background:"transparent", border:"none", color:T.navy, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em" }}>View all tasks →</button>
+            </div>
+            <div style={{ padding:"8px 0" }}>
+              {topPriorities.length === 0
+                ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic", padding:"12px 16px" }}>Nothing pressing. 🎉</p>
+                : topPriorities.map(t => {
+                  const pri = PR[t.priority] || PR.Normal;
+                  const catColor = CAT_COLOR[t.category] || T.muted;
+                  const subs = (t.subtasks||[]);
+                  return (
+                    <button key={t.id} onClick={() => onJumpTask(dk)} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"9px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, cursor:"pointer", textAlign:"left", fontFamily:"inherit", transition:"background 0.1s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surface}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    >
+                      <div style={{ width:16, height:16, borderRadius:4, border:`1.5px solid ${T.borderStrong}`, flexShrink:0 }}></div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.text}</p>
+                        <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
+                          <span style={{ fontSize:9.5, fontWeight:700, color:catColor, background:catColor+"15", padding:"1px 6px", borderRadius:3, letterSpacing:"0.06em", textTransform:"uppercase" }}>{t.category}</span>
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                        <span style={{ fontSize:9.5, fontWeight:800, color:pri.color, background:pri.soft, padding:"2px 8px", borderRadius:4, letterSpacing:"0.04em", textTransform:"uppercase" }}>{t.priority}</span>
+                        {subs.length > 0 && <span style={{ fontSize:9.5, color:T.muted, display:"flex", alignItems:"center", gap:3 }}>💬 {subs.length}</span>}
+                        <span style={{ fontSize:9.5, color:T.faint }}>⋮</span>
+                      </div>
+                    </button>
+                  );
+                })
+              }
+              <button onClick={() => onJumpTask(dk)} style={{ width:"100%", padding:"10px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, color:userAccent, fontSize:11.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit", textAlign:"center", letterSpacing:"0.04em" }}>+ Add Task</button>
+            </div>
+          </div>
+
+          {/* RIGHT: TODAY'S SCHEDULE */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, overflow:"hidden" }}>
+            <div style={{ padding:"14px 16px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:16 }}>🗓</span>
+                <p style={{ fontWeight:800, fontSize:12.5, color:T.heading, letterSpacing:"0.06em", margin:0 }}>TODAY'S SCHEDULE</p>
+              </div>
+              <button onClick={onJumpSchedule} style={{ background:"transparent", border:"none", color:T.navy, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em" }}>Open schedule →</button>
+            </div>
+            <div style={{ padding:"8px 0" }}>
+              {allBlocks.length === 0
+                ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic", padding:"12px 16px" }}>Nothing scheduled yet. Drag tasks to plan your day.</p>
+                : allBlocks.slice(0,7).map((b,i) => {
+                  const task = taskById[b.taskId];
+                  const c = b.owner === "vanja" ? T.vanja : T.oloka;
+                  const label = b.isBreak ? (b.breakLabel||"Break") : b.qeTitle || (task&&task.text) || "(no task)";
+                  return (
+                    <button key={i} onClick={onJumpSchedule} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"8px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, cursor:"pointer", textAlign:"left", fontFamily:"inherit", transition:"background 0.1s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surface}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    >
+                      <span style={{ fontSize:11, fontWeight:800, color:c, minWidth:52, letterSpacing:"0.02em" }}>{fmtSchedTime(b.startMin)}</span>
+                      <span style={{ width:6, height:6, borderRadius:"50%", background:c, flexShrink:0 }}></span>
+                      <span style={{ flex:1, fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{label}</span>
+                      <span style={{ fontSize:10, color:T.muted, flexShrink:0 }}>{b.durationMin}m</span>
+                    </button>
+                  );
+                })
+              }
+              {schedGap && (
+                <div style={{ margin:"8px 12px", padding:"10px 12px", background:"#EDE9FE", border:"1px solid #C4B5FD", borderRadius:8, display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:14 }}>📆</span>
+                  <div>
+                    <p style={{ fontSize:11.5, color:"#4C1D95", fontWeight:700 }}>You have a {schedGap} gap this afternoon.</p>
+                    <p style={{ fontSize:10.5, color:"#6D28D9" }}>Great time to tackle a big task!</p>
                   </div>
-                </button>
-              );
-            })
-          }
-        </Card>
-
-        <Card title="TODAY'S POST" color={T.gold} action={{ label:"Content calendar", onClick:() => onJumpContent(dk) }}>
-          {post.length === 0 ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic" }}>No post planned for today.</p> :
-            post.map((p, i) => {
-              const tc = CONTENT_TYPES[p.type] || CONTENT_TYPES.Post;
-              return (
-                <div key={i} style={{ padding:"10px 0", borderTop: i > 0 ? `1px solid ${T.border}` : "none" }}>
-                  <span style={{
-                    display:"inline-block", fontSize:9.5, fontWeight:800, color:tc.color, background:tc.soft,
-                    padding:"2px 8px", borderRadius:3, letterSpacing:"0.08em", marginBottom:6,
-                  }}>{p.type.toUpperCase()}</span>
-                  <p style={{ fontSize:13, color:T.ink, fontWeight:600, lineHeight:1.4 }}>{p.title || "(untitled)"}</p>
-                  {p.notes && <p style={{ fontSize:11, color:T.muted, lineHeight:1.4, marginTop:4, fontStyle:"italic" }}>{p.notes}</p>}
                 </div>
-              );
-            })
-          }
-        </Card>
+              )}
+              <button onClick={onJumpSchedule} style={{ width:"100%", padding:"10px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, color:userAccent, fontSize:11.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit", textAlign:"center", letterSpacing:"0.04em" }}>+ Add Block</button>
+            </div>
+          </div>
 
-        <Card title="EVENTS · BIRTHDAYS" color={T.oloka} action={{ label:"Team", onClick:onJumpStaff }}>
-          {events.length === 0 ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic" }}>No birthdays or anniversaries today.</p> :
-            events.map((e, i) => (
-              <button key={i} onClick={onJumpStaff} style={{
-                width:"100%", display:"flex", alignItems:"center", gap:11, padding:"8px 0",
-                background:"transparent", border:"none", borderTop: i > 0 ? `1px solid ${T.border}` : "none",
-                cursor:"pointer", textAlign:"left", fontFamily:"inherit",
-              }}>
-                {e.photo ? <img src={e.photo} alt="" style={{ width:32, height:32, borderRadius:"50%", objectFit:"cover", border:`1.5px solid ${T.gold}` }}/> :
-                  <div style={{ width:32, height:32, borderRadius:"50%", background:T.gold+"20", border:`1.5px solid ${T.gold}`, color:T.gold, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13 }}>{(e.name||"?")[0]}</div>
-                }
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:13, color:T.ink, fontWeight:700 }}>{e.name}</p>
-                  <p style={{ fontSize:10.5, color:T.gold, fontWeight:800, letterSpacing:"0.06em", marginTop:1 }}>{e.kind.toUpperCase()}</p>
-                </div>
-              </button>
-            ))
-          }
-        </Card>
+          {/* LEFT: TODAY'S POST */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, overflow:"hidden" }}>
+            <div style={{ padding:"14px 16px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:16 }}>📸</span>
+                <p style={{ fontWeight:800, fontSize:12.5, color:T.heading, letterSpacing:"0.06em", margin:0 }}>TODAY'S POST</p>
+              </div>
+              <button onClick={() => onJumpContent(dk)} style={{ background:"transparent", border:"none", color:T.navy, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em" }}>View content calendar →</button>
+            </div>
+            <div style={{ padding:"12px 16px" }}>
+              {todayPosts.length === 0
+                ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic" }}>No post planned for today.</p>
+                : todayPosts.map((p,i) => {
+                  const tc = CONTENT_TYPES[p.type] || CONTENT_TYPES.Post;
+                  const PLATFORM_ICONS = { Instagram:"📷", Facebook:"👍", LinkedIn:"💼", TikTok:"🎵", YouTube:"▶", Email:"✉", Website:"🌐" };
+                  return (
+                    <div key={i} onClick={() => onJumpContent(dk)} style={{ display:"flex", gap:12, cursor:"pointer", padding:"8px 0", borderTop:i>0?`1px solid ${T.border}`:"none" }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                          <span style={{ fontSize:14 }}>{PLATFORM_ICONS[p.platform]||"📢"}</span>
+                          {p.time && <span style={{ fontSize:11, fontWeight:700, color:T.muted }}>{p.time}</span>}
+                          <span style={{ fontSize:9.5, fontWeight:800, color:tc.color, background:tc.soft, padding:"2px 8px", borderRadius:3, letterSpacing:"0.08em" }}>{(p.type||"POST").toUpperCase()}</span>
+                        </div>
+                        <p style={{ fontSize:13, color:T.ink, fontWeight:600, lineHeight:1.4 }}>{p.title||"(untitled)"}</p>
+                        {p.platform && <p style={{ fontSize:11, color:T.muted, marginTop:3 }}>Platform: {p.platform}</p>}
+                      </div>
+                      {p.imageUrl && <img src={p.imageUrl} alt="" style={{ width:64, height:64, borderRadius:8, objectFit:"cover", flexShrink:0 }}/>}
+                    </div>
+                  );
+                })
+              }
+            </div>
+          </div>
+
+          {/* RIGHT: OVERDUE */}
+          <div style={{ background:T.cardBg, border:`1px solid #FCA5A5`, borderRadius:12, overflow:"hidden" }}>
+            <div style={{ padding:"14px 16px 12px", borderBottom:`1px solid #FCA5A5`, display:"flex", alignItems:"center", justifyContent:"space-between", background:"#FEF2F2" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:14 }}>🔴</span>
+                <p style={{ fontWeight:800, fontSize:12.5, color:"#991B1B", letterSpacing:"0.06em", margin:0 }}>OVERDUE ({overdueItems.length})</p>
+              </div>
+            </div>
+            <div style={{ padding:"8px 0" }}>
+              {overdueItems.length === 0
+                ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic", padding:"12px 16px" }}>All caught up! 🎉</p>
+                : overdueItems.map((t,i) => (
+                  <button key={t.id} onClick={() => onJumpTask(t.date)} style={{ width:"100%", display:"flex", alignItems:"flex-start", gap:10, padding:"9px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, cursor:"pointer", textAlign:"left", fontFamily:"inherit" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#FEF2F2"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                  >
+                    <div style={{ width:14, height:14, borderRadius:3, border:"1.5px solid #FCA5A5", flexShrink:0, marginTop:2, background:"#FFF" }}></div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.3 }}>{t.text}</p>
+                      <p style={{ fontSize:10, color:"#EF4444", fontWeight:700, marginTop:2, letterSpacing:"0.04em" }}>
+                        Due {t.date === isoDate(new Date(todayD - 86400000)) ? "Yesterday" : t.date} · {t.owner === "vanja" ? "Vanja" : "Oloka"}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              }
+              <button onClick={() => onJumpTask(dk)} style={{ width:"100%", padding:"10px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, color:"#EF4444", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", textAlign:"left", letterSpacing:"0.04em" }}>View all overdue →</button>
+            </div>
+          </div>
+
+        </div>
       </div>
+
+      {/* ── BRAIN DUMP PANEL ── */}
+      {brainOpen && (
+        <div style={{ width:300, flexShrink:0, marginLeft:20, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, overflow:"hidden", position:"sticky", top:0, alignSelf:"flex-start" }}>
+          <div style={{ padding:"14px 16px", borderBottom:`1px solid ${T.border}`, background:T.surface, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>🧠</span>
+              <p style={{ fontWeight:800, fontSize:13, color:T.heading, margin:0, letterSpacing:"0.04em" }}>BRAIN DUMP</p>
+            </div>
+            <button onClick={() => setBrainOpen(false)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18, lineHeight:1 }}>×</button>
+          </div>
+          <div style={{ padding:"14px 16px" }}>
+            <p style={{ fontSize:11.5, color:T.muted, marginBottom:10 }}>Quickly capture anything on your mind.</p>
+            <textarea value={brainText} onChange={e => setBrainText(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) captureBrain(); }}
+              placeholder="Type anything... tasks, ideas, reminders, notes..."
+              style={{ width:"100%", minHeight:90, background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, fontSize:13, padding:"10px 12px", resize:"none", outline:"none", fontFamily:"inherit", boxSizing:"border-box", lineHeight:1.5 }}
+            />
+            <div style={{ display:"flex", justifyContent:"flex-end", marginTop:2, marginBottom:12 }}>
+              <span style={{ fontSize:10, color:T.faint }}>{brainText.length}/1000</span>
+            </div>
+
+            {/* Type selector */}
+            <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.1em", marginBottom:6 }}>TYPE</p>
+            <div style={{ display:"flex", gap:6, marginBottom:12 }}>
+              {[{label:"Task",icon:"📋"},{label:"Idea",icon:"💡"},{label:"Reminder",icon:"⏰"},{label:"Note",icon:"📝"}].map(bt => (
+                <button key={bt.label} onClick={() => setBrainType(bt.label)} style={{ flex:1, padding:"7px 4px", borderRadius:7, border:`1px solid ${brainType===bt.label?userAccent:T.border}`, background:brainType===bt.label?userAccent+"15":T.cardBg, color:brainType===bt.label?userAccent:T.text, fontSize:10.5, fontWeight:brainType===bt.label?700:400, cursor:"pointer", fontFamily:"inherit", display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                  <span>{bt.icon}</span>
+                  <span>{bt.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Add to */}
+            <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.1em", marginBottom:6 }}>Add to</p>
+            <select value={brainDest} onChange={e => setBrainDest(e.target.value)} style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, color:T.text, fontSize:13, padding:"8px 10px", fontFamily:"inherit", marginBottom:12 }}>
+              {["Inbox","Tasks","Content ideas","Schedule","Approvals"].map(d => <option key={d}>{d}</option>)}
+            </select>
+
+            {/* Tags */}
+            <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.1em", marginBottom:6 }}>Optional tags</p>
+            <input value={brainTag} onChange={e => setBrainTag(e.target.value)}
+              onKeyDown={e => { if(e.key==="Enter") captureBrain(); }}
+              placeholder="Add tags..."
+              style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, color:T.text, fontSize:13, padding:"8px 12px", outline:"none", fontFamily:"inherit", boxSizing:"border-box", marginBottom:6 }}
+            />
+            <p style={{ fontSize:10, color:T.faint, marginBottom:14 }}>Press Enter to add</p>
+
+            <button onClick={captureBrain} disabled={!brainText.trim()} style={{ width:"100%", padding:"11px", background: brainText.trim() ? userAccent : T.surface2, border:"none", borderRadius:8, color: brainText.trim() ? "#fff" : T.faint, fontSize:13, fontWeight:800, cursor:brainText.trim()?"pointer":"default", fontFamily:"inherit", letterSpacing:"0.04em", display:"flex", alignItems:"center", justifyContent:"center", gap:6, transition:"all 0.15s" }}>
+              <span>📌</span> Capture
+            </button>
+
+            {/* Captured items */}
+            {brainItems.length > 0 && (
+              <div style={{ marginTop:16, borderTop:`1px solid ${T.border}`, paddingTop:12 }}>
+                <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.1em", marginBottom:8 }}>CAPTURED ({brainItems.length})</p>
+                <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:220, overflowY:"auto" }}>
+                  {brainItems.map(item => (
+                    <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:8, padding:"8px 10px", background:T.surface, borderRadius:7, border:`1px solid ${T.border}` }}>
+                      <span style={{ fontSize:12 }}>{({Task:"📋",Idea:"💡",Reminder:"⏰",Note:"📝"})[item.type]||"📌"}</span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontSize:12, color:T.ink, lineHeight:1.4 }}>{item.text}</p>
+                        <p style={{ fontSize:9.5, color:T.faint, marginTop:2 }}>{item.dest} · {item.time}</p>
+                      </div>
+                      <button onClick={() => deleteBrainItem(item.id)} style={{ background:"transparent", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:0, flexShrink:0 }}
+                        onMouseEnter={e => e.currentTarget.style.color = "#EF4444"}
+                        onMouseLeave={e => e.currentTarget.style.color = T.faint}
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
