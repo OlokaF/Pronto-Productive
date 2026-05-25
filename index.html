@@ -11044,7 +11044,15 @@ function App() {
   // Video schedule events — date → [{ id, talent, location, type, durationMin, notes }]
   const [videoEvents, setVideoEvents] = useS(() => loadOr("videoEvents", () => ({})));
   // Visible tabs preference — array of tab keys that are shown
-  const [visibleTabs, setVisibleTabs] = useS(() => loadOr("visibleTabs", () => DEFAULT_TABS.map(t=>t.key)));
+  const [visibleTabs, setVisibleTabs] = useS(() => {
+    const saved = loadOr("visibleTabs", () => DEFAULT_TABS.filter(t=>t.on).map(t=>t.key));
+    // Migration: add any new tabs that are on:true in DEFAULT_TABS but missing from saved
+    const newOnes = DEFAULT_TABS.filter(t => t.on && !saved.includes(t.key)).map(t=>t.key);
+    // Migration: remove tabs that have been permanently disabled (analytics)
+    const removed = DEFAULT_TABS.filter(t => !t.on).map(t=>t.key);
+    const merged = [...saved.filter(k => !removed.includes(k)), ...newOnes];
+    return merged;
+  });
   // Branding modal open
   const [brandingModal, setBrandingModal] = useS(false);
   // Settings panel open (gear icon)
