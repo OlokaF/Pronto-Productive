@@ -10889,6 +10889,7 @@ const DEFAULT_TABS = [
   { key:"schedule",   label:"SCHEDULE",    on:true },
   { key:"content",    label:"CONTENT",     on:true },
   { key:"approvals",  label:"APPROVALS",   on:true },
+  { key:"emails",     label:"EMAILS",      on:true },
   { key:"video",      label:"VIDEO SCHED", on:true },
   { key:"plan",       label:"PLAN 2026",   on:true },
   { key:"team",       label:"TEAM",        on:true },
@@ -10996,6 +10997,11 @@ function App() {
   // Recurring daily tasks — appear every day with orange checkbox
   const [recurringTasks, setRecurringTasks] = useS(() => loadOr("recurringTasks", () => []));
   const [toPostList, setToPostList] = useS(() => loadOr("toPostList", () => []));
+  // Email Pipeline state
+  const [emailItems, setEmailItems] = useS(() => loadOr("emailItems", () => []));
+  const [emailComments, setEmailComments] = useS(() => loadOr("emailComments", () => []));
+  const [emailActivity, setEmailActivity] = useS(() => loadOr("emailActivity", () => []));
+  const [emailAttachments, setEmailAttachments] = useS(() => loadOr("emailAttachments", () => []));
   // Ongoing Jobs — long-running tasks, tickable daily, never auto-removed
   const [ongoingJobs, setOngoingJobs] = useS(() => loadOr("ongoingJobs", () => [
     { id:"oj1", text:"Edit the video of Mark", owner:"oloka" },
@@ -11059,6 +11065,7 @@ function App() {
     contentLabels, videoLabels,
     recurringTasks, ongoingJobs, toBeCompleted,
     uniform, brainDumpItems, toPostList,
+    emailItems, emailComments, emailActivity, emailAttachments,
   });
 
   // Sync chatAs to todayUser when user logs in via TodayPicker
@@ -11076,7 +11083,7 @@ function App() {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems, toPostList]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
 
@@ -11161,6 +11168,10 @@ function App() {
     if (s.uniform) setUniform(s.uniform);
     if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
     if (s.toPostList) setToPostList(s.toPostList);
+    if (s.emailItems) setEmailItems(s.emailItems);
+    if (s.emailComments) setEmailComments(s.emailComments);
+    if (s.emailActivity) setEmailActivity(s.emailActivity);
+    if (s.emailAttachments) setEmailAttachments(s.emailAttachments);
   };
 
   // ── Export schedule as .ics (for Samsung Calendar / Outlook import) ──
@@ -11696,6 +11707,13 @@ function App() {
         />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
+        {tab === "emails" && <EmailPipelineView
+          emailItems={emailItems} setEmailItems={setEmailItems}
+          emailComments={emailComments} setEmailComments={setEmailComments}
+          emailActivity={emailActivity} setEmailActivity={setEmailActivity}
+          emailAttachments={emailAttachments} setEmailAttachments={setEmailAttachments}
+          todayUser={todayUser} staff={staff}
+        />}
         {tab === "brain-dump" && <BrainDumpView tasksByDate={tasksByDate} onAdd={onAdd} user={todayUser} avatars={avatars} brainDumpItems={brainDumpItems} setBrainDumpItems={setBrainDumpItems}/>}
         {tab === "settings" && <SettingsView
           theme={theme} setTheme={(t) => { applyTheme(t); try { localStorage.setItem("prontoHQ.theme", t); } catch(_) {} setTheme(t); }}
@@ -13299,6 +13317,1183 @@ function PasswordGate({ children }) {
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<PasswordGate><App /></PasswordGate>);
 
+</script>
+
+<script type="text/babel">
+(function() {
+const { useState: useEP, useEffect: useEPE, useRef: useEPR, useMemo: useEPM, useCallback: useEPC } = React;
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const EMAIL_TYPES = [
+  { key:"client",       label:"CLIENT EMAIL",        color:"#3B82F6" },
+  { key:"staff",        label:"STAFF EMAIL",         color:"#8B5CF6" },
+  { key:"motivational", label:"MOTIVATIONAL MONDAY", color:"#F59E0B" },
+  { key:"machine",      label:"MACHINE FEATURE",     color:"#10B981" },
+  { key:"promotion",    label:"PROMOTION",           color:"#EF4444" },
+  { key:"event",        label:"EVENT",               color:"#EC4899" },
+  { key:"other",        label:"OTHER",               color:"#6B7280" },
+];
+
+const EMAIL_STATUSES = [
+  { key:"ideas",             label:"IDEAS",             col:0 },
+  { key:"planning",          label:"PLANNING",          col:1 },
+  { key:"in_progress",       label:"IN PROGRESS",       col:2 },
+  { key:"awaiting_approval", label:"AWAITING APPROVAL", col:3 },
+  { key:"scheduled",         label:"SCHEDULED",         col:4 },
+  { key:"sent",              label:"SENT",              col:5 },
+];
+
+const DEFAULT_CHECKLIST = [
+  "Topic / content planned",
+  "Images / assets gathered",
+  "Email copy drafted",
+  "Design completed in Mailchimp",
+  "Internal review completed",
+  "Approved",
+  "Scheduled in Mailchimp",
+  "Sent",
+];
+
+function mkId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-AU", { day:"numeric", month:"short" });
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-AU", { day:"numeric", month:"short", year:"numeric" }) + ", " + d.toLocaleTimeString("en-AU", { hour:"2-digit", minute:"2-digit" });
+}
+
+function getTypeInfo(key) {
+  return EMAIL_TYPES.find(t => t.key === key) || EMAIL_TYPES[EMAIL_TYPES.length - 1];
+}
+
+function calcProgress(checklist) {
+  if (!checklist || checklist.length === 0) return 0;
+  return Math.round((checklist.filter(c => c.completed).length / checklist.length) * 100);
+}
+
+function getMondaysInMonth(year, month) {
+  const mondays = [];
+  const d = new Date(year, month, 1);
+  while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+  while (d.getMonth() === month) {
+    mondays.push(new Date(d));
+    d.setDate(d.getDate() + 7);
+  }
+  return mondays;
+}
+
+function toISO(d) {
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+
+// ─── Recurring email creation ─────────────────────────────────────────────────
+
+function ensureRecurringEmails(emailItems, setEmailItems) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const period = year + "-" + String(month+1).padStart(2,"0");
+  const toAdd = [];
+
+  const hasClient = emailItems.some(e => e.recurring_type === "client_monthly" && e.recurring_period === period);
+  if (!hasClient) {
+    const dueDate = period + "-03";
+    toAdd.push({
+      id: mkId(),
+      title: "Client Email - " + now.toLocaleString("en-AU",{month:"long"}) + " " + year,
+      type: "client", status: "planning", owner_id: "oloka", priority: false,
+      audience: "Clients – All",
+      target_send_date: dueDate, due_date: dueDate,
+      scheduled_at: null, sent_at: null, started_by: null, started_at: null,
+      last_edited_by: null, last_edited_at: null,
+      approval_status: "not_started", submitted_by: null, submitted_at: null,
+      approved_by: null, approved_at: null,
+      subject_line: "", preview_text: "", content_notes: "", cta: "",
+      mailchimp_campaign_name: "", mailchimp_campaign_url: "",
+      open_rate: "", click_rate: "", performance_notes: "",
+      checklist: DEFAULT_CHECKLIST.map(function(label, i){ return { id: mkId(), label: label, completed: false, completed_by: null, completed_at: null, sort_order: i }; }),
+      recurring_type: "client_monthly", recurring_period: period,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+  }
+
+  const hasStaff = emailItems.some(e => e.recurring_type === "staff_monthly" && e.recurring_period === period);
+  if (!hasStaff) {
+    const dueDate = period + "-08";
+    toAdd.push({
+      id: mkId(),
+      title: "Staff Email - " + now.toLocaleString("en-AU",{month:"long"}) + " " + year,
+      type: "staff", status: "planning", owner_id: "vanja", priority: false,
+      audience: "Team – All Staff",
+      target_send_date: dueDate, due_date: dueDate,
+      scheduled_at: null, sent_at: null, started_by: null, started_at: null,
+      last_edited_by: null, last_edited_at: null,
+      approval_status: "not_started", submitted_by: null, submitted_at: null,
+      approved_by: null, approved_at: null,
+      subject_line: "", preview_text: "", content_notes: "", cta: "",
+      mailchimp_campaign_name: "", mailchimp_campaign_url: "",
+      open_rate: "", click_rate: "", performance_notes: "",
+      checklist: DEFAULT_CHECKLIST.map(function(label, i){ return { id: mkId(), label: label, completed: false, completed_by: null, completed_at: null, sort_order: i }; }),
+      recurring_type: "staff_monthly", recurring_period: period,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+  }
+
+  const mondays = getMondaysInMonth(year, month);
+  for (var mi = 0; mi < mondays.length; mi++) {
+    var monday = mondays[mi];
+    var mondayISO = toISO(monday);
+    var hasMonday = emailItems.some(e => e.recurring_type === "motivational_monday" && e.recurring_period === mondayISO);
+    if (!hasMonday) {
+      toAdd.push({
+        id: mkId(),
+        title: "Motivational Monday - " + monday.getDate() + " " + monday.toLocaleString("en-AU",{month:"long"}) + " " + year,
+        type: "motivational", status: "planning", owner_id: "vanja", priority: false,
+        audience: "Clients – All",
+        target_send_date: mondayISO, due_date: mondayISO,
+        scheduled_at: null, sent_at: null, started_by: null, started_at: null,
+        last_edited_by: null, last_edited_at: null,
+        approval_status: "not_started", submitted_by: null, submitted_at: null,
+        approved_by: null, approved_at: null,
+        subject_line: "", preview_text: "", content_notes: "", cta: "",
+        mailchimp_campaign_name: "", mailchimp_campaign_url: "",
+        open_rate: "", click_rate: "", performance_notes: "",
+        checklist: DEFAULT_CHECKLIST.map(function(label, i){ return { id: mkId(), label: label, completed: false, completed_by: null, completed_at: null, sort_order: i }; }),
+        recurring_type: "motivational_monday", recurring_period: mondayISO,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (toAdd.length > 0) {
+    setEmailItems(function(prev){ return prev.concat(toAdd); });
+  }
+}
+
+// ─── EmailTypeBadge ───────────────────────────────────────────────────────────
+
+function EmailTypeBadge({ typeKey, small }) {
+  const info = getTypeInfo(typeKey);
+  return (
+    <span style={{
+      display:"inline-block",
+      background: info.color + "20",
+      color: info.color,
+      border: "1px solid " + info.color + "40",
+      borderRadius: 4,
+      fontSize: small ? 8 : 9,
+      fontWeight: 800,
+      letterSpacing: "0.06em",
+      padding: small ? "1px 5px" : "2px 7px",
+    }}>
+      {info.label}
+    </span>
+  );
+}
+
+// ─── EPProgressBar ────────────────────────────────────────────────────────────
+
+function EPProgressBar({ pct, color }) {
+  return (
+    <div style={{ height: 4, background: T.border, borderRadius: 2, overflow:"hidden" }}>
+      <div style={{ width: pct + "%", height:"100%", background: color || "#3B82F6", borderRadius: 2, transition:"width 0.3s" }} />
+    </div>
+  );
+}
+
+// ─── EPOwnerAvatar ────────────────────────────────────────────────────────────
+
+function EPOwnerAvatar({ userId, size }) {
+  size = size || 22;
+  const colors = { vanja: T.vanja, oloka: T.oloka };
+  const initials = { vanja:"V", oloka:"O" };
+  const bg = colors[userId] || T.muted;
+  const init = initials[userId] || (userId || "?")[0].toUpperCase();
+  return (
+    <div title={userId} style={{
+      width: size, height: size, borderRadius:"50%",
+      background: bg + "30", border: "1.5px solid " + bg,
+      display:"flex", alignItems:"center", justifyContent:"center",
+      fontSize: size * 0.45, fontWeight: 700, color: bg, flexShrink:0,
+    }}>{init}</div>
+  );
+}
+
+// ─── ChecklistItemAdder ───────────────────────────────────────────────────────
+
+function ChecklistItemAdder({ onAdd }) {
+  const [newItem, setNewItem] = useEP("");
+  const inputStyle = { flex:1, padding:"7px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:12.5, color:T.text, fontFamily:"inherit" };
+  return (
+    <div style={{ display:"flex", gap:6 }}>
+      <input
+        value={newItem}
+        onChange={e => setNewItem(e.target.value)}
+        onKeyDown={e => { if (e.key==="Enter" && newItem.trim()) { onAdd(newItem); setNewItem(""); }}}
+        style={inputStyle}
+        placeholder="Add checklist item..."
+      />
+      <button onClick={() => { if(newItem.trim()){ onAdd(newItem); setNewItem(""); }}}
+        style={{ padding:"7px 12px", background:T.navy, border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>+</button>
+    </div>
+  );
+}
+
+// ─── EmailCard ────────────────────────────────────────────────────────────────
+
+function EmailCard({ item, onClick, onDragStart }) {
+  const pct = calcProgress(item.checklist);
+  const typeInfo = getTypeInfo(item.type);
+  const now = new Date();
+  const dueDate = item.due_date ? new Date(item.due_date) : null;
+  const isOverdue = dueDate && dueDate < now && item.status !== "sent" && item.status !== "scheduled";
+  const isDueToday = dueDate && toISO(dueDate) === toISO(now) && item.status !== "sent";
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onClick={onClick}
+      style={{
+        background: T.cardBg,
+        border: "1px solid " + (isOverdue ? T.urgent + "60" : T.border),
+        borderRadius: 8,
+        padding: "10px 12px",
+        marginBottom: 8,
+        cursor: "pointer",
+        transition: "box-shadow 0.15s",
+        boxShadow: item.priority ? "0 0 0 2px " + T.gold + "40" : "none",
+      }}
+      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.12)"}
+      onMouseLeave={e => e.currentTarget.style.boxShadow = item.priority ? "0 0 0 2px " + T.gold + "40" : "none"}
+    >
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+        <EmailTypeBadge typeKey={item.type} small />
+        {item.priority && <span style={{ color: T.gold, fontSize:12 }}>&#9733;</span>}
+      </div>
+      <div style={{ fontSize:12.5, fontWeight:700, color:T.heading, lineHeight:1.3, marginBottom:8 }}>
+        {item.title}
+      </div>
+      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+        {item.owner_id && <EPOwnerAvatar userId={item.owner_id} />}
+        <span style={{ fontSize:10.5, color:T.muted, flex:1 }}>
+          {item.owner_id ? item.owner_id.charAt(0).toUpperCase() + item.owner_id.slice(1) : "Unassigned"}
+        </span>
+        {item.due_date && (
+          <span style={{ fontSize:10, color: isOverdue ? T.urgent : isDueToday ? T.gold : T.muted, fontWeight: isOverdue || isDueToday ? 700 : 400 }}>
+            {isOverdue ? "⚠ " : ""}&#128197; {fmtDate(item.due_date)}
+          </span>
+        )}
+      </div>
+      {pct > 0 && (
+        <div style={{ marginBottom:6 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+            <span style={{ fontSize:9, color:T.muted }}>Progress</span>
+            <span style={{ fontSize:9, fontWeight:700, color:T.muted }}>{pct}%</span>
+          </div>
+          <EPProgressBar pct={pct} color={typeInfo.color} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── NewEmailModal ────────────────────────────────────────────────────────────
+
+function NewEmailModal({ onClose, onSave, defaultStatus, todayUser }) {
+  const [title, setTitle] = useEP("");
+  const [type, setType] = useEP("client");
+  const [owner, setOwner] = useEP(todayUser || "oloka");
+  const [dueDate, setDueDate] = useEP("");
+  const [status, setStatus] = useEP(defaultStatus || "ideas");
+  const [priority, setPriority] = useEP(false);
+  const [notes, setNotes] = useEP("");
+  const [audience, setAudience] = useEP("Clients – All");
+
+  const handleSave = () => {
+    if (!title.trim()) { alert("Please enter a title"); return; }
+    onSave({
+      id: mkId(),
+      title: title.trim(),
+      type, status, owner_id: owner, priority, audience,
+      target_send_date: dueDate || null, due_date: dueDate || null,
+      scheduled_at: null, sent_at: null, started_by: null, started_at: null,
+      last_edited_by: todayUser, last_edited_at: new Date().toISOString(),
+      approval_status: "not_started", submitted_by: null, submitted_at: null,
+      approved_by: null, approved_at: null,
+      subject_line: "", preview_text: "", content_notes: notes.trim(), cta: "",
+      mailchimp_campaign_name: "", mailchimp_campaign_url: "",
+      open_rate: "", click_rate: "", performance_notes: "",
+      checklist: DEFAULT_CHECKLIST.map((label, i) => ({ id: mkId(), label, completed: false, completed_by: null, completed_at: null, sort_order: i })),
+      recurring_type: null, recurring_period: null,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    onClose();
+  };
+
+  const inputStyle = { width:"100%", padding:"8px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:13, color:T.text, fontFamily:"inherit" };
+  const labelStyle = { fontSize:10.5, fontWeight:700, color:T.muted, letterSpacing:"0.05em", display:"block", marginBottom:4 };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center" }}
+      onClick={onClose}>
+      <div style={{ background:T.bg, borderRadius:12, padding:28, width:480, maxWidth:"90vw", maxHeight:"90vh", overflowY:"auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <p style={{ fontWeight:800, fontSize:16, color:T.heading }}>+ NEW EMAIL</p>
+          <button onClick={onClose} style={{ background:"none", border:"none", fontSize:20, color:T.muted, cursor:"pointer" }}>&times;</button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          <div>
+            <label style={labelStyle}>TITLE *</label>
+            <input value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} placeholder="Email title..." autoFocus />
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <div>
+              <label style={labelStyle}>TYPE</label>
+              <select value={type} onChange={e => setType(e.target.value)} style={inputStyle}>
+                {EMAIL_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>STATUS</label>
+              <select value={status} onChange={e => setStatus(e.target.value)} style={inputStyle}>
+                {EMAIL_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <div>
+              <label style={labelStyle}>OWNER</label>
+              <select value={owner} onChange={e => setOwner(e.target.value)} style={inputStyle}>
+                <option value="oloka">Oloka</option>
+                <option value="vanja">Vanja</option>
+                <option value="">Unassigned</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>DUE DATE</label>
+              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>AUDIENCE</label>
+            <input value={audience} onChange={e => setAudience(e.target.value)} style={inputStyle} placeholder="e.g. Clients – All" />
+          </div>
+          <div>
+            <label style={labelStyle}>NOTES</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} style={{ ...inputStyle, height:70, resize:"vertical" }} placeholder="Initial notes..." />
+          </div>
+          <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:13, color:T.text }}>
+            <input type="checkbox" checked={priority} onChange={e => setPriority(e.target.checked)} />
+            &#9733; Mark as priority
+          </label>
+        </div>
+        <div style={{ display:"flex", gap:10, marginTop:20 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"9px 0", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:12, color:T.muted, cursor:"pointer", fontWeight:700 }}>CANCEL</button>
+          <button onClick={handleSave} style={{ flex:2, padding:"9px 0", background:T.navy, border:"none", borderRadius:6, fontSize:12, color:"#fff", cursor:"pointer", fontWeight:700 }}>CREATE EMAIL</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── EmailDetailPanel ─────────────────────────────────────────────────────────
+
+function EmailDetailPanel({ item, onClose, onUpdate, onDelete, emailComments, setEmailComments, emailActivity, setEmailActivity, emailAttachments, setEmailAttachments, todayUser }) {
+  const [activeTab, setActiveTab] = useEP("overview");
+  const [editing, setEditing] = useEP(false);
+  const [draft, setDraft] = useEP(() => ({ ...item }));
+  const [newComment, setNewComment] = useEP("");
+  const [newLink, setNewLink] = useEP({ name:"", url:"" });
+  const [approvalNote, setApprovalNote] = useEP("");
+  const [showApproveOptions, setShowApproveOptions] = useEP(false);
+  const [deleteConfirm, setDeleteConfirm] = useEP(false);
+
+  useEPE(() => { setDraft({ ...item }); }, [item.id]);
+
+  const myComments = emailComments.filter(c => c.email_id === item.id);
+  const myActivity = emailActivity.filter(a => a.email_id === item.id);
+  const myAttachments = emailAttachments.filter(a => a.email_id === item.id);
+
+  const addActivity = (action, details) => {
+    setEmailActivity(prev => [...prev, { id:mkId(), email_id:item.id, user_id:todayUser||"unknown", action, details, created_at:new Date().toISOString() }]);
+  };
+
+  const saveEdit = () => {
+    const now = new Date().toISOString();
+    const updated = {
+      ...draft,
+      last_edited_by: todayUser, last_edited_at: now,
+      started_by: item.started_by || todayUser,
+      started_at: item.started_at || now,
+      updated_at: now,
+    };
+    onUpdate(updated);
+    addActivity("edited", "Email details updated");
+    setEditing(false);
+  };
+
+  const toggleChecklist = (idx) => {
+    const now = new Date().toISOString();
+    const newChecklist = item.checklist.map((c, i) => i === idx
+      ? { ...c, completed: !c.completed, completed_by: !c.completed ? todayUser : null, completed_at: !c.completed ? now : null }
+      : c);
+    onUpdate({ ...item, checklist: newChecklist, updated_at: now });
+    if (!item.checklist[idx].completed) addActivity("checklist", "Completed: " + item.checklist[idx].label);
+  };
+
+  const addChecklistItem = (label) => {
+    if (!label.trim()) return;
+    const newCI = { id:mkId(), label:label.trim(), completed:false, completed_by:null, completed_at:null, sort_order:item.checklist.length };
+    onUpdate({ ...item, checklist:[...item.checklist, newCI], updated_at:new Date().toISOString() });
+  };
+
+  const submitForApproval = () => {
+    const now = new Date().toISOString();
+    onUpdate({ ...item, status:"awaiting_approval", approval_status:"in_review", submitted_by:todayUser, submitted_at:now, updated_at:now });
+    addActivity("submitted", todayUser + " submitted for approval");
+  };
+
+  const requestChanges = () => {
+    if (!approvalNote.trim()) { alert("Please add a note explaining what changes are needed"); return; }
+    const now = new Date().toISOString();
+    onUpdate({ ...item, status:"in_progress", approval_status:"changes_requested", updated_at:now });
+    setEmailComments(prev => [...prev, { id:mkId(), email_id:item.id, user_id:todayUser||"unknown", comment:"Changes requested: " + approvalNote, created_at:now }]);
+    addActivity("changes_requested", "Changes requested: " + approvalNote);
+    setApprovalNote("");
+  };
+
+  const approveEmail = (moveToScheduled) => {
+    const now = new Date().toISOString();
+    onUpdate({ ...item, status: moveToScheduled ? "scheduled" : "awaiting_approval", approval_status:"approved", approved_by:todayUser, approved_at:now, updated_at:now });
+    addActivity("approved", "Approved by " + todayUser + (moveToScheduled ? " and moved to Scheduled" : ""));
+    setShowApproveOptions(false);
+  };
+
+  const markScheduled = () => {
+    const now = new Date().toISOString();
+    onUpdate({ ...item, status:"scheduled", scheduled_at:now, updated_at:now });
+    addActivity("scheduled", "Marked as scheduled by " + todayUser);
+  };
+
+  const markSent = () => {
+    const now = new Date().toISOString();
+    onUpdate({ ...item, status:"sent", sent_at:now, updated_at:now });
+    addActivity("sent", "Marked as sent by " + todayUser);
+  };
+
+  const pct = calcProgress(item.checklist);
+  const typeInfo = getTypeInfo(item.type);
+  const inputStyle = { width:"100%", padding:"7px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:12.5, color:T.text, fontFamily:"inherit" };
+  const labelStyle = { fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.05em", display:"block", marginBottom:3 };
+  const DETAIL_TABS = ["overview","content","approval","notes","activity","attachments"];
+
+  return (
+    <div style={{ position:"fixed", top:0, right:0, bottom:0, width: Math.min(600, window.innerWidth), background:T.bg, borderLeft:"1px solid " + T.border, boxShadow:"-8px 0 40px rgba(0,0,0,0.2)", overflowY:"auto", zIndex:7500, display:"flex", flexDirection:"column" }}>
+      <div style={{ padding:"20px 24px 0", borderBottom:"1px solid " + T.border, flexShrink:0 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+          <div style={{ flex:1, minWidth:0, paddingRight:12 }}>
+            <EmailTypeBadge typeKey={item.type} />
+            <div style={{ fontSize:16, fontWeight:800, color:T.heading, marginTop:6, lineHeight:1.3 }}>{item.title}</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, color:T.muted, cursor:"pointer", flexShrink:0, lineHeight:1 }}>&times;</button>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+          <select value={item.status} onChange={e => { const now=new Date().toISOString(); onUpdate({...item,status:e.target.value,updated_at:now}); addActivity("status_changed","Status → " + e.target.value); }}
+            style={{ fontSize:10.5, fontWeight:700, padding:"3px 8px", borderRadius:5, border:"1px solid " + T.border, background:T.surface, color:T.text, cursor:"pointer" }}>
+            {EMAIL_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+          <button onClick={() => setEditing(v => !v)} style={{ fontSize:10.5, fontWeight:700, padding:"3px 10px", borderRadius:5, border:"1px solid " + T.border, background:editing?T.navy:"transparent", color:editing?"#fff":T.muted, cursor:"pointer" }}>EDIT</button>
+          {!deleteConfirm && <button onClick={() => setDeleteConfirm(true)} style={{ fontSize:10.5, fontWeight:700, padding:"3px 10px", borderRadius:5, border:"1px solid " + T.urgent + "40", background:"transparent", color:T.urgent, cursor:"pointer" }}>DELETE</button>}
+          {deleteConfirm && <>
+            <span style={{ fontSize:11, color:T.urgent }}>Sure?</span>
+            <button onClick={() => { onDelete(item.id); onClose(); }} style={{ fontSize:10.5, fontWeight:700, padding:"3px 10px", borderRadius:5, border:"none", background:T.urgent, color:"#fff", cursor:"pointer" }}>YES DELETE</button>
+            <button onClick={() => setDeleteConfirm(false)} style={{ fontSize:10.5, fontWeight:700, padding:"3px 10px", borderRadius:5, border:"1px solid " + T.border, background:"transparent", color:T.muted, cursor:"pointer" }}>CANCEL</button>
+          </>}
+        </div>
+        <div style={{ display:"flex", gap:0, borderBottom:"1px solid " + T.border }}>
+          {DETAIL_TABS.map(t => (
+            <button key={t} onClick={() => setActiveTab(t)} style={{ padding:"7px 12px", background:"none", border:"none", borderBottom: activeTab===t ? "2px solid " + T.navy : "2px solid transparent", fontSize:10, fontWeight:700, letterSpacing:"0.05em", color:activeTab===t?T.navy:T.muted, cursor:"pointer", textTransform:"uppercase" }}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ flex:1, overflowY:"auto", padding:"20px 24px" }}>
+
+        {activeTab === "overview" && (
+          <div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:18 }}>
+              <div>
+                <label style={labelStyle}>OWNER</label>
+                {editing ? (
+                  <select value={draft.owner_id||""} onChange={e => setDraft(d => ({...d,owner_id:e.target.value}))} style={inputStyle}>
+                    <option value="oloka">Oloka</option><option value="vanja">Vanja</option><option value="">Unassigned</option>
+                  </select>
+                ) : (
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    {item.owner_id && <EPOwnerAvatar userId={item.owner_id} />}
+                    <span style={{ fontSize:13, color:T.text }}>{item.owner_id ? item.owner_id.charAt(0).toUpperCase()+item.owner_id.slice(1) : "Unassigned"}</span>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={labelStyle}>DUE DATE</label>
+                {editing ? (
+                  <input type="date" value={draft.due_date||""} onChange={e => setDraft(d => ({...d,due_date:e.target.value,target_send_date:e.target.value}))} style={inputStyle} />
+                ) : (
+                  <span style={{ fontSize:13, color:T.text }}>{fmtDate(item.due_date) || "Not set"}</span>
+                )}
+              </div>
+              <div>
+                <label style={labelStyle}>AUDIENCE</label>
+                {editing ? (
+                  <input value={draft.audience||""} onChange={e => setDraft(d => ({...d,audience:e.target.value}))} style={inputStyle} />
+                ) : (
+                  <span style={{ fontSize:13, color:T.text }}>{item.audience || "—"}</span>
+                )}
+              </div>
+              <div>
+                <label style={labelStyle}>PRIORITY</label>
+                {editing ? (
+                  <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer" }}>
+                    <input type="checkbox" checked={!!draft.priority} onChange={e => setDraft(d => ({...d,priority:e.target.checked}))} />
+                    <span style={{ fontSize:12, color:T.text }}>&#9733; Priority</span>
+                  </label>
+                ) : (
+                  <span style={{ fontSize:13, color:item.priority?T.gold:T.muted }}>{item.priority ? "&#9733; Priority" : "Normal"}</span>
+                )}
+              </div>
+            </div>
+            <div style={{ background:T.surface, borderRadius:6, padding:10, marginBottom:18, fontSize:11, color:T.muted, lineHeight:1.7 }}>
+              {item.started_by && <div>Started by <strong style={{color:T.text}}>{item.started_by}</strong> on {fmtDateTime(item.started_at)}</div>}
+              {item.last_edited_by && <div>Last edited by <strong style={{color:T.text}}>{item.last_edited_by}</strong> on {fmtDateTime(item.last_edited_at)}</div>}
+              {!item.started_by && <div style={{color:T.faint}}>Not started yet</div>}
+            </div>
+            <div style={{ marginBottom:18 }}>
+              <label style={labelStyle}>MAILCHIMP CAMPAIGN</label>
+              {editing ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  <input value={draft.mailchimp_campaign_name||""} onChange={e => setDraft(d => ({...d,mailchimp_campaign_name:e.target.value}))} style={inputStyle} placeholder="Campaign name" />
+                  <input value={draft.mailchimp_campaign_url||""} onChange={e => setDraft(d => ({...d,mailchimp_campaign_url:e.target.value}))} style={inputStyle} placeholder="Campaign URL (optional)" />
+                </div>
+              ) : (
+                <div style={{ fontSize:13, color:T.text }}>
+                  {item.mailchimp_campaign_name || <span style={{color:T.faint}}>Not linked</span>}
+                  {item.mailchimp_campaign_url && <a href={item.mailchimp_campaign_url} target="_blank" rel="noopener noreferrer" style={{ display:"block", fontSize:11, color:"#3B82F6", marginTop:2 }}>Open in Mailchimp &#8594;</a>}
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                <label style={{...labelStyle, marginBottom:0}}>PROGRESS CHECKLIST</label>
+                <span style={{ fontSize:11, fontWeight:700, color:T.muted }}>{pct}%</span>
+              </div>
+              <EPProgressBar pct={pct} color={typeInfo.color} />
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:14 }}>
+              {(item.checklist||[]).map((c, idx) => (
+                <label key={c.id} style={{ display:"flex", alignItems:"flex-start", gap:8, cursor:"pointer", padding:"5px 0", borderBottom:"1px solid " + T.border }}>
+                  <input type="checkbox" checked={!!c.completed} onChange={() => toggleChecklist(idx)} style={{ marginTop:2 }} />
+                  <div style={{ flex:1 }}>
+                    <span style={{ fontSize:12.5, color: c.completed ? T.muted : T.text, textDecoration: c.completed ? "line-through" : "none" }}>{c.label}</span>
+                    {c.completed && c.completed_by && <div style={{ fontSize:10, color:T.faint }}>by {c.completed_by} &middot; {fmtDate(c.completed_at)}</div>}
+                  </div>
+                </label>
+              ))}
+            </div>
+            <ChecklistItemAdder onAdd={addChecklistItem} />
+            {editing && (
+              <div style={{ display:"flex", gap:8, marginTop:16 }}>
+                <button onClick={() => setEditing(false)} style={{ flex:1, padding:"8px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:11, fontWeight:700, color:T.muted, cursor:"pointer" }}>CANCEL</button>
+                <button onClick={saveEdit} style={{ flex:2, padding:"8px", background:T.navy, border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>SAVE CHANGES</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "content" && (
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {[
+              { key:"subject_line", label:"SUBJECT LINE", placeholder:"Email subject line..." },
+              { key:"preview_text", label:"PREVIEW TEXT", placeholder:"Preview text shown in inbox..." },
+              { key:"cta", label:"CALL TO ACTION", placeholder:"Main CTA..." },
+            ].map(f => (
+              <div key={f.key}>
+                <label style={labelStyle}>{f.label}</label>
+                <input value={draft[f.key]||""} onChange={e => setDraft(d => ({...d,[f.key]:e.target.value}))} style={inputStyle} placeholder={f.placeholder} />
+              </div>
+            ))}
+            <div>
+              <label style={labelStyle}>CONTENT OUTLINE / NOTES</label>
+              <textarea value={draft.content_notes||""} onChange={e => setDraft(d => ({...d,content_notes:e.target.value}))} style={{ ...inputStyle, height:100, resize:"vertical" }} placeholder="What's in this email..." />
+            </div>
+            <button onClick={saveEdit} style={{ padding:"9px", background:T.navy, border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>SAVE CONTENT</button>
+          </div>
+        )}
+
+        {activeTab === "approval" && (
+          <div>
+            <div style={{ background:T.surface, borderRadius:8, padding:14, marginBottom:16 }}>
+              <label style={labelStyle}>APPROVAL STATUS</label>
+              <div style={{ fontSize:14, fontWeight:700, color:
+                item.approval_status==="approved"?"#10B981":
+                item.approval_status==="in_review"?"#F59E0B":
+                item.approval_status==="changes_requested"?T.urgent:T.muted
+              }}>
+                {item.approval_status==="not_started" && "⚪ Not Started"}
+                {item.approval_status==="in_review" && "🟡 In Review"}
+                {item.approval_status==="changes_requested" && "🔴 Changes Requested"}
+                {item.approval_status==="approved" && "🟢 Approved"}
+              </div>
+              {item.submitted_by && <div style={{ fontSize:11, color:T.muted, marginTop:6 }}>Submitted by {item.submitted_by} &middot; {fmtDateTime(item.submitted_at)}</div>}
+              {item.approved_by && <div style={{ fontSize:11, color:T.muted, marginTop:4 }}>Approved by {item.approved_by} &middot; {fmtDateTime(item.approved_at)}</div>}
+            </div>
+            {(item.status==="in_progress"||item.status==="planning"||item.status==="ideas") && item.approval_status!=="in_review" && (
+              <button onClick={submitForApproval} style={{ width:"100%", padding:"10px", background:"#F59E0B", border:"none", borderRadius:7, fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", marginBottom:10 }}>
+                SUBMIT FOR APPROVAL
+              </button>
+            )}
+            {item.approval_status==="in_review" && !showApproveOptions && (
+              <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                <button onClick={() => setShowApproveOptions(true)} style={{ flex:1, padding:"10px", background:"#10B981", border:"none", borderRadius:7, fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>APPROVE</button>
+                <button onClick={requestChanges} style={{ flex:1, padding:"10px", background:T.urgent, border:"none", borderRadius:7, fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer" }}>REQUEST CHANGES</button>
+              </div>
+            )}
+            {showApproveOptions && (
+              <div style={{ background:T.surface, borderRadius:8, padding:14, marginBottom:10 }}>
+                <p style={{ fontSize:12.5, fontWeight:700, color:T.heading, marginBottom:10 }}>Move to Scheduled after approving?</p>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => approveEmail(false)} style={{ flex:1, padding:"9px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:11, fontWeight:700, color:T.text, cursor:"pointer" }}>APPROVE ONLY</button>
+                  <button onClick={() => approveEmail(true)} style={{ flex:1, padding:"9px", background:"#10B981", border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>APPROVE + SCHEDULE</button>
+                </div>
+                <button onClick={() => setShowApproveOptions(false)} style={{ width:"100%", marginTop:8, padding:"7px", background:"transparent", border:"none", fontSize:11, color:T.muted, cursor:"pointer" }}>Cancel</button>
+              </div>
+            )}
+            {item.approval_status==="in_review" && (
+              <div style={{ marginBottom:10 }}>
+                <label style={labelStyle}>CHANGE NOTES (required for Request Changes)</label>
+                <textarea value={approvalNote} onChange={e => setApprovalNote(e.target.value)} style={{ ...inputStyle, height:70, resize:"vertical" }} placeholder="Explain what needs to change..." />
+              </div>
+            )}
+            {item.approval_status==="approved" && item.status!=="scheduled" && item.status!=="sent" && (
+              <button onClick={markScheduled} style={{ width:"100%", padding:"10px", background:"#3B82F6", border:"none", borderRadius:7, fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", marginBottom:10 }}>
+                MARK AS SCHEDULED
+              </button>
+            )}
+            {item.status==="scheduled" && (
+              <button onClick={markSent} style={{ width:"100%", padding:"10px", background:T.navy, border:"none", borderRadius:7, fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", marginBottom:10 }}>
+                MARK AS SENT
+              </button>
+            )}
+            {item.status==="sent" && (
+              <div style={{ marginTop:8 }}>
+                <p style={{ fontSize:11, fontWeight:700, color:T.muted, marginBottom:10, letterSpacing:"0.05em" }}>PERFORMANCE (manual entry)</p>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+                  <div>
+                    <label style={labelStyle}>OPEN RATE</label>
+                    <input value={draft.open_rate||""} onChange={e => setDraft(d => ({...d,open_rate:e.target.value}))} style={inputStyle} placeholder="e.g. 42%" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>CLICK RATE</label>
+                    <input value={draft.click_rate||""} onChange={e => setDraft(d => ({...d,click_rate:e.target.value}))} style={inputStyle} placeholder="e.g. 8%" />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>PERFORMANCE NOTES</label>
+                  <textarea value={draft.performance_notes||""} onChange={e => setDraft(d => ({...d,performance_notes:e.target.value}))} style={{ ...inputStyle, height:60, resize:"vertical" }} placeholder="Notes on how this email performed..." />
+                </div>
+                <button onClick={saveEdit} style={{ marginTop:10, width:"100%", padding:"8px", background:T.navy, border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>SAVE PERFORMANCE DATA</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "notes" && (
+          <div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
+              {myComments.length === 0 && <p style={{ fontSize:12.5, color:T.faint, textAlign:"center", padding:"20px 0" }}>No notes yet</p>}
+              {myComments.map(c => (
+                <div key={c.id} style={{ background:T.surface, borderRadius:7, padding:10 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                    <EPOwnerAvatar userId={c.user_id} size={18} />
+                    <span style={{ fontSize:10.5, fontWeight:700, color:T.text }}>{c.user_id}</span>
+                    <span style={{ fontSize:10, color:T.muted, marginLeft:"auto" }}>{fmtDateTime(c.created_at)}</span>
+                  </div>
+                  <p style={{ fontSize:12.5, color:T.text, lineHeight:1.5 }}>{c.comment}</p>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <textarea value={newComment} onChange={e => setNewComment(e.target.value)} style={{ ...inputStyle, flex:1, height:60, resize:"none" }} placeholder="Add a note..." />
+              <button onClick={() => {
+                if (!newComment.trim()) return;
+                setEmailComments(prev => [...prev, { id:mkId(), email_id:item.id, user_id:todayUser||"unknown", comment:newComment.trim(), created_at:new Date().toISOString() }]);
+                setNewComment("");
+              }} style={{ padding:"8px 14px", background:T.navy, border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer", alignSelf:"flex-end" }}>ADD</button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "activity" && (
+          <div>
+            {myActivity.length === 0 && <p style={{ fontSize:12.5, color:T.faint, textAlign:"center", padding:"20px 0" }}>No activity yet</p>}
+            {[...myActivity].reverse().map(a => (
+              <div key={a.id} style={{ display:"flex", gap:10, padding:"8px 0", borderBottom:"1px solid " + T.border }}>
+                <EPOwnerAvatar userId={a.user_id} size={18} />
+                <div style={{ flex:1 }}>
+                  <span style={{ fontSize:12, color:T.text }}>{a.details}</span>
+                  <div style={{ fontSize:10, color:T.muted, marginTop:2 }}>{fmtDateTime(a.created_at)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "attachments" && (
+          <div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
+              {myAttachments.length === 0 && <p style={{ fontSize:12.5, color:T.faint, textAlign:"center", padding:"20px 0" }}>No attachments yet</p>}
+              {myAttachments.map(a => (
+                <div key={a.id} style={{ background:T.surface, borderRadius:7, padding:10, display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:16 }}>&#128279;</span>
+                  <div style={{ flex:1 }}>
+                    <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ fontSize:12.5, color:"#3B82F6", fontWeight:600 }}>{a.name}</a>
+                    <div style={{ fontSize:10, color:T.muted }}>Added by {a.uploaded_by} &middot; {fmtDate(a.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              <input value={newLink.name} onChange={e => setNewLink(l => ({...l,name:e.target.value}))} style={inputStyle} placeholder="Link name..." />
+              <input value={newLink.url} onChange={e => setNewLink(l => ({...l,url:e.target.value}))} style={inputStyle} placeholder="URL..." />
+              <button onClick={() => {
+                if (!newLink.name.trim()||!newLink.url.trim()) return;
+                setEmailAttachments(prev => [...prev, { id:mkId(), email_id:item.id, name:newLink.name.trim(), url:newLink.url.trim(), uploaded_by:todayUser||"unknown", created_at:new Date().toISOString() }]);
+                setNewLink({ name:"", url:"" });
+              }} style={{ padding:"8px", background:T.navy, border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>ADD LINK</button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ─── MonthlyEmailTracker ──────────────────────────────────────────────────────
+
+function MonthlyEmailTracker({ emailItems }) {
+  const [trackMonth, setTrackMonth] = useEP(() => { const n = new Date(); return { year:n.getFullYear(), month:n.getMonth() }; });
+
+  const period = trackMonth.year + "-" + String(trackMonth.month+1).padStart(2,"0");
+  const monthName = new Date(trackMonth.year, trackMonth.month, 1).toLocaleString("en-AU",{month:"long"});
+
+  const clientEmail = emailItems.find(e => e.recurring_type==="client_monthly" && e.recurring_period===period);
+  const staffEmail = emailItems.find(e => e.recurring_type==="staff_monthly" && e.recurring_period===period);
+
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const thisMonday = new Date(now);
+  thisMonday.setDate(now.getDate() + daysToMonday);
+  const thisMondayISO = toISO(thisMonday);
+  const motivEmail = emailItems.find(e => e.recurring_type==="motivational_monday" && e.recurring_period===thisMondayISO);
+
+  const prevMonth = () => setTrackMonth(m => { const d = new Date(m.year, m.month-1, 1); return { year:d.getFullYear(), month:d.getMonth() }; });
+  const nextMonth = () => setTrackMonth(m => { const d = new Date(m.year, m.month+1, 1); return { year:d.getFullYear(), month:d.getMonth() }; });
+
+  function TrackerCard({ email, label, dueLabel, color }) {
+    const pct = email ? calcProgress(email.checklist) : 0;
+    const statusLabel = email ? (EMAIL_STATUSES.find(s => s.key===email.status)||{label:email.status}).label : "Not created";
+    return (
+      <div style={{ background:T.surface, borderRadius:8, padding:12, marginBottom:10 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <span style={{ fontSize:11, fontWeight:800, color:color, letterSpacing:"0.05em" }}>{label}</span>
+          <span style={{ fontSize:9.5, color:T.muted }}>{dueLabel}</span>
+        </div>
+        {email ? (
+          <>
+            <div style={{ fontSize:12, fontWeight:600, color:T.heading, marginBottom:8, lineHeight:1.3 }}>{email.title}</div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
+              <span style={{ fontSize:10, color:T.muted }}>Status</span>
+              <span style={{ fontSize:10, fontWeight:700, color:T.text }}>{statusLabel}</span>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ fontSize:10, color:T.muted }}>Owner</span>
+              <span style={{ fontSize:10, fontWeight:700, color:T.text }}>{email.owner_id ? email.owner_id.charAt(0).toUpperCase()+email.owner_id.slice(1) : "—"}</span>
+            </div>
+            <EPProgressBar pct={pct} color={color} />
+            <div style={{ textAlign:"right", fontSize:9.5, color:T.muted, marginTop:3 }}>{pct}%</div>
+            {email.checklist && <div style={{ fontSize:9.5, color:T.faint, marginTop:4 }}>Next step: {(email.checklist.find(c => !c.completed)||{label:"All done!"}).label}</div>}
+          </>
+        ) : (
+          <p style={{ fontSize:11.5, color:T.faint }}>Not created yet — will auto-generate</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ width:280, flexShrink:0 }}>
+      <div style={{ background:T.cardBg, border:"1px solid " + T.border, borderRadius:10, padding:"14px 16px" }}>
+        <p style={{ fontWeight:800, fontSize:11.5, color:T.heading, letterSpacing:"0.07em", marginBottom:12 }}>MONTHLY EMAIL TRACKER</p>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+          <button onClick={prevMonth} style={{ background:"none", border:"none", fontSize:16, color:T.muted, cursor:"pointer" }}>&#8249;</button>
+          <span style={{ fontSize:12.5, fontWeight:700, color:T.heading }}>{monthName} {trackMonth.year}</span>
+          <button onClick={nextMonth} style={{ background:"none", border:"none", fontSize:16, color:T.muted, cursor:"pointer" }}>&#8250;</button>
+        </div>
+        <TrackerCard email={clientEmail} label="CLIENT EMAIL" dueLabel={"Due: 3 " + monthName.slice(0,3)} color="#3B82F6" />
+        <TrackerCard email={staffEmail} label="STAFF EMAIL" dueLabel={"Due: 8 " + monthName.slice(0,3)} color="#8B5CF6" />
+        <div style={{ marginTop:4 }}>
+          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.05em", marginBottom:8 }}>THIS WEEK'S MOTIVATIONAL MONDAY</p>
+          <TrackerCard email={motivEmail} label="MOTIVATIONAL MONDAY" dueLabel="Mon 7:00 AM" color="#F59E0B" />
+        </div>
+        <div style={{ borderTop:"1px solid " + T.border, paddingTop:10, marginTop:4 }}>
+          <p style={{ fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.05em", marginBottom:6 }}>APPROVAL KEY</p>
+          {[{c:"#9AA0AE",l:"Not Started"},{c:"#F59E0B",l:"In Review"},{c:"#EF4444",l:"Changes Requested"},{c:"#10B981",l:"Approved"}].map(k => (
+            <div key={k.l} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
+              <div style={{ width:8, height:8, borderRadius:"50%", background:k.c, flexShrink:0 }} />
+              <span style={{ fontSize:10, color:T.muted }}>{k.l}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── EmailKanbanView ──────────────────────────────────────────────────────────
+
+function EmailKanbanView({ emailItems, setEmailItems, filterType, onSelectEmail, onAddEmail, todayUser, emailActivity, setEmailActivity }) {
+  const [dragId, setDragId] = useEP(null);
+
+  const handleDrop = (statusKey) => {
+    if (!dragId) return;
+    const now = new Date().toISOString();
+    setEmailItems(prev => prev.map(e => e.id === dragId ? { ...e, status:statusKey, updated_at:now } : e));
+    setEmailActivity(prev => [...prev, { id:mkId(), email_id:dragId, user_id:todayUser||"unknown", action:"status_changed", details:"Moved to " + statusKey, created_at:now }]);
+    setDragId(null);
+  };
+
+  const filtered = filterType ? emailItems.filter(e => e.type === filterType) : emailItems;
+
+  return (
+    <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:8 }}>
+      {EMAIL_STATUSES.map(col => {
+        const colItems = filtered.filter(e => e.status === col.key);
+        return (
+          <div
+            key={col.key}
+            onDragOver={e => e.preventDefault()}
+            onDrop={() => handleDrop(col.key)}
+            style={{ minWidth:210, flex:"0 0 210px", background:T.surface, borderRadius:10, padding:"10px 10px 6px" }}
+          >
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <span style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.07em" }}>{col.label}</span>
+              <span style={{ fontSize:10, fontWeight:700, background:T.border, borderRadius:10, padding:"1px 7px", color:T.muted }}>{colItems.length}</span>
+            </div>
+            {colItems.map(item => (
+              <EmailCard
+                key={item.id}
+                item={item}
+                onClick={() => onSelectEmail(item)}
+                onDragStart={() => setDragId(item.id)}
+              />
+            ))}
+            <button onClick={() => onAddEmail(col.key)} style={{ width:"100%", padding:"6px 0", background:"none", border:"1px dashed " + T.border, borderRadius:6, fontSize:10.5, fontWeight:700, color:T.muted, cursor:"pointer", marginTop:4 }}>
+              + Add {col.label === "IDEAS" ? "Idea" : "Card"}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── SentArchiveView ──────────────────────────────────────────────────────────
+
+function SentArchiveView({ emailItems }) {
+  const sent = emailItems.filter(e => e.status === "sent").sort((a,b) => (b.sent_at||"").localeCompare(a.sent_at||""));
+  return (
+    <div>
+      <p style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:14 }}>SENT ARCHIVE</p>
+      {sent.length === 0 && <p style={{ color:T.faint, fontSize:13 }}>No sent emails yet</p>}
+      <div style={{ overflowX:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+          <thead>
+            <tr style={{ background:T.surface }}>
+              {["Email","Type","Sent","Audience","Owner","Open Rate","Click Rate"].map(h => (
+                <th key={h} style={{ padding:"8px 10px", textAlign:"left", fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.05em", borderBottom:"1px solid " + T.border, whiteSpace:"nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sent.map(e => (
+              <tr key={e.id} style={{ borderBottom:"1px solid " + T.border }}>
+                <td style={{ padding:"9px 10px", fontWeight:600, color:T.heading }}>{e.title}</td>
+                <td style={{ padding:"9px 10px" }}><EmailTypeBadge typeKey={e.type} small /></td>
+                <td style={{ padding:"9px 10px", color:T.muted, whiteSpace:"nowrap" }}>{fmtDate(e.sent_at)}</td>
+                <td style={{ padding:"9px 10px", color:T.muted }}>{e.audience||"—"}</td>
+                <td style={{ padding:"9px 10px", color:T.muted }}>{e.owner_id||"—"}</td>
+                <td style={{ padding:"9px 10px", color:T.muted }}>{e.open_rate||"—"}</td>
+                <td style={{ padding:"9px 10px", color:T.muted }}>{e.click_rate||"—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── AllEmailsView ────────────────────────────────────────────────────────────
+
+function AllEmailsView({ emailItems, onSelectEmail }) {
+  const sorted = [...emailItems].sort((a,b) => (b.updated_at||"").localeCompare(a.updated_at||""));
+  return (
+    <div>
+      <p style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:14 }}>ALL EMAILS</p>
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        {sorted.map(e => {
+          const pct = calcProgress(e.checklist);
+          const typeInfo = getTypeInfo(e.type);
+          return (
+            <div key={e.id} onClick={() => onSelectEmail(e)}
+              style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px", background:T.cardBg, border:"1px solid " + T.border, borderRadius:8, cursor:"pointer" }}
+              onMouseEnter={el => el.currentTarget.style.background=T.surface}
+              onMouseLeave={el => el.currentTarget.style.background=T.cardBg}>
+              <EmailTypeBadge typeKey={e.type} small />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:T.heading, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{e.title}</div>
+                <div style={{ fontSize:10.5, color:T.muted, marginTop:2 }}>{(EMAIL_STATUSES.find(s=>s.key===e.status)||{label:e.status}).label}</div>
+              </div>
+              {e.owner_id && <EPOwnerAvatar userId={e.owner_id} />}
+              <div style={{ width:60, textAlign:"right" }}>
+                <div style={{ fontSize:11, fontWeight:700, color:T.muted, marginBottom:3 }}>{pct}%</div>
+                <EPProgressBar pct={pct} color={typeInfo.color} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── TodoThisMonthView ────────────────────────────────────────────────────────
+
+function TodoThisMonthView({ emailItems, onSelectEmail }) {
+  const now = new Date();
+  const thisMonth = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+  const items = emailItems.filter(e => {
+    if (e.status === "sent") return false;
+    const due = e.due_date || e.target_send_date;
+    return due && due.startsWith(thisMonth);
+  }).sort((a,b) => (a.due_date||"").localeCompare(b.due_date||""));
+
+  return (
+    <div>
+      <p style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:14 }}>TO DO THIS MONTH</p>
+      {items.length === 0 && <p style={{ color:T.faint, fontSize:13 }}>Nothing due this month &#127881;</p>}
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {items.map(e => {
+          const pct = calcProgress(e.checklist);
+          const dueDate = e.due_date ? new Date(e.due_date) : null;
+          const isOverdue = dueDate && dueDate < now;
+          return (
+            <div key={e.id} onClick={() => onSelectEmail(e)} style={{ padding:14, background:T.cardBg, border:"1px solid " + (isOverdue?T.urgent+"50":T.border), borderRadius:8, cursor:"pointer" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                <div>
+                  <EmailTypeBadge typeKey={e.type} small />
+                  <div style={{ fontSize:13, fontWeight:700, color:T.heading, marginTop:5 }}>{e.title}</div>
+                </div>
+                <span style={{ fontSize:11, color:isOverdue?T.urgent:T.muted, fontWeight:isOverdue?700:400, whiteSpace:"nowrap" }}>
+                  {isOverdue?"⚠ OVERDUE":"Due"} {fmtDate(e.due_date)}
+                </span>
+              </div>
+              <div style={{ marginTop:8 }}>
+                <EPProgressBar pct={pct} color={getTypeInfo(e.type).color} />
+              </div>
+              <div style={{ fontSize:10.5, color:T.muted, marginTop:4 }}>{pct}% complete &middot; {(EMAIL_STATUSES.find(s=>s.key===e.status)||{label:e.status}).label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── EmailPipelineView (main) ─────────────────────────────────────────────────
+
+function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailComments, emailActivity, setEmailActivity, emailAttachments, setEmailAttachments, todayUser, staff }) {
+  const [sidebarView, setSidebarView] = useEP("pipeline");
+  const [filterType, setFilterType] = useEP("");
+  const [selectedEmail, setSelectedEmail] = useEP(null);
+  const [showNewModal, setShowNewModal] = useEP(false);
+  const [newEmailDefaultStatus, setNewEmailDefaultStatus] = useEP("ideas");
+  const [mailchimpUrl, setMailchimpUrl] = useEP(() => { try { return localStorage.getItem("prontoHQ.mailchimpUrl")||""; } catch(_){ return ""; } });
+
+  useEPE(() => {
+    ensureRecurringEmails(emailItems, setEmailItems);
+  }, []);
+
+  const handleAddEmail = (status) => {
+    setNewEmailDefaultStatus(status || "ideas");
+    setShowNewModal(true);
+  };
+
+  const handleSaveEmail = (newEmail) => {
+    setEmailItems(prev => [...prev, newEmail]);
+    setEmailActivity(prev => [...prev, { id:mkId(), email_id:newEmail.id, user_id:todayUser||"unknown", action:"created", details:"Email created: " + newEmail.title, created_at:new Date().toISOString() }]);
+  };
+
+  const handleUpdateEmail = (updated) => {
+    setEmailItems(prev => prev.map(e => e.id === updated.id ? updated : e));
+    if (selectedEmail && selectedEmail.id === updated.id) setSelectedEmail(updated);
+  };
+
+  const handleDeleteEmail = (id) => {
+    setEmailItems(prev => prev.filter(e => e.id !== id));
+    setSelectedEmail(null);
+  };
+
+  const EMAIL_TYPE_FILTERS = [{ key:"", label:"All Types" }, ...EMAIL_TYPES];
+
+  const SIDEBAR_ITEMS = [
+    { key:"pipeline", label:"Email Pipeline", icon:"&#128203;" },
+    { key:"todo",     label:"To Do This Month", icon:"&#128197;" },
+    { key:"all",      label:"All Emails", icon:"&#128231;" },
+    { key:"sent",     label:"Sent Archive", icon:"&#9989;" },
+  ];
+
+  return (
+    <div style={{ display:"flex", height:"calc(100vh - 110px)", overflow:"hidden" }}>
+      <div style={{ width:200, flexShrink:0, background:T.cardBg, borderRight:"1px solid " + T.border, padding:"16px 0", display:"flex", flexDirection:"column", overflowY:"auto" }}>
+        <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.07em", padding:"0 14px 10px" }}>EMAILS</p>
+        {SIDEBAR_ITEMS.map(s => (
+          <button key={s.key} onClick={() => setSidebarView(s.key)} style={{
+            display:"flex", alignItems:"center", gap:8, width:"100%", padding:"8px 14px",
+            background: sidebarView===s.key ? T.navy+"15" : "transparent",
+            border:"none", borderLeft: sidebarView===s.key ? "3px solid " + T.navy : "3px solid transparent",
+            cursor:"pointer", fontSize:12.5, color: sidebarView===s.key ? T.navy : T.text,
+            fontWeight: sidebarView===s.key ? 700 : 400, textAlign:"left",
+          }}>
+            <span dangerouslySetInnerHTML={{__html: s.icon}} />{s.label}
+          </button>
+        ))}
+        <div style={{ padding:"16px 14px 8px", borderTop:"1px solid " + T.border, marginTop:8 }}>
+          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.05em", marginBottom:8 }}>EMAIL TYPES</p>
+          {EMAIL_TYPES.map(t => (
+            <div key={t.key} style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6, cursor:"pointer" }} onClick={() => setFilterType(filterType===t.key?"":t.key)}>
+              <div style={{ width:9, height:9, borderRadius:"50%", background:t.color, flexShrink:0, opacity:filterType===t.key?1:0.5 }} />
+              <span style={{ fontSize:11, color:filterType===t.key?T.text:T.muted, fontWeight:filterType===t.key?700:400 }}>{t.label}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ margin:"8px 10px 0", background:T.surface, borderRadius:8, padding:"10px 10px 8px", border:"1px solid " + T.border }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+            <span style={{ fontSize:16 }}>&#129671;</span>
+            <span style={{ fontSize:11, fontWeight:800, color:T.heading }}>Mailchimp</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
+            <div style={{ width:7, height:7, borderRadius:"50%", background: mailchimpUrl ? "#10B981" : "#9AA0AE" }} />
+            <span style={{ fontSize:10, color:T.muted }}>{mailchimpUrl ? "Connected" : "Not connected"}</span>
+          </div>
+          <p style={{ fontSize:10, color:T.faint, lineHeight:1.4, marginBottom:7 }}>Plan and track email work here. Final sending is done manually in Mailchimp.</p>
+          <button onClick={() => {
+            if (mailchimpUrl) { window.open(mailchimpUrl, "_blank"); }
+            else {
+              const url = prompt("Enter your Mailchimp URL to link it:");
+              if (url) { setMailchimpUrl(url); try { localStorage.setItem("prontoHQ.mailchimpUrl", url); } catch(_){} }
+            }
+          }} style={{ width:"100%", padding:"5px 0", background:T.navy, border:"none", borderRadius:5, fontSize:10, fontWeight:700, color:"#fff", cursor:"pointer" }}>
+            {mailchimpUrl ? "Open Mailchimp" : "Add Mailchimp Link"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+        <div style={{ padding:"14px 20px 12px", borderBottom:"1px solid " + T.border, display:"flex", alignItems:"center", gap:10, flexShrink:0, flexWrap:"wrap" }}>
+          <div style={{ flex:1 }}>
+            <p style={{ fontSize:17, fontWeight:800, color:T.heading }}>EMAIL PIPELINE</p>
+            <p style={{ fontSize:11, color:T.muted, marginTop:1 }}>Plan, create, collaborate and send emails that keep your team and clients informed.</p>
+          </div>
+          <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+            <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ padding:"6px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:11, fontWeight:700, color:T.text, cursor:"pointer" }}>
+              {EMAIL_TYPE_FILTERS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+            <button onClick={() => handleAddEmail("ideas")} style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", background:T.navy, border:"none", borderRadius:7, fontSize:12, fontWeight:800, color:"#fff", cursor:"pointer", letterSpacing:"0.03em" }}>
+              + New Email
+            </button>
+          </div>
+        </div>
+
+        <div style={{ flex:1, overflowY:"auto", padding:"16px 20px" }}>
+          {sidebarView === "pipeline" && (
+            <div style={{ display:"flex", gap:20 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <EmailKanbanView
+                  emailItems={emailItems}
+                  setEmailItems={setEmailItems}
+                  filterType={filterType}
+                  onSelectEmail={setSelectedEmail}
+                  onAddEmail={handleAddEmail}
+                  todayUser={todayUser}
+                  emailActivity={emailActivity}
+                  setEmailActivity={setEmailActivity}
+                />
+              </div>
+              <MonthlyEmailTracker emailItems={emailItems} />
+            </div>
+          )}
+          {sidebarView === "todo" && <TodoThisMonthView emailItems={emailItems} onSelectEmail={setSelectedEmail} />}
+          {sidebarView === "all" && <AllEmailsView emailItems={emailItems} onSelectEmail={setSelectedEmail} />}
+          {sidebarView === "sent" && <SentArchiveView emailItems={emailItems} />}
+        </div>
+      </div>
+
+      {selectedEmail && (
+        <>
+          <div style={{ position:"fixed", inset:0, zIndex:7400 }} onClick={() => setSelectedEmail(null)} />
+          <EmailDetailPanel
+            item={selectedEmail}
+            onClose={() => setSelectedEmail(null)}
+            onUpdate={handleUpdateEmail}
+            onDelete={handleDeleteEmail}
+            emailComments={emailComments}
+            setEmailComments={setEmailComments}
+            emailActivity={emailActivity}
+            setEmailActivity={setEmailActivity}
+            emailAttachments={emailAttachments}
+            setEmailAttachments={setEmailAttachments}
+            todayUser={todayUser}
+          />
+        </>
+      )}
+
+      {showNewModal && (
+        <NewEmailModal
+          onClose={() => setShowNewModal(false)}
+          onSave={handleSaveEmail}
+          defaultStatus={newEmailDefaultStatus}
+          todayUser={todayUser}
+        />
+      )}
+    </div>
+  );
+}
+
+window.EmailPipelineView = EmailPipelineView;
+})();
 </script>
 
 </body>
