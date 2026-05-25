@@ -103,7 +103,11 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="version-banner" style="position:fixed;top:0;left:0;right:0;background:#E53E3E;color:white;text-align:center;padding:8px;z-index:99999;font-size:14px;font-weight:bold;font-family:sans-serif;">
+    NEW VERSION LOADED ✅ - EMAIL PIPELINE IS LIVE
+    <button onclick="document.getElementById('version-banner').remove()" style="margin-left:12px;background:white;color:#E53E3E;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-weight:bold;">×</button>
+  </div>
+  <div id="root" style="margin-top:40px;"></div>
 
 <!-- v7 -->
 <script type="text/babel">
