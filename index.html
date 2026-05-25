@@ -1136,6 +1136,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
   const writeTimerRef = useRy(null);
   const pendingState  = useRy(null);
   const localWriteAt  = useRy(0);
+  const localStateChangedAt = useRy(0);
   const popupRef      = useRy(null);
 
   useEy(() => {
@@ -1180,14 +1181,33 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     const stateHandler = snap => {
       const data = snap.val();
       if (!data) {
+        // Firebase is empty — push our local state up
         if (pendingState.current && dbRef.current) {
           localWriteAt.current = Date.now();
           dbRef.current.ref(FB_STATE_PATH).set({ ...pendingState.current, _meta: { updatedAt: Date.now() } });
         }
         return;
       }
-      if (Date.now() - localWriteAt.current < 500) return;
+      // Ignore events caused by our own recent write (debounce window)
+      if (Date.now() - localWriteAt.current < 1200) return;
+
       const { _meta, ...incoming } = data;
+      const fbUpdatedAt = (_meta && _meta.updatedAt) ? _meta.updatedAt : 0;
+
+      // Conflict resolution: if our local state is newer than Firebase, push ours instead of applying theirs
+      if (localStateChangedAt.current > fbUpdatedAt + 2000 && pendingState.current) {
+        // Local is newer — upload our state to Firebase, don't overwrite with stale data
+        if (dbRef.current) {
+          clearTimeout(writeTimerRef.current);
+          localWriteAt.current = Date.now();
+          dbRef.current.ref(FB_STATE_PATH)
+            .set({ ...pendingState.current, _meta: { updatedAt: Date.now() } })
+            .then(() => setLastSync(new Date()))
+            .catch(err => console.error("Firebase write (conflict resolve):", err));
+        }
+        return;
+      }
+
       applyState(incoming);
       setLastSync(new Date());
     };
@@ -1225,6 +1245,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     syncRef.current = {
       scheduleWrite(state) {
         pendingState.current = state;
+        localStateChangedAt.current = Date.now();
         if (!dbRef.current) return;
         clearTimeout(writeTimerRef.current);
         writeTimerRef.current = setTimeout(() => {
@@ -1795,7 +1816,7 @@ function TaskInspector({ task, dateKey, onClose, onToggle, onChangePriority, onC
 }
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, schedule, onPickDate, avatars }) {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, schedule, onPickDate, avatars }) {
   const [personView, setPersonView] = useStateV("both"); // "both"|"vanja"|"oloka"
   const [viewFilter, setViewFilter] = useStateV("all");
   const [activeTag, setActiveTag] = useStateV(null);
@@ -2086,7 +2107,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete} avatars={avatars}
+                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} avatars={avatars}
               />}
               {showOloka && <PersonColumn name="Oloka" role="Content · Photo, Video, Social" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
                 tasks={olokaFiltered} allTasks={olokaAll} dateKey={dateKey}
@@ -2094,7 +2115,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete} avatars={avatars}
+                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} avatars={avatars}
               />}
             </div>
           );
@@ -2128,10 +2149,11 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, selectedTaskId, onSelectTask, avatars }) {
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, selectedTaskId, onSelectTask, avatars }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
+  const [movingTaskId, setMovingTaskId] = useStateV(null);
   const availCats = window.prontoCats || CATS;
   const [cat, setCat] = useStateV(availCats[0] || "Social Post");
   const inputRef = useRefV(null);
@@ -2207,6 +2229,24 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                 onChangeNotes={onChangeNotes ? (notes) => onChangeNotes(t.id, notes) : undefined}
                 onDelete={onDelete ? () => onDelete(dateKey, t.id) : undefined}
               />
+              {onMoveTask && (movingTaskId === t.id ? (
+                <input type="date" autoFocus defaultValue={dateKey}
+                  style={{ fontSize:10, padding:"3px 6px", border:`1px solid ${accent}`, borderRadius:4, background:T.surface, color:T.ink, fontFamily:"inherit", cursor:"pointer", outline:"none", marginTop:3, display:"block" }}
+                  onBlur={() => setMovingTaskId(null)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val && val !== dateKey) {
+                      onMoveTask(t.id, dateKey, val);
+                    }
+                    setMovingTaskId(null);
+                  }}
+                />
+              ) : (
+                <button onClick={e => { e.stopPropagation(); setMovingTaskId(t.id); }} title="Move to a specific date"
+                  style={{ padding:"2px 7px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap", marginTop:3 }}>
+                  📅 Move
+                </button>
+              ))}
             </div>
           ))}
           {visible.length === 0 && (
@@ -4483,8 +4523,11 @@ const BD_SMART = [
   { icon:"⏰", msg:"2 reminders are overdue. Review them now?" },
 ];
 
-function BrainDumpView({ tasksByDate, onAdd, user, avatars }) {
-  const [items, setItems]         = useBd(() => { try { return JSON.parse(localStorage.getItem("prontoHQ.brainDump")||"[]"); } catch(_){ return []; } });
+function BrainDumpView({ tasksByDate, onAdd, user, avatars, brainDumpItems, setBrainDumpItems }) {
+  // Use synced brainDumpItems from props (falls back to localStorage on first load)
+  const items = brainDumpItems || [];
+  const setItems = setBrainDumpItems || (() => {});
+
   const [captureText, setCapture] = useBd("");
   const [bdType, setBdType]       = useBd("Task");
   const [bdDest, setBdDest]       = useBd("Inbox");
@@ -4492,11 +4535,18 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars }) {
   const [jumpFilter, setJumpFilter] = useBd("all");
   const [activeTag, setActiveTag] = useBd("");
   const [processed, setProcessed] = useBd([]);
-  const textareaRef               = useRbd(null);
+  const [showSidebar, setShowSidebar] = useBd(false);   // mobile: toggle sidebar
+  const [showCapture, setShowCapture] = useBd(true);    // mobile: toggle capture panel
+  const [winW, setWinW] = useBd(() => window.innerWidth);
+  const textareaRef = useRbd(null);
 
   useEbd(() => {
-    try { localStorage.setItem("prontoHQ.brainDump", JSON.stringify(items)); } catch(_){}
-  }, [items]);
+    const h = () => setWinW(window.innerWidth);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, []);
+
+  const isMobile = winW < 768;
 
   const capture = () => {
     if (!captureText.trim()) return;
@@ -4508,24 +4558,33 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars }) {
       tag: bdTag,
       ts: new Date().toISOString(),
       done: false,
+      owner: user || "oloka",
+      visibility: "private",   // default: private
     };
-    setItems(prev => [item, ...prev]);
+    setItems(prev => [item, ...(prev || [])]);
     setCapture("");
     setBdTag("");
     if (textareaRef.current) textareaRef.current.focus();
   };
 
+  const toggleVisibility = (id) => {
+    setItems(prev => (prev || []).map(i => i.id === id
+      ? { ...i, visibility: i.visibility === "shared" ? "private" : "shared" }
+      : i
+    ));
+  };
+
   const markProcessed = (id) => {
     setItems(prev => {
-      const item = prev.find(i => i.id === id);
+      const item = (prev || []).find(i => i.id === id);
       if (item && !processed.find(p => p.id === id)) {
         setProcessed(pp => [{ ...item, processedAt: new Date().toISOString() }, ...pp].slice(0,5));
       }
-      return prev.filter(i => i.id !== id);
+      return (prev || []).filter(i => i.id !== id);
     });
   };
 
-  const deleteItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+  const deleteItem = (id) => setItems(prev => (prev || []).filter(i => i.id !== id));
 
   const convertItem = (item) => {
     if (onAdd && (item.type === "Task" || item.dest === "Tasks")) {
@@ -4535,17 +4594,26 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars }) {
     markProcessed(item.id);
   };
 
+  // Visibility filter: show item if it's mine, OR if it's shared
+  const canSee = (item) => {
+    if (!item.visibility || item.visibility === "private") return item.owner === (user || "oloka");
+    return true; // "shared" items visible to everyone
+  };
+
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfWeek7 = new Date(startOfToday); startOfWeek7.setDate(startOfToday.getDate() - startOfToday.getDay());
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const filteredItems = items.filter(item => {
+  const filteredItems = (items || []).filter(item => {
+    if (!canSee(item)) return false;
     if (activeTag && item.tag !== activeTag) return false;
     if (jumpFilter === "inbox") return item.dest === "Inbox";
     if (jumpFilter === "today") return new Date(item.ts) >= startOfToday;
     if (jumpFilter === "thisWeek") return new Date(item.ts) >= startOfWeek7;
     if (jumpFilter === "thisMonth") return new Date(item.ts) >= startOfMonth;
+    if (jumpFilter === "shared") return item.visibility === "shared";
+    if (jumpFilter === "mine") return item.owner === (user || "oloka");
     return true;
   });
 
@@ -4560,71 +4628,201 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars }) {
     } catch(_){ return ""; }
   };
 
-  const typeIcon = { Task:"✅", Idea:"💡", Reminder:"⏰", Note:"📝" };
+  const typeIcon  = { Task:"✅", Idea:"💡", Reminder:"⏰", Note:"📝" };
   const typeColor = { Task:T.gold, Idea:"#7c3aed", Reminder:"#dc2626", Note:T.navy };
   const tagColors = { Content:"#0ea5e9", Marketing:"#f59e0b", Admin:"#64748b", Ideas:"#7c3aed", "Follow Up":"#ef4444" };
 
-  const sidebar = {
-    width: 220,
-    background: T.surface,
-    borderRight: `1px solid ${T.border}`,
-    display: "flex",
-    flexDirection: "column",
-    gap: 0,
-    flexShrink: 0,
-    overflowY: "auto",
-  };
-
-  return (
-    <div style={{ display:"flex", height:"100%", background:T.bg, fontFamily:"inherit" }}>
-
-      {/* LEFT SIDEBAR */}
-      <div style={sidebar}>
-        <div style={{ padding:"20px 16px 0" }}>
-          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:12 }}>CAPTURE</p>
-          <button
-            onClick={() => { if(textareaRef.current) textareaRef.current.focus(); }}
-            style={{ width:"100%", padding:"10px 14px", background:T.gold, border:"none", borderRadius:8, color:"#000", fontSize:12, fontWeight:800, cursor:"pointer", letterSpacing:"0.04em", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}
-          >⚡ Capture Quickly</button>
+  const SidebarContent = () => (
+    <div style={{ display:"flex", flexDirection:"column", gap:0, height:"100%" }}>
+      <div style={{ padding:"20px 16px 0" }}>
+        <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:12 }}>CAPTURE</p>
+        <button onClick={() => { setShowCapture(true); if (!isMobile && textareaRef.current) textareaRef.current.focus(); if (isMobile) setShowSidebar(false); }}
+          style={{ width:"100%", padding:"10px 14px", background:T.gold, border:"none", borderRadius:8, color:"#000", fontSize:12, fontWeight:800, cursor:"pointer", letterSpacing:"0.04em", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}
+        >⚡ Capture Quickly</button>
+      </div>
+      <div style={{ padding:"20px 16px 0" }}>
+        <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>JUMP TO</p>
+        {[...BD_JUMP, { key:"shared", label:"Shared with Team", icon:"👥" }, { key:"mine", label:"My Items", icon:"👤" }].map(j => (
+          <button key={j.key} onClick={() => { setJumpFilter(j.key); if (isMobile) setShowSidebar(false); }}
+            style={{ width:"100%", padding:"8px 10px", background: jumpFilter===j.key ? T.gold+"22" : "transparent", border:"none", borderRadius:6, color: jumpFilter===j.key ? T.gold : T.text, fontSize:12, fontWeight: jumpFilter===j.key ? 700 : 400, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:8, marginBottom:2, textAlign:"left" }}
+          ><span>{j.icon}</span>{j.label}</button>
+        ))}
+      </div>
+      <div style={{ padding:"20px 16px 0" }}>
+        <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>TAGS</p>
+        <button onClick={() => setActiveTag("")}
+          style={{ display:"inline-flex", alignItems:"center", padding:"4px 10px", background: !activeTag ? T.gold+"22" : T.faint+"22", border:"none", borderRadius:20, color: !activeTag ? T.gold : T.muted, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit", marginBottom:4, marginRight:4 }}
+        >All</button>
+        {BD_TAGS.map(tag => (
+          <button key={tag} onClick={() => setActiveTag(activeTag===tag?"":tag)}
+            style={{ display:"inline-flex", alignItems:"center", padding:"4px 10px", background: activeTag===tag ? (tagColors[tag]||T.gold)+"22" : T.faint+"22", border:"none", borderRadius:20, color: activeTag===tag ? (tagColors[tag]||T.gold) : T.muted, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit", marginBottom:4, marginRight:4 }}
+          >{tag}</button>
+        ))}
+      </div>
+      <div style={{ padding:"20px 16px", marginTop:"auto" }}>
+        <div style={{ background:T.navy+"22", border:`1px solid ${T.navy}30`, borderRadius:10, padding:"12px 14px" }}>
+          <p style={{ fontSize:10, fontWeight:800, color:T.navy, letterSpacing:"0.08em", marginBottom:6 }}>💡 PRO TIP</p>
+          <p style={{ fontSize:11, color:T.muted, lineHeight:1.5, margin:0 }}>Toggle the 🔒 icon on any item to share it with the team. Private items are only visible to you.</p>
         </div>
+      </div>
+    </div>
+  );
 
-        <div style={{ padding:"20px 16px 0" }}>
-          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>JUMP TO</p>
-          {BD_JUMP.map(j => (
-            <button key={j.key} onClick={() => setJumpFilter(j.key)}
-              style={{ width:"100%", padding:"8px 10px", background: jumpFilter===j.key ? T.gold+"22" : "transparent", border:"none", borderRadius:6, color: jumpFilter===j.key ? T.gold : T.text, fontSize:12, fontWeight: jumpFilter===j.key ? 700 : 400, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:8, marginBottom:2, textAlign:"left" }}
-            ><span>{j.icon}</span>{j.label}</button>
-          ))}
+  const CapturePanel = () => (
+    <div style={{ display:"flex", flexDirection:"column" }}>
+      <div style={{ padding:"20px 18px 16px", borderBottom:`1px solid ${T.border}` }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:0 }}>QUICK CAPTURE</p>
+          {isMobile && <button onClick={() => setShowCapture(false)} style={{ background:"none", border:"none", color:T.muted, fontSize:18, cursor:"pointer", padding:0 }}>×</button>}
         </div>
-
-        <div style={{ padding:"20px 16px 0" }}>
-          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>TAGS</p>
-          <button onClick={() => setActiveTag("")}
-            style={{ display:"inline-flex", alignItems:"center", padding:"4px 10px", background: !activeTag ? T.gold+"22" : T.faint+"22", border:"none", borderRadius:20, color: !activeTag ? T.gold : T.muted, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit", marginBottom:4, marginRight:4 }}
-          >All</button>
-          {BD_TAGS.map(tag => (
-            <button key={tag} onClick={() => setActiveTag(activeTag===tag?"":tag)}
-              style={{ display:"inline-flex", alignItems:"center", padding:"4px 10px", background: activeTag===tag ? (tagColors[tag]||T.gold)+"22" : T.faint+"22", border:"none", borderRadius:20, color: activeTag===tag ? (tagColors[tag]||T.gold) : T.muted, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit", marginBottom:4, marginRight:4 }}
-            >{tag}</button>
-          ))}
-        </div>
-
-        <div style={{ padding:"20px 16px", margin:"auto 0 0" }}>
-          <div style={{ background:T.navy+"22", border:`1px solid ${T.navy}30`, borderRadius:10, padding:"12px 14px" }}>
-            <p style={{ fontSize:10, fontWeight:800, color:T.navy, letterSpacing:"0.08em", marginBottom:6 }}>💡 PRO TIP</p>
-            <p style={{ fontSize:11, color:T.muted, lineHeight:1.5, margin:0 }}>Use Brain Dump to capture everything fast — sort it later. Don't overthink it!</p>
+        <textarea ref={textareaRef} value={captureText} onChange={e => setCapture(e.target.value)}
+          onKeyDown={e => { if(e.key==="Enter" && (e.ctrlKey||e.metaKey)) capture(); }}
+          placeholder="Type anything... ideas, tasks, thoughts. Hit Ctrl+Enter to save."
+          style={{ width:"100%", minHeight:100, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, padding:12, fontSize:13, color:T.text, fontFamily:"inherit", resize:"vertical", boxSizing:"border-box", outline:"none", lineHeight:1.5 }}
+        />
+        <div style={{ display:"flex", gap:8, marginTop:10 }}>
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>TYPE</label>
+            <select value={bdType} onChange={e=>setBdType(e.target.value)}
+              style={{ width:"100%", padding:"7px 10px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:12, fontFamily:"inherit" }}>
+              {BD_TYPES.map(t=><option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>ADD TO</label>
+            <select value={bdDest} onChange={e=>setBdDest(e.target.value)}
+              style={{ width:"100%", padding:"7px 10px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:12, fontFamily:"inherit" }}>
+              {BD_DESTS.map(d=><option key={d}>{d}</option>)}
+            </select>
           </div>
         </div>
+        <div style={{ marginTop:10 }}>
+          <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>TAG (optional)</label>
+          <select value={bdTag} onChange={e=>setBdTag(e.target.value)}
+            style={{ width:"100%", padding:"7px 10px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:12, fontFamily:"inherit" }}>
+            <option value="">— No tag —</option>
+            {BD_TAGS.map(t=><option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <button onClick={capture}
+          style={{ width:"100%", marginTop:12, padding:"11px 0", background:T.gold, border:"none", borderRadius:8, color:"#000", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em" }}
+        >⚡ Capture</button>
+        <p style={{ fontSize:10, color:T.faint, textAlign:"center", margin:"6px 0 0" }}>Ctrl+Enter to capture quickly</p>
+      </div>
+      {processed.length > 0 && (
+        <div style={{ padding:"16px 18px", borderBottom:`1px solid ${T.border}` }}>
+          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:10 }}>RECENTLY PROCESSED</p>
+          {processed.map(p => (
+            <div key={p.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:`1px solid ${T.faint}20` }}>
+              <span style={{ fontSize:12, opacity:0.5 }}>{typeIcon[p.type]||"📝"}</span>
+              <span style={{ fontSize:11, color:T.muted, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── MOBILE LAYOUT ──
+  if (isMobile) {
+    return (
+      <div style={{ display:"flex", flexDirection:"column", height:"100%", background:T.bg, fontFamily:"inherit", position:"relative" }}>
+        {/* Mobile header bar */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:T.surface, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
+          <div>
+            <h2 style={{ margin:0, fontSize:15, fontWeight:800, color:T.heading, letterSpacing:"0.04em" }}>🧠 BRAIN DUMP</h2>
+            <p style={{ margin:0, fontSize:11, color:T.muted }}>{filteredItems.length} item{filteredItems.length!==1?"s":""}</p>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={() => setShowSidebar(s => !s)} style={{ padding:"6px 10px", background: showSidebar ? T.navy : T.surface2, border:`1px solid ${T.border}`, borderRadius:6, color: showSidebar ? "#fff" : T.text, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              ☰ Filter
+            </button>
+            <button onClick={() => setShowCapture(s => !s)} style={{ padding:"6px 12px", background: showCapture ? T.gold : T.surface2, border:`1px solid ${showCapture ? T.gold : T.border}`, borderRadius:6, color: showCapture ? "#000" : T.text, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              ⚡ Capture
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile sidebar overlay */}
+        {showSidebar && (
+          <div style={{ position:"absolute", top:53, left:0, right:0, bottom:0, zIndex:100, display:"flex" }}>
+            <div style={{ width:260, background:T.surface, borderRight:`1px solid ${T.border}`, overflowY:"auto" }}>
+              <SidebarContent/>
+            </div>
+            <div style={{ flex:1, background:"rgba(0,0,0,0.3)" }} onClick={() => setShowSidebar(false)}/>
+          </div>
+        )}
+
+        {/* Mobile capture panel */}
+        {showCapture && (
+          <div style={{ background:T.surface, borderBottom:`1px solid ${T.border}`, flexShrink:0, overflowY:"auto", maxHeight:"60vh" }}>
+            <CapturePanel/>
+          </div>
+        )}
+
+        {/* Items list */}
+        <div style={{ flex:1, overflowY:"auto", padding:"12px 14px" }}>
+          {filteredItems.length === 0 && (
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:200, color:T.muted, gap:12 }}>
+              <span style={{ fontSize:40 }}>🧠</span>
+              <p style={{ fontSize:14, fontWeight:600, margin:0 }}>Nothing here yet</p>
+              <p style={{ fontSize:12, margin:0 }}>Tap Capture above to add your first item</p>
+            </div>
+          )}
+          {filteredItems.map(item => (
+            <div key={item.id} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:"12px 14px", marginBottom:10 }}>
+              <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                <button onClick={() => markProcessed(item.id)}
+                  style={{ width:22, height:22, borderRadius:4, border:`2px solid ${T.border}`, background:"transparent", cursor:"pointer", flexShrink:0, marginTop:1, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:T.muted, padding:0 }}
+                  title="Mark processed">✓</button>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                    <span style={{ fontSize:13 }}>{typeIcon[item.type]||"📝"}</span>
+                    <span style={{ fontSize:13, fontWeight:600, color:T.heading, flex:1, wordBreak:"break-word" }}>{item.text}</span>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:6 }}>
+                    <span style={{ fontSize:10, fontWeight:700, color:typeColor[item.type]||T.muted, background:(typeColor[item.type]||T.muted)+"18", padding:"2px 8px", borderRadius:4 }}>{item.type}</span>
+                    {item.tag && <span style={{ fontSize:10, fontWeight:600, color:tagColors[item.tag]||T.muted, background:(tagColors[item.tag]||T.muted)+"18", padding:"2px 8px", borderRadius:4 }}>{item.tag}</span>}
+                    <span style={{ fontSize:10, color:T.faint }}>{fmtTime(item.ts)}</span>
+                    {/* Visibility toggle */}
+                    <button onClick={() => toggleVisibility(item.id)} title={item.visibility === "shared" ? "Shared with team — click to make private" : "Private — click to share with team"}
+                      style={{ fontSize:11, background:"none", border:"none", cursor:"pointer", padding:"0 2px", color: item.visibility === "shared" ? "#10B981" : T.faint }}>
+                      {item.visibility === "shared" ? "👥 shared" : "🔒 private"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:6, marginTop:8, justifyContent:"flex-end" }}>
+                {(item.type === "Task" || item.dest === "Tasks") && (
+                  <button onClick={() => convertItem(item)}
+                    style={{ padding:"5px 10px", background:T.gold+"22", border:"none", borderRadius:4, color:T.gold, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Convert to Task</button>
+                )}
+                <button onClick={() => deleteItem(item.id)}
+                  style={{ padding:"5px 10px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── DESKTOP LAYOUT ──
+  return (
+    <div style={{ display:"flex", height:"100%", background:T.bg, fontFamily:"inherit" }}>
+      {/* LEFT SIDEBAR */}
+      <div style={{ width:220, background:T.surface, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0, overflowY:"auto" }}>
+        <SidebarContent/>
       </div>
 
       {/* CENTER: ITEMS LIST */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0 }}>
-        <div style={{ padding:"20px 24px 16px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between", background:T.surface }}>
+        <div style={{ padding:"20px 24px 16px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between", background:T.surface, flexWrap:"wrap", gap:8 }}>
           <div>
             <h2 style={{ margin:0, fontSize:16, fontWeight:800, color:T.heading, letterSpacing:"0.04em" }}>BRAIN DUMP</h2>
             <p style={{ margin:"2px 0 0", fontSize:12, color:T.muted }}>{filteredItems.length} item{filteredItems.length!==1?"s":""} captured</p>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             {["Task","Idea","Reminder","Note"].map(t => {
               const cnt = filteredItems.filter(i=>i.type===t).length;
               if (!cnt) return null;
@@ -4641,57 +4839,51 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars }) {
               <p style={{ fontSize:12, margin:0 }}>Use the Capture panel to add your first item</p>
             </div>
           )}
-
           {filteredItems.map(item => (
-            <div key={item.id} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:"12px 16px", marginBottom:10, display:"flex", alignItems:"flex-start", gap:12 }}
-              onDoubleClick={() => {}}
-            >
+            <div key={item.id} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:"12px 16px", marginBottom:10, display:"flex", alignItems:"flex-start", gap:12 }}>
               <button onClick={() => markProcessed(item.id)}
-                style={{ width:20, height:20, borderRadius:4, border:`2px solid ${T.border}`, background:"transparent", cursor:"pointer", flexShrink:0, marginTop:2, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:T.muted, fontFamily:"inherit", padding:0 }}
-                title="Mark processed"
-              >✓</button>
-
+                style={{ width:20, height:20, borderRadius:4, border:`2px solid ${T.border}`, background:"transparent", cursor:"pointer", flexShrink:0, marginTop:2, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:T.muted, padding:0 }}
+                title="Mark processed">✓</button>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                   <span style={{ fontSize:14 }}>{typeIcon[item.type]||"📝"}</span>
                   <span style={{ fontSize:13, fontWeight:600, color:T.heading, flex:1 }}>{item.text}</span>
+                  {/* Visibility badge */}
+                  <button onClick={() => toggleVisibility(item.id)} title={item.visibility === "shared" ? "Shared — click to make private" : "Private — click to share"}
+                    style={{ fontSize:11, background: item.visibility === "shared" ? "#10B98118" : T.surface2, border:`1px solid ${item.visibility === "shared" ? "#10B981" : T.border}`, borderRadius:12, padding:"2px 8px", cursor:"pointer", color: item.visibility === "shared" ? "#10B981" : T.muted, whiteSpace:"nowrap" }}>
+                    {item.visibility === "shared" ? "👥 Shared" : "🔒 Private"}
+                  </button>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   <span style={{ fontSize:10, fontWeight:700, color:typeColor[item.type]||T.muted, background:(typeColor[item.type]||T.muted)+"18", padding:"2px 8px", borderRadius:4 }}>{item.type}</span>
                   {item.tag && <span style={{ fontSize:10, fontWeight:600, color:tagColors[item.tag]||T.muted, background:(tagColors[item.tag]||T.muted)+"18", padding:"2px 8px", borderRadius:4 }}>{item.tag}</span>}
                   {item.dest && item.dest !== "Inbox" && <span style={{ fontSize:10, color:T.faint }}>→ {item.dest}</span>}
+                  {item.owner && item.owner !== (user || "oloka") && <span style={{ fontSize:10, color:T.muted, fontWeight:600 }}>by {item.owner}</span>}
                   <span style={{ fontSize:10, color:T.faint, marginLeft:"auto" }}>{fmtTime(item.ts)}</span>
                 </div>
               </div>
-
               <div style={{ display:"flex", gap:4, flexShrink:0 }}>
                 {(item.type === "Task" || item.dest === "Tasks") && (
                   <button onClick={() => convertItem(item)}
-                    style={{ padding:"4px 8px", background:T.gold+"22", border:"none", borderRadius:4, color:T.gold, fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}
-                    title="Convert to Task"
-                  >Convert</button>
+                    style={{ padding:"4px 8px", background:T.gold+"22", border:"none", borderRadius:4, color:T.gold, fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Convert</button>
                 )}
                 <button onClick={() => deleteItem(item.id)}
-                  style={{ padding:"4px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}
-                  title="Delete"
-                >✕</button>
+                  style={{ padding:"4px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
               </div>
             </div>
           ))}
-
-          {/* Smart Suggestions */}
           {items.length >= 3 && (
             <div style={{ marginTop:16, padding:"14px 16px", background:T.navy+"18", border:`1px solid ${T.navy}30`, borderRadius:10 }}>
               <p style={{ fontSize:10, fontWeight:800, color:T.navy, letterSpacing:"0.08em", marginBottom:10 }}>✨ SMART SUGGESTIONS</p>
               {(() => {
-                const ideas = items.filter(i=>i.type==="Idea").length;
-                const tasks = items.filter(i=>i.type==="Task").length;
-                const reminders = items.filter(i=>i.type==="Reminder").length;
+                const ideas2 = (items||[]).filter(i=>i.type==="Idea").length;
+                const tasks2 = (items||[]).filter(i=>i.type==="Task").length;
+                const reminders2 = (items||[]).filter(i=>i.type==="Reminder").length;
                 return (
                   <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                    {ideas >= 2 && <div style={{ fontSize:12, color:T.text }}>💡 You have {ideas} ideas — want to move them to Content?</div>}
-                    {tasks >= 3 && <div style={{ fontSize:12, color:T.text }}>✅ {tasks} tasks are ready to be converted. <button onClick={()=>{ items.filter(i=>i.type==="Task").forEach(i=>convertItem(i)); }} style={{ background:"none", border:"none", color:T.gold, fontWeight:700, cursor:"pointer", padding:0, fontSize:12, fontFamily:"inherit" }}>Convert all →</button></div>}
-                    {reminders >= 1 && <div style={{ fontSize:12, color:T.text }}>⏰ {reminders} reminder{reminders>1?"s":""} waiting — review them.</div>}
+                    {ideas2 >= 2 && <div style={{ fontSize:12, color:T.text }}>💡 You have {ideas2} ideas — want to move them to Content?</div>}
+                    {tasks2 >= 3 && <div style={{ fontSize:12, color:T.text }}>✅ {tasks2} tasks ready. <button onClick={()=>{ (items||[]).filter(i=>i.type==="Task").forEach(i=>convertItem(i)); }} style={{ background:"none", border:"none", color:T.gold, fontWeight:700, cursor:"pointer", padding:0, fontSize:12, fontFamily:"inherit" }}>Convert all →</button></div>}
+                    {reminders2 >= 1 && <div style={{ fontSize:12, color:T.text }}>⏰ {reminders2} reminder{reminders2>1?"s":""} waiting — review them.</div>}
                   </div>
                 );
               })()}
@@ -4702,75 +4894,18 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars }) {
 
       {/* RIGHT: QUICK CAPTURE PANEL */}
       <div style={{ width:300, borderLeft:`1px solid ${T.border}`, background:T.surface, display:"flex", flexDirection:"column", flexShrink:0, overflowY:"auto" }}>
-        <div style={{ padding:"20px 18px 16px", borderBottom:`1px solid ${T.border}` }}>
-          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:12 }}>QUICK CAPTURE</p>
-          <textarea
-            ref={textareaRef}
-            value={captureText}
-            onChange={e => setCapture(e.target.value)}
-            onKeyDown={e => { if(e.key==="Enter" && (e.ctrlKey||e.metaKey)) capture(); }}
-            placeholder="Type anything... ideas, tasks, thoughts. Hit Ctrl+Enter to save."
-            style={{ width:"100%", minHeight:100, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, padding:12, fontSize:13, color:T.text, fontFamily:"inherit", resize:"vertical", boxSizing:"border-box", outline:"none", lineHeight:1.5 }}
-          />
-
-          <div style={{ display:"flex", gap:8, marginTop:10 }}>
-            <div style={{ flex:1 }}>
-              <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>TYPE</label>
-              <select value={bdType} onChange={e=>setBdType(e.target.value)}
-                style={{ width:"100%", padding:"7px 10px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:12, fontFamily:"inherit" }}>
-                {BD_TYPES.map(t=><option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div style={{ flex:1 }}>
-              <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>ADD TO</label>
-              <select value={bdDest} onChange={e=>setBdDest(e.target.value)}
-                style={{ width:"100%", padding:"7px 10px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:12, fontFamily:"inherit" }}>
-                {BD_DESTS.map(d=><option key={d}>{d}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ marginTop:10 }}>
-            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>TAG (optional)</label>
-            <select value={bdTag} onChange={e=>setBdTag(e.target.value)}
-              style={{ width:"100%", padding:"7px 10px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:12, fontFamily:"inherit" }}>
-              <option value="">— No tag —</option>
-              {BD_TAGS.map(t=><option key={t}>{t}</option>)}
-            </select>
-          </div>
-
-          <button onClick={capture}
-            style={{ width:"100%", marginTop:12, padding:"11px 0", background:T.gold, border:"none", borderRadius:8, color:"#000", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em" }}
-          >⚡ Capture</button>
-          <p style={{ fontSize:10, color:T.faint, textAlign:"center", margin:"6px 0 0" }}>Ctrl+Enter to capture quickly</p>
-        </div>
-
-        {/* Recently Processed */}
-        {processed.length > 0 && (
-          <div style={{ padding:"16px 18px", borderBottom:`1px solid ${T.border}` }}>
-            <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:10 }}>RECENTLY PROCESSED</p>
-            {processed.map(p => (
-              <div key={p.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:`1px solid ${T.faint}20` }}>
-                <span style={{ fontSize:12, opacity:0.5 }}>{typeIcon[p.type]||"📝"}</span>
-                <span style={{ fontSize:11, color:T.muted, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Turn Into Action */}
+        <CapturePanel/>
         <div style={{ padding:"16px 18px", marginTop:"auto" }}>
           <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:10 }}>TURN INTO ACTION</p>
           {[
-            { label:"📋 Tasks",          desc:"Add to task list" },
-            { label:"💡 Content ideas",  desc:"Move to Content" },
+            { label:"📋 Tasks", desc:"Add to task list" },
+            { label:"💡 Content ideas", desc:"Move to Content" },
             { label:"🗓 Schedule blocks", desc:"Add to schedule" },
-            { label:"✅ Approval items",  desc:"Send for approval" },
+            { label:"✅ Approval items", desc:"Send for approval" },
           ].map(a => (
             <button key={a.label}
               style={{ width:"100%", padding:"9px 12px", marginBottom:6, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, fontSize:12, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"space-between", textAlign:"left" }}
-              onClick={() => {}}
-            >
+              onClick={() => {}}>
               <span style={{ fontWeight:600 }}>{a.label}</span>
               <span style={{ fontSize:10, color:T.muted }}>{a.desc}</span>
             </button>
@@ -8336,7 +8471,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
   const filtered = staff.map((s, i) => ({ s, i })).filter(({ s }) => {
     if (filter === "All") return true;
     return (s.gender || "").toLowerCase() === filter.toLowerCase();
-  });
+  }).sort((a, b) => (a.s.name || "").localeCompare(b.s.name || ""));
 
   // Upcoming birthdays
   const todayD = today();
@@ -10705,6 +10840,12 @@ function App() {
   ]));
   // To Be Completed — holding area for unscheduled tasks
   const [toBeCompleted, setToBeCompleted] = useS(() => loadOr("toBeCompleted", () => []));
+  // Brain dump items — synced via Firebase so both users can see shared items
+  const [brainDumpItems, setBrainDumpItems] = useS(() => {
+    // Migrate from old localStorage key
+    const old = (() => { try { return JSON.parse(localStorage.getItem("prontoHQ.brainDump")||"[]"); } catch(_){ return []; } })();
+    return loadOr("brainDumpItems", () => old);
+  });
   // Uniform & Merch inventory — { sectionKey: { itemKey: { sizeKey: count } } }
   const [uniform, setUniform] = useS(() => loadOr("uniform", () => ({})));
   // Multi-day schedule spans — [{id, title, startDate, endDate, color}]
@@ -10755,7 +10896,7 @@ function App() {
     branding, categories, postApprovals, videoEvents, visibleTabs,
     contentLabels, videoLabels,
     recurringTasks, ongoingJobs, toBeCompleted,
-    uniform,
+    uniform, brainDumpItems,
   });
 
   // Sync chatAs to todayUser when user logs in via TodayPicker
@@ -10773,7 +10914,7 @@ function App() {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
 
@@ -10856,6 +10997,7 @@ function App() {
     if (s.ongoingJobs)    setOngoingJobs(s.ongoingJobs);
     if (s.toBeCompleted)  setToBeCompleted(s.toBeCompleted);
     if (s.uniform) setUniform(s.uniform);
+    if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
   };
 
   // ── Export schedule as .ics (for Samsung Calendar / Outlook import) ──
@@ -11239,21 +11381,34 @@ function App() {
           }}>{today().toLocaleDateString("en-NZ", { weekday:"short", day:"numeric", month:"short", year:"numeric" })}</button>
           {/* User avatar circles in header */}
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            {[{key:"vanja",color:T.vanja,soft:T.vanjaSoft},{key:"oloka",color:T.oloka,soft:T.olokaSoft}].map(u => (
-              <div key={u.key} title={u.key === "vanja" ? "Vanja" : "Oloka"} style={{
+            {[{key:"vanja",color:T.vanja,soft:T.vanjaSoft},{key:"oloka",color:T.oloka,soft:T.olokaSoft}].map(u => {
+              const presence = onlineUsers.find(p => p.id === u.key);
+              const name = u.key === "vanja" ? "Vanja" : "Oloka";
+              const presTitle = presence
+                ? presence.online
+                  ? `${name} · Active now${presence.tab ? " · " + presence.tab : ""}`
+                  : `${name} · Last active ${Math.round((Date.now() - (presence.lastSeen||Date.now())) / 60000)}m ago`
+                : `${name} · Offline`;
+              return (
+              <div key={u.key} title={presTitle} style={{
                 width:30, height:30, borderRadius:"50%", overflow:"hidden", flexShrink:0,
-                border:`2px solid ${todayUser===u.key ? u.color : T.border}`,
+                border:`2px solid ${todayUser===u.key ? u.color : presence?.online ? u.color+"88" : T.border}`,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 background: u.soft, cursor:"pointer",
                 transition:"border-color 0.15s",
+                position:"relative",
               }} onClick={() => { setTab("settings"); }}>
                 {(avatars && avatars[u.key]) ? (
                   <img src={avatars[u.key]} alt={u.key} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
                 ) : (
                   <span style={{ fontFamily:"'ProximaNova Black', sans-serif", fontSize:11, fontWeight:900, color:u.color }}>{u.key==="vanja"?"V":"O"}</span>
                 )}
+                {presence?.online && (
+                  <span style={{ position:"absolute", bottom:0, right:0, width:8, height:8, borderRadius:"50%", background:"#10B981", border:"1.5px solid white" }}/>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
           <div style={{ height:18, width:1, background:T.border }}></div>
           {/* Settings gear */}
@@ -11368,7 +11523,7 @@ function App() {
             onChangeText={onChangeText} onChangeCategory={onChangeCategory}
             onChangeSubtasks={onChangeSubtasks} onConvertToSubtask={onConvertToSubtask}
             onChangeNotes={onChangeNotes}
-            onAdd={onAdd} onDelete={onDeleteTask} onShift={onShift} isMobile={isMobile}
+            onAdd={onAdd} onDelete={onDeleteTask} onShift={onShift} onMoveTask={onMoveTask} isMobile={isMobile}
             staff={staff}
             dayNotes={dayNotes} setDayNotes={setDayNotes}
             recurringTasks={recurringTasks} setRecurringTasks={setRecurringTasks}
@@ -11407,7 +11562,7 @@ function App() {
         />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
-        {tab === "brain-dump" && <BrainDumpView tasksByDate={tasksByDate} onAdd={onAdd} user={todayUser} avatars={avatars}/>}
+        {tab === "brain-dump" && <BrainDumpView tasksByDate={tasksByDate} onAdd={onAdd} user={todayUser} avatars={avatars} brainDumpItems={brainDumpItems} setBrainDumpItems={setBrainDumpItems}/>}
         {tab === "settings" && <SettingsView
           theme={theme} setTheme={(t) => { applyTheme(t); try { localStorage.setItem("prontoHQ.theme", t); } catch(_) {} setTheme(t); }}
           categories={categories} setCategories={setCategories}
