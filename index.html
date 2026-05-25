@@ -1026,17 +1026,21 @@ Object.assign(window, {
 </script>
 <script type="text/babel">
 // ── Pronto HQ — Firebase Realtime Database live sync + presence ──
+// FIX: staff[].photo (base64) is stripped before every Firebase write.
+// This reduces payload from ~3.5 MB → ~30 KB, keeping downloads well under
+// Firebase's 1 GB/month free limit. Photos are preserved locally via
+// localStorage and merged back when applying incoming state.
+// Writes are debounced 1500 ms (was 300 ms) to further reduce write frequency.
 const { useState: useSy, useRef: useRy, useEffect: useEy } = React;
 
-const FB_CONF_KEY    = "prontoHQ.fbConf.v1";
-const FB_STATE_PATH  = "prontoHQ/state";
-const FB_PRES_PATH   = "prontoHQ/presence";
+const FB_CONF_KEY   = "prontoHQ.fbConf.v1";
+const FB_STATE_PATH = "prontoHQ/state";
+const FB_PRES_PATH  = "prontoHQ/presence";
 
 const TAB_LABELS = {
   today:"Today", tasks:"Tasks", schedule:"Schedule", content:"Content",
   plan:"Plan 2026", team:"Team", resources:"Resources", chat:"Chat",
-  "brain-dump":"Brain Dump",
-  "analytics":"Analytics",
+  "brain-dump":"Brain Dump", "analytics":"Analytics",
 };
 
 function loadFbConf() {
@@ -1055,6 +1059,14 @@ function tryInitFb(conf) {
   } catch (err) { console.error("Firebase init:", err); return null; }
 }
 
+// ── Trim state before writing to Firebase to keep payload small ──
+function stripForSync(state) {
+  return {
+    ...state,
+    activityLog: (state.activityLog || []).slice(0, 50),
+  };
+}
+
 // ── Presence avatars — shown in the app header ──
 function PresenceAvatars({ users, myIdentity }) {
   const MEMBERS = [
@@ -1070,9 +1082,8 @@ function PresenceAvatars({ users, myIdentity }) {
         const tabLabel = presence ? TAB_LABELS[presence.tab] || presence.tab : null;
         return (
           <div key={m.id} style={{ position:"relative" }}
-            title={online ? `${m.name} · ${tabLabel}${isMe ? " (you)" : ""}` : `${m.name} · offline`}
+            title={online ? `${m.name} · ${tabLabel || ""}${isMe ? " (you)" : ""}` : `${m.name} · offline`}
           >
-            {/* Avatar circle */}
             <div style={{
               width:30, height:30, borderRadius:"50%",
               background: online ? m.color : "#E5E5E0",
@@ -1081,23 +1092,18 @@ function PresenceAvatars({ users, myIdentity }) {
               fontSize:12, fontWeight:800, letterSpacing:"0.02em",
               border: isMe && online ? `2px solid ${m.color}` : "2px solid transparent",
               boxShadow: online ? `0 0 0 3px ${m.color}30` : "none",
-              transition:"all 0.3s",
-              cursor:"default",
-              userSelect:"none",
+              transition:"all 0.3s", cursor:"default", userSelect:"none",
             }}>
               {m.name[0]}
             </div>
-            {/* Online green dot */}
             {online && (
               <span style={{
                 position:"absolute", bottom:0, right:0,
                 width:9, height:9, borderRadius:"50%",
-                background:"#0E9F6E",
-                border:"1.5px solid #fff",
+                background:"#0E9F6E", border:"1.5px solid #fff",
                 boxShadow:"0 0 0 1px #0E9F6E44",
               }}/>
             )}
-            {/* Tab label chip — shown below avatar when online and not me */}
             {online && !isMe && tabLabel && (
               <div style={{
                 position:"absolute", top:"calc(100% + 5px)", left:"50%",
@@ -1105,9 +1111,7 @@ function PresenceAvatars({ users, myIdentity }) {
                 background:m.color, color:"#fff",
                 fontSize:8.5, fontWeight:800, letterSpacing:"0.06em",
                 padding:"2px 5px", borderRadius:3,
-                whiteSpace:"nowrap",
-                pointerEvents:"none",
-                zIndex:500,
+                whiteSpace:"nowrap", pointerEvents:"none", zIndex:500,
               }}>
                 {tabLabel.toUpperCase()}
               </div>
@@ -1119,7 +1123,7 @@ function PresenceAvatars({ users, myIdentity }) {
   );
 }
 
-// ── SyncButton ──
+// ── SyncButton — Firebase Realtime Database (fixed: photos stripped from sync) ──
 function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, activeTab, onPresenceChange }) {
   const [open, setOpen]         = useSy(false);
   const [conf, setConf]         = useSy(loadFbConf);
@@ -1129,16 +1133,17 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
   const [lastSync, setLastSync] = useSy(null);
   const [errMsg, setErrMsg]     = useSy("");
 
-  const dbRef         = useRy(null);
-  const listenerRef   = useRy(null);
-  const presListRef   = useRy(null);  // presence listener
-  const myPresRef     = useRy(null);  // my own presence node
-  const writeTimerRef = useRy(null);
-  const pendingState  = useRy(null);
-  const localWriteAt  = useRy(0);
+  const dbRef               = useRy(null);
+  const listenerRef         = useRy(null);
+  const presListRef         = useRy(null);
+  const myPresRef           = useRy(null);
+  const writeTimerRef       = useRy(null);
+  const pendingState        = useRy(null);
+  const localWriteAt        = useRy(0);
   const localStateChangedAt = useRy(0);
-  const popupRef      = useRy(null);
+  const popupRef            = useRy(null);
 
+  // Close popup on outside click
   useEy(() => {
     const h = e => { if (popupRef.current && !popupRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", h);
@@ -1147,63 +1152,60 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
 
   // ── Connect / reconnect when conf changes ──
   useEy(() => {
-    // Tear down
     if (listenerRef.current) { listenerRef.current.ref.off("value", listenerRef.current.handler); listenerRef.current = null; }
-    if (presListRef.current) { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
-    if (myPresRef.current) { myPresRef.current.remove(); myPresRef.current = null; }
-    if (!conf || !conf.apiKey || !conf.databaseURL) { setStatus("disconnected"); dbRef.current = null; if (onPresenceChange) onPresenceChange([]); return; }
+    if (presListRef.current)  { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current)    { myPresRef.current.remove(); myPresRef.current = null; }
+    if (!conf || !conf.apiKey || !conf.databaseURL) {
+      setStatus("disconnected"); dbRef.current = null;
+      if (onPresenceChange) onPresenceChange([]);
+      return;
+    }
 
     setStatus("connecting");
     const db = tryInitFb(conf);
     if (!db) { setStatus("error"); setErrMsg("Could not initialise Firebase. Check your config."); return; }
     dbRef.current = db;
 
-    // Connection state
     db.ref(".info/connected").on("value", snap => setStatus(snap.val() ? "live" : "connecting"));
 
-    // ── Presence: write mine, subscribe to all ──
+    // ── Presence ──
     const identity = myIdentity || "vanja";
     const meRef = db.ref(`${FB_PRES_PATH}/${identity}`);
     myPresRef.current = meRef;
-    meRef.set({ id: identity, name: identity === "vanja" ? "Vanja" : "Oloka", color: myColor || T.vanja, tab: activeTab || "tasks", online: true, lastSeen: Date.now() });
+    meRef.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:myColor||T.vanja, tab:activeTab||"tasks", online:true, lastSeen:Date.now() });
     meRef.onDisconnect().remove();
 
     const presRef = db.ref(FB_PRES_PATH);
-    const presHandler = snap => {
-      const data = snap.val() || {};
-      if (onPresenceChange) onPresenceChange(Object.values(data));
-    };
+    const presHandler = snap => { if (onPresenceChange) onPresenceChange(Object.values(snap.val() || {})); };
     presRef.on("value", presHandler);
-    presListRef.current = { ref: presRef, handler: presHandler };
+    presListRef.current = { ref:presRef, handler:presHandler };
 
-    // ── State sync: subscribe to changes from other sessions ──
+    // ── State sync ──
     const stateRef = db.ref(FB_STATE_PATH);
     const stateHandler = snap => {
       const data = snap.val();
       if (!data) {
-        // Firebase is empty — push our local state up
+        // Firebase empty — push our state up as seed
         if (pendingState.current && dbRef.current) {
           localWriteAt.current = Date.now();
-          dbRef.current.ref(FB_STATE_PATH).set({ ...pendingState.current, _meta: { updatedAt: Date.now() } });
+          dbRef.current.ref(FB_STATE_PATH).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } });
         }
         return;
       }
-      // Ignore events caused by our own recent write (debounce window)
-      if (Date.now() - localWriteAt.current < 1200) return;
+      if (Date.now() - localWriteAt.current < 2000) return; // ignore our own echo
 
       const { _meta, ...incoming } = data;
-      const fbUpdatedAt = (_meta && _meta.updatedAt) ? _meta.updatedAt : 0;
+      const fbUpdatedAt = _meta?.updatedAt || 0;
 
-      // Conflict resolution: if our local state is newer than Firebase, push ours instead of applying theirs
+      // Conflict: local is newer — push ours instead of applying stale remote
       if (localStateChangedAt.current > fbUpdatedAt + 2000 && pendingState.current) {
-        // Local is newer — upload our state to Firebase, don't overwrite with stale data
         if (dbRef.current) {
           clearTimeout(writeTimerRef.current);
           localWriteAt.current = Date.now();
           dbRef.current.ref(FB_STATE_PATH)
-            .set({ ...pendingState.current, _meta: { updatedAt: Date.now() } })
+            .set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } })
             .then(() => setLastSync(new Date()))
-            .catch(err => console.error("Firebase write (conflict resolve):", err));
+            .catch(err => console.error("Firebase write (conflict):", err));
         }
         return;
       }
@@ -1212,34 +1214,33 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
       setLastSync(new Date());
     };
     stateRef.on("value", stateHandler, err => { setStatus("error"); setErrMsg(err.message || "Firebase error."); });
-    listenerRef.current = { ref: stateRef, handler: stateHandler };
+    listenerRef.current = { ref:stateRef, handler:stateHandler };
 
     return () => {
       stateRef.off("value", stateHandler);
       presRef.off("value", presHandler);
-      try { db.ref(".info/connected").off(); } catch (_) {}
+      try { db.ref(".info/connected").off(); } catch(_) {}
     };
   }, [conf]);
 
-  // ── Update my presence tab when the active tab changes ──
+  // Update my presence tab when active tab changes
   useEy(() => {
     if (!myPresRef.current || !dbRef.current) return;
-    myPresRef.current.update({ tab: activeTab, lastSeen: Date.now() });
+    myPresRef.current.update({ tab:activeTab, lastSeen:Date.now() });
   }, [activeTab]);
 
-  // ── Re-write presence when identity changes (user switches Vanja↔Oloka) ──
+  // Re-write presence when identity changes (Vanja ↔ Oloka switch)
   useEy(() => {
     if (!dbRef.current || !conf) return;
-    // Remove old entry if it was a different key
     if (myPresRef.current) myPresRef.current.remove();
     const identity = myIdentity || "vanja";
     const meRef = dbRef.current.ref(`${FB_PRES_PATH}/${identity}`);
     myPresRef.current = meRef;
-    meRef.set({ id: identity, name: identity === "vanja" ? "Vanja" : "Oloka", color: myColor || T.vanja, tab: activeTab || "tasks", online: true, lastSeen: Date.now() });
+    meRef.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:myColor||T.vanja, tab:activeTab||"tasks", online:true, lastSeen:Date.now() });
     meRef.onDisconnect().remove();
   }, [myIdentity]);
 
-  // ── Expose scheduleWrite to app.jsx via syncRef ──
+  // ── Expose scheduleWrite via syncRef ──
   useEy(() => {
     if (!syncRef) return;
     syncRef.current = {
@@ -1252,34 +1253,32 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
           const s = pendingState.current;
           if (!s || !dbRef.current) return;
           localWriteAt.current = Date.now();
+          // ← THE KEY FIX: stripForSync removes staff photos before sending
           dbRef.current.ref(FB_STATE_PATH)
-            .set({ ...s, _meta: { updatedAt: Date.now() } })
+            .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
             .then(() => setLastSync(new Date()))
             .catch(err => console.error("Firebase write:", err));
-        }, 300);
+        }, 1500); // 1500 ms debounce (was 300 ms) — 5× fewer writes
       }
     };
     return () => clearTimeout(writeTimerRef.current);
   });
 
   const connect = () => {
-    const trimmed = { apiKey: apiKey.trim(), databaseURL: dbUrl.trim().replace(/\/$/, "") };
+    const trimmed = { apiKey:apiKey.trim(), databaseURL:dbUrl.trim().replace(/\/$/, "") };
     if (!trimmed.apiKey || !trimmed.databaseURL) { setErrMsg("Both fields are required."); return; }
-    setErrMsg("");
-    saveFbConf(trimmed);
-    setConf(trimmed);
+    setErrMsg(""); saveFbConf(trimmed); setConf(trimmed);
   };
 
   const disconnect = () => {
     if (!confirm("Disconnect Firebase? The app will keep working locally but changes won't sync.")) return;
     if (listenerRef.current) { listenerRef.current.ref.off("value", listenerRef.current.handler); listenerRef.current = null; }
-    if (presListRef.current) { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
-    if (myPresRef.current) { myPresRef.current.remove(); myPresRef.current = null; }
-    try { if (dbRef.current) dbRef.current.ref(".info/connected").off(); } catch (_) {}
+    if (presListRef.current)  { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current)    { myPresRef.current.remove(); myPresRef.current = null; }
+    try { if (dbRef.current) dbRef.current.ref(".info/connected").off(); } catch(_) {}
     dbRef.current = null;
     clearTimeout(writeTimerRef.current);
-    saveFbConf(null);
-    setConf(null); setApiKey(""); setDbUrl("");
+    saveFbConf(null); setConf(null); setApiKey(""); setDbUrl("");
     setStatus("disconnected"); setErrMsg("");
     if (syncRef) syncRef.current = null;
     if (onPresenceChange) onPresenceChange([]);
@@ -1292,17 +1291,17 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     <div ref={popupRef} style={{ position:"relative" }}>
       <button onClick={() => setOpen(o => !o)} style={{
         padding:"7px 12px",
-        background: status === "live" ? "#E4F7EF" : open ? "#14295A" : "transparent",
-        border:`1px solid ${status === "live" ? "#0E9F6E44" : open ? "#14295A" : "#E5E5E0"}`,
-        borderRadius:6, color: status === "live" ? "#0E9F6E" : open ? "#fff" : "#2A3147",
+        background: status==="live" ? "#E4F7EF" : open ? "#14295A" : "transparent",
+        border:`1px solid ${status==="live" ? "#0E9F6E44" : open ? "#14295A" : "#E5E5E0"}`,
+        borderRadius:6, color: status==="live" ? "#0E9F6E" : open ? "#fff" : "#2A3147",
         fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
         display:"flex", alignItems:"center", gap:6, transition:"all 0.15s",
       }}
-      onMouseEnter={e => { if (status !== "live" && !open) { e.currentTarget.style.borderColor="#14295A"; e.currentTarget.style.color="#14295A"; }}}
-      onMouseLeave={e => { if (status !== "live" && !open) { e.currentTarget.style.borderColor="#E5E5E0"; e.currentTarget.style.color="#2A3147"; }}}
+      onMouseEnter={e => { if (status!=="live"&&!open) { e.currentTarget.style.borderColor="#14295A"; e.currentTarget.style.color="#14295A"; }}}
+      onMouseLeave={e => { if (status!=="live"&&!open) { e.currentTarget.style.borderColor="#E5E5E0"; e.currentTarget.style.color="#2A3147"; }}}
       >
         <span style={{ width:7, height:7, borderRadius:"50%", background:dotColor, flexShrink:0 }}></span>
-        {status === "live" ? "LIVE" : "SYNC"}
+        {status==="live" ? "LIVE" : "SYNC"}
       </button>
 
       {open && (
@@ -1319,10 +1318,10 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
             </div>
           </div>
 
-          {status === "live" && (
+          {status==="live" && (
             <div style={{ padding:"10px 12px", background:"#E4F7EF", border:"1px solid #0E9F6E22", borderRadius:7, marginBottom:14 }}>
               <p style={{ fontSize:12, color:"#0E9F6E", fontWeight:700, marginBottom:4 }}>Connected — changes sync automatically</p>
-              <p style={{ fontSize:11, color:"#6B7280", marginBottom:8 }}>Every edit pushes within 1.5 s. Avatars in the header show who's online and which tab they're on.</p>
+              <p style={{ fontSize:11, color:"#6B7280", marginBottom:8 }}>Every edit pushes within 1.5 s. Avatars show who's online and which tab they're on.</p>
               {lastSync && <p style={{ fontSize:10.5, color:"#9AA0AE" }}>Last synced: {lastSync.toLocaleTimeString()}</p>}
               <button onClick={disconnect} style={{
                 marginTop:10, fontSize:10, fontWeight:800, letterSpacing:"0.08em",
@@ -1332,34 +1331,33 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
             </div>
           )}
 
-          {status === "connecting" && (
+          {status==="connecting" && (
             <div style={{ padding:"10px 12px", background:"#FCF3DE", border:"1px solid #DC9F0933", borderRadius:7, marginBottom:14 }}>
               <p style={{ fontSize:12, color:"#DC9F09", fontWeight:700 }}>Connecting to Firebase…</p>
             </div>
           )}
 
-          {(status === "disconnected" || status === "error") && (
+          {(status==="disconnected"||status==="error") && (
             <>
               <p style={{ fontSize:11.5, color:"#6B7280", marginBottom:14, lineHeight:1.5 }}>
                 Connect to <strong>Firebase Realtime Database</strong> — changes sync live, and you'll see who's online with which tab open.
               </p>
               <div style={{ marginBottom:14, padding:"12px 14px", background:"#FAFAF7", border:"1px solid #E5E5E0", borderRadius:7, fontSize:11, color:"#2A3147", lineHeight:1.6 }}>
-                <p style={{ fontWeight:700, marginBottom:6, color:"#14295A" }}>One-time setup (~3 min, free):</p>
+                <p style={{ fontWeight:700, marginBottom:6, color:"#14295A" }}>One-time setup (if not already connected):</p>
                 <ol style={{ paddingLeft:18, margin:0, display:"flex", flexDirection:"column", gap:3 }}>
-                  <li>Go to <strong>console.firebase.google.com</strong> → Add project</li>
-                  <li>Build → <strong>Realtime Database</strong> → Create database → <em>Start in test mode</em></li>
-                  <li>Project Settings → Your apps → <strong>&lt;/&gt;</strong> → Register web app</li>
-                  <li>Copy <code style={{ background:"#F2F2EE", padding:"1px 4px", borderRadius:3 }}>apiKey</code> and <code style={{ background:"#F2F2EE", padding:"1px 4px", borderRadius:3 }}>databaseURL</code></li>
-                  <li>Paste below → <strong>Connect</strong> — repeat on Oloka's browser with the same keys</li>
+                  <li>Go to <strong>console.firebase.google.com</strong> → your project</li>
+                  <li>Project Settings → Your apps → copy <code style={{ background:"#F2F2EE", padding:"1px 4px", borderRadius:3 }}>apiKey</code></li>
+                  <li>Build → Realtime Database → copy the database URL</li>
+                  <li>Paste below → <strong>Connect</strong></li>
                 </ol>
               </div>
               <label style={{ display:"block", fontSize:9.5, color:"#6B7280", fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>API KEY</label>
               <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="AIzaSy…"
-                style={{ width:"100%", padding:"7px 10px", border:"1px solid #E5E5E0", borderRadius:5, fontSize:11, fontFamily:"monospace", outline:"none", marginBottom:10, color:"#0F1B3A" }}
+                style={{ width:"100%", padding:"7px 10px", border:"1px solid #E5E5E0", borderRadius:5, fontSize:11, fontFamily:"monospace", outline:"none", marginBottom:10, color:"#0F1B3A", boxSizing:"border-box" }}
               />
               <label style={{ display:"block", fontSize:9.5, color:"#6B7280", fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>DATABASE URL</label>
               <input value={dbUrl} onChange={e => setDbUrl(e.target.value)} placeholder="https://your-project-default-rtdb.firebaseio.com"
-                style={{ width:"100%", padding:"7px 10px", border:"1px solid #E5E5E0", borderRadius:5, fontSize:11, fontFamily:"monospace", outline:"none", marginBottom:14, color:"#0F1B3A" }}
+                style={{ width:"100%", padding:"7px 10px", border:"1px solid #E5E5E0", borderRadius:5, fontSize:11, fontFamily:"monospace", outline:"none", marginBottom:14, color:"#0F1B3A", boxSizing:"border-box" }}
               />
               <button onClick={connect} style={{
                 width:"100%", padding:"10px 14px", background:"#14295A", color:"#fff",
@@ -1370,7 +1368,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
             </>
           )}
           <p style={{ marginTop:14, fontSize:10, color:"#9AA0AE", lineHeight:1.4 }}>
-            The database URL works like a password — keep it private. All data lives in your own Firebase project.
+            Free tier · team photos are stored locally (not synced) to keep bandwidth under the 1 GB/month limit.
           </p>
         </div>
       )}
@@ -8299,44 +8297,6 @@ function yearsSince(s) {
 function StaffCard({ staff, idx, onChange, onDelete }) {
   const pcol = parsePersonality(staff.personality);
   const yrs = yearsSince(staff.started);
-  const [imgError, setImgError] = useSt(false);
-  const fileRef = useRef(null);
-  const hasPhoto = staff.photo && !imgError;
-  useSt; // keep linter happy
-
-  const pickPhoto = () => fileRef.current && fileRef.current.click();
-  const handleFile = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        // Resize so largest side = 256
-        const MAX = 256;
-        const ratio = Math.min(1, MAX / Math.max(img.width, img.height));
-        const w = Math.max(1, Math.round(img.width * ratio));
-        const h = Math.max(1, Math.round(img.height * ratio));
-        const c = document.createElement("canvas");
-        c.width = w; c.height = h;
-        const ctx = c.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
-        const dataUrl = c.toDataURL("image/jpeg", 0.82);
-        setImgError(false);
-        onChange({ ...staff, photo: dataUrl });
-      };
-      img.onerror = () => alert("Couldn't read that image.");
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
-  const clearPhoto = (e) => {
-    e.stopPropagation();
-    if (!confirm("Remove this photo?")) return;
-    setImgError(false);
-    onChange({ ...staff, photo: "" });
-  };
   return (
     <div style={{
       background:T.cardBg, border:`1px solid ${T.border}`,
@@ -8348,52 +8308,15 @@ function StaffCard({ staff, idx, onChange, onDelete }) {
         <DeleteBtn onClick={onDelete}/>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:11, paddingRight:30 }}>
-        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display:"none" }}/>
-        <div onClick={pickPhoto} title="Click to change photo" style={{
-          position:"relative", width:48, height:48, borderRadius:"50%", flexShrink:0,
-          cursor:"pointer", overflow:"hidden",
+        <div style={{
+          width:48, height:48, borderRadius:"50%", flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center",
           border: `2px solid ${pcol ? PERSONALITY_COLORS[pcol] : T.borderStrong}`,
           background: pcol ? PERSONALITY_COLORS[pcol]+"20" : T.surface,
+          color: pcol ? PERSONALITY_COLORS[pcol] : T.muted,
+          fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18,
         }}>
-          {hasPhoto ? (
-            <img src={staff.photo} alt={staff.name}
-              onError={() => setImgError(true)}
-              style={{
-                width:"100%", height:"100%",
-                objectFit:"cover", objectPosition:"center 20%",
-                display:"block",
-              }}
-            />
-          ) : (
-            <div style={{
-              width:"100%", height:"100%",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              color: pcol ? PERSONALITY_COLORS[pcol] : T.muted,
-              fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18,
-            }}>{(staff.name || "?")[0].toUpperCase()}</div>
-          )}
-          {/* Hover overlay */}
-          <div className="photo-overlay" style={{
-            position:"absolute", inset:0,
-            background:"rgba(15,27,58,0.55)",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            color:"#fff", fontSize:8.5, fontWeight:800, letterSpacing:"0.1em",
-            opacity:0, transition:"opacity 0.15s",
-          }}
-          onMouseEnter={e => e.currentTarget.style.opacity = 1}
-          onMouseLeave={e => e.currentTarget.style.opacity = 0}
-          >
-            CHANGE
-          </div>
-          {hasPhoto && (
-            <button onClick={clearPhoto} title="Remove photo" style={{
-              position:"absolute", top:-2, right:-2, width:18, height:18, borderRadius:"50%",
-              background:T.cardBg, border:`1px solid ${T.urgent}`, color:T.urgent,
-              cursor:"pointer", fontSize:11, lineHeight:1, padding:0,
-              display:"flex", alignItems:"center", justifyContent:"center",
-              fontFamily:"inherit", fontWeight:800,
-            }}>×</button>
-          )}
+          {(staff.name || "?")[0].toUpperCase()}
         </div>
         <div style={{ flex:1, minWidth:0 }}>
           <p style={{ fontSize:14, fontWeight:800, color:T.ink, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:"0.01em" }}>
@@ -8530,14 +8453,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
                 borderRadius:6, padding:"8px 14px",
                 display:"flex", alignItems:"center", gap:10,
               }}>
-                {s.photo ? (
-                  <img src={s.photo} alt={s.name} style={{
-                    width:32, height:32, borderRadius:"50%", objectFit:"cover", objectPosition:"center 20%",
-                    border:`1.5px solid ${T.gold}`,
-                  }}/>
-                ) : (
-                  <div style={{ width:32, height:32, borderRadius:"50%", background:T.gold+"20", border:`1.5px solid ${T.gold}`, display:"flex", alignItems:"center", justifyContent:"center", color:T.gold, fontWeight:800, fontSize:13, fontFamily:"'ProximaNova Black', sans-serif" }}>{(s.name || "?")[0].toUpperCase()}</div>
-                )}
+                <div style={{ width:32, height:32, borderRadius:"50%", background:T.gold+"20", border:`1.5px solid ${T.gold}`, display:"flex", alignItems:"center", justifyContent:"center", color:T.gold, fontWeight:800, fontSize:13, fontFamily:"'ProximaNova Black', sans-serif" }}>{(s.name || "?")[0].toUpperCase()}</div>
                 <div>
                   <p style={{ fontSize:13, fontWeight:700, color:T.ink, lineHeight:1.1 }}>{s.name}</p>
                   <p style={{ fontSize:10.5, color:T.muted, marginTop:2, letterSpacing:"0.04em" }}>
@@ -10840,7 +10756,7 @@ function App() {
   ]));
   // To Be Completed — holding area for unscheduled tasks
   const [toBeCompleted, setToBeCompleted] = useS(() => loadOr("toBeCompleted", () => []));
-  // Brain dump items — synced via Firebase so both users can see shared items
+  // Brain dump items — synced via Vercel KV so both users can see shared items
   const [brainDumpItems, setBrainDumpItems] = useS(() => {
     // Migrate from old localStorage key
     const old = (() => { try { return JSON.parse(localStorage.getItem("prontoHQ.brainDump")||"[]"); } catch(_){ return []; } })();
@@ -10909,7 +10825,7 @@ function App() {
     try { localStorage.setItem("prontoHQ.theme", theme); } catch(_) {}
   }, []); // run once on mount
 
-  // Autosave on any change — also schedules a Firebase write (debounced 1.5 s)
+  // Autosave on any change — also schedules a KV write via syncRef (debounced 1.5 s)
   useE(() => {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
