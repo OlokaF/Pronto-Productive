@@ -1,6 +1,4 @@
-﻿
-
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -580,7 +578,7 @@ function CategoryBadge({ category, onChange }) {
   );
 }
 
-function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onDelete, onChangeSubtasks, onConvertToSubtask, onChangeNotes, compact=false }) {
+function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onDelete, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onMoveTask, compact=false }) {
   const isEvent = task.category === "Event" || task.owner === "event";
   const accent = task.owner === "vanja" ? T.vanja : task.owner === "oloka" ? T.oloka : T.muted;
   const catColor = CAT_COLOR[task.category] || T.muted;
@@ -588,6 +586,7 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
   const subDone = subtasks.filter(s => s.done).length;
   const [expand, setExpand] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [showMove, setShowMove] = useState(false);
   const [hoverNest, setHoverNest] = useState(false);
   const showSubs = expand || subtasks.length > 0;
 
@@ -707,6 +706,22 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
               {(task.notes||[]).length ? `${(task.notes||[]).length} NOTE${(task.notes||[]).length !== 1 ? "S" : ""}` : "+ NOTES"}
             </button>
           )}
+          {onMoveTask && (
+            <button onClick={(e) => { e.stopPropagation(); setShowMove(v => !v); }}
+              title="Move to another date"
+              style={{
+                fontSize:9.5, fontWeight:800, letterSpacing:"0.06em",
+                color:T.muted, background:"transparent",
+                border:`1px solid ${T.border}`, padding:"2px 7px", borderRadius:3,
+                cursor:"pointer", fontFamily:"inherit",
+                display:"inline-flex", alignItems:"center", gap:4,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color=accent; e.currentTarget.style.borderColor=accent; }}
+              onMouseLeave={e => { e.currentTarget.style.color=T.muted; e.currentTarget.style.borderColor=T.border; }}
+            >
+              📅 MOVE
+            </button>
+          )}
         </div>
       </div>
       {!isEvent && onChangeOwner && (
@@ -760,6 +775,17 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
       }}>
         <NoteThread task={task} onChangeNotes={onChangeNotes} />
       </div>
+    )}
+    {showMove && onMoveTask && (
+      <input type="date" autoFocus defaultValue={dateKey}
+        style={{ fontSize:11, padding:"5px 8px", border:`1px solid ${accent}`, borderRadius:5, background:T.surface, color:T.ink, fontFamily:"inherit", outline:"none", margin:"4px 8px 8px", display:"block", width:"calc(100% - 16px)", boxSizing:"border-box" }}
+        onBlur={() => setShowMove(false)}
+        onChange={e => {
+          const val = e.target.value;
+          if (val && val !== dateKey) onMoveTask(val);
+          setShowMove(false);
+        }}
+      />
     )}
     </div>
   );
@@ -2226,25 +2252,8 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                 onConvertToSubtask={onConvertToSubtask}
                 onChangeNotes={onChangeNotes ? (notes) => onChangeNotes(t.id, notes) : undefined}
                 onDelete={onDelete ? () => onDelete(dateKey, t.id) : undefined}
+                onMoveTask={onMoveTask ? (newDate) => onMoveTask(t.id, dateKey, newDate) : undefined}
               />
-              {onMoveTask && (movingTaskId === t.id ? (
-                <input type="date" autoFocus defaultValue={dateKey}
-                  style={{ fontSize:10, padding:"3px 6px", border:`1px solid ${accent}`, borderRadius:4, background:T.surface, color:T.ink, fontFamily:"inherit", cursor:"pointer", outline:"none", marginTop:3, display:"block" }}
-                  onBlur={() => setMovingTaskId(null)}
-                  onChange={e => {
-                    const val = e.target.value;
-                    if (val && val !== dateKey) {
-                      onMoveTask(t.id, dateKey, val);
-                    }
-                    setMovingTaskId(null);
-                  }}
-                />
-              ) : (
-                <button onClick={e => { e.stopPropagation(); setMovingTaskId(t.id); }} title="Move to a specific date"
-                  style={{ padding:"2px 7px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap", marginTop:3 }}>
-                  📅 Move
-                </button>
-              ))}
             </div>
           ))}
           {visible.length === 0 && (
@@ -7745,46 +7754,240 @@ function AddPostForm({ onAdd, defaultType = "Post" }) {
   );
 }
 
-function ContentCalendar({ selDate, content, onSetContent, view: viewProp, setView: setViewProp }) {
+function ToPostListPanel({ toPostList, setToPostList, selectedDay, onAddToCalendar, isMobile, open, onClose }) {
+  const [filterType, setFilterType] = useSc("All");
+  const [addingNew, setAddingNew] = useSc(false);
+  const [newTitle, setNewTitle] = useSc("");
+  const [newType, setNewType] = useSc("Post");
+  const [justAdded, setJustAdded] = useSc(null);
+
+  const types = ["All", ...Object.keys(CONTENT_TYPES)];
+  const filtered = toPostList.filter(p => filterType === "All" || p.type === filterType);
+
+  const addToList = () => {
+    if (!newTitle.trim()) return;
+    const item = { id: Date.now() + "_" + Math.random().toString(36).slice(2,6), title: newTitle.trim(), type: newType, createdAt: new Date().toISOString() };
+    setToPostList(prev => [item, ...prev]);
+    setNewTitle(""); setAddingNew(false);
+  };
+
+  const removeFromList = (id) => setToPostList(prev => prev.filter(p => p.id !== id));
+
+  const handleAddToCalendar = (item) => {
+    if (!selectedDay) return;
+    onAddToCalendar(item, selectedDay);
+    setJustAdded(item.id);
+    setTimeout(() => setJustAdded(null), 1500);
+  };
+
+  const panel = (
+    <div style={{
+      width: isMobile ? "100%" : 340, flexShrink:0,
+      background:T.cardBg, border:`1px solid ${T.border}`,
+      borderRadius:8, display:"flex", flexDirection:"column",
+      maxHeight: isMobile ? "80vh" : "calc(100vh - 180px)",
+      position: isMobile ? "fixed" : "sticky",
+      top: isMobile ? "auto" : 80,
+      bottom: isMobile ? 0 : "auto",
+      left: isMobile ? 0 : "auto",
+      right: isMobile ? 0 : "auto",
+      zIndex: isMobile ? 300 : "auto",
+      boxShadow: isMobile ? "0 -8px 32px rgba(15,27,58,0.2)" : "none",
+    }}>
+      {/* Header */}
+      <div style={{ padding:"14px 16px", borderBottom:`1px solid ${T.border}`, background:T.surface, borderRadius:"8px 8px 0 0" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.04em" }}>TO POST LIST</p>
+            <span style={{ background:T.navy, color:"#fff", fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:10, letterSpacing:"0.06em" }}>{toPostList.length}</span>
+          </div>
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            <button onClick={() => setAddingNew(v => !v)} style={{
+              padding:"4px 10px", background: addingNew ? T.navy : "transparent",
+              border:`1px solid ${addingNew ? T.navy : T.border}`,
+              borderRadius:4, color: addingNew ? "#fff" : T.muted,
+              fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+            }}>+ ADD</button>
+            {isMobile && <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>&#x00D7;</button>}
+          </div>
+        </div>
+
+        {/* Selected date indicator */}
+        <div style={{
+          padding:"6px 10px", borderRadius:5,
+          background: selectedDay ? "#E4F7EF" : T.surface2,
+          border:`1px solid ${selectedDay ? "#0E9F6E33" : T.border}`,
+        }}>
+          {selectedDay ? (
+            <p style={{ fontSize:11, color:"#0E9F6E", fontWeight:700 }}>
+              &#x1F4C5; Adding to: <strong>{new Date(selectedDay + "T12:00:00").toLocaleDateString("en-NZ", { weekday:"short", day:"numeric", month:"short" })}</strong>
+            </p>
+          ) : (
+            <p style={{ fontSize:11, color:T.muted, fontWeight:600 }}>Click a calendar date to select it</p>
+          )}
+        </div>
+
+        {/* Add new form */}
+        {addingNew && (
+          <div style={{ marginTop:10, padding:"10px", background:T.surface2, borderRadius:6, border:`1px solid ${T.border}` }}>
+            <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+              onKeyDown={e => { if(e.key==="Enter") addToList(); if(e.key==="Escape") setAddingNew(false); }}
+              autoFocus placeholder="Post title&#x2026;"
+              style={{ width:"100%", background:"transparent", border:"none", color:T.ink, fontSize:12, outline:"none", marginBottom:8, fontFamily:"inherit", boxSizing:"border-box" }}
+            />
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <select value={newType} onChange={e => setNewType(e.target.value)} style={{
+                flex:1, background:T.cardBg, border:`1px solid ${T.border}`, color:T.text,
+                borderRadius:4, fontSize:10, padding:"4px 6px", fontFamily:"inherit",
+              }}>
+                {Object.keys(CONTENT_TYPES).map(t => <option key={t}>{t}</option>)}
+              </select>
+              <button onClick={addToList} style={{ padding:"4px 12px", background:T.navy, color:"#fff", border:"none", borderRadius:4, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>SAVE</button>
+              <button onClick={() => setAddingNew(false)} style={{ padding:"4px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, fontSize:10, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>&#x2715;</button>
+            </div>
+          </div>
+        )}
+
+        {/* Type filter */}
+        <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginTop:8 }}>
+          {types.map(t => (
+            <button key={t} onClick={() => setFilterType(t)} style={{
+              padding:"2px 8px", fontSize:9.5, fontWeight:800, letterSpacing:"0.05em",
+              background: filterType===t ? T.navy : "transparent",
+              color: filterType===t ? "#fff" : T.muted,
+              border:`1px solid ${filterType===t ? T.navy : T.border}`,
+              borderRadius:3, cursor:"pointer", fontFamily:"inherit",
+            }}>{t.toUpperCase()}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* List */}
+      <div style={{ flex:1, overflowY:"auto", padding:"8px 0" }}>
+        {filtered.length === 0 ? (
+          <div style={{ padding:"24px 16px", textAlign:"center" }}>
+            <p style={{ color:T.muted, fontSize:12, marginBottom:6 }}>{toPostList.length === 0 ? "No posts yet" : "No posts match this filter"}</p>
+            <p style={{ color:T.faint, fontSize:11 }}>Click <strong>+ ADD</strong> to create a post ready to schedule</p>
+          </div>
+        ) : filtered.map(item => {
+          const tc = CONTENT_TYPES[item.type] || CONTENT_TYPES.Post;
+          const isAdded = justAdded === item.id;
+          return (
+            <div key={item.id} style={{
+              padding:"10px 14px",
+              borderBottom:`1px solid ${T.border}`,
+              background: isAdded ? "#E4F7EF" : "transparent",
+              transition:"background 0.3s",
+              display:"flex", flexDirection:"column", gap:6,
+            }}>
+              <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
+                <span style={{
+                  marginTop:2, flexShrink:0, fontSize:8.5, fontWeight:800, letterSpacing:"0.08em",
+                  background:tc.soft, color:tc.color, padding:"2px 6px", borderRadius:3,
+                  border:`1px solid ${tc.color}33`,
+                }}>{item.type.toUpperCase()}</span>
+                <p style={{ flex:1, fontSize:12, fontWeight:600, color:T.ink, lineHeight:1.35, wordBreak:"break-word" }}>{item.title}</p>
+                <button onClick={() => removeFromList(item.id)} title="Remove from list" style={{
+                  flexShrink:0, background:"transparent", border:"none", color:T.faint,
+                  cursor:"pointer", fontSize:14, padding:0, lineHeight:1,
+                }} onMouseEnter={e => e.currentTarget.style.color=T.urgent} onMouseLeave={e => e.currentTarget.style.color=T.faint}>&#x00D7;</button>
+              </div>
+              {item.createdAt && (
+                <p style={{ fontSize:10, color:T.faint }}>
+                  {new Date(item.createdAt).toLocaleDateString("en-NZ", { day:"numeric", month:"short", year:"numeric" })}
+                </p>
+              )}
+              <button onClick={() => handleAddToCalendar(item)} disabled={!selectedDay} style={{
+                padding:"5px 10px",
+                background: isAdded ? "#0E9F6E" : selectedDay ? T.navy : T.surface2,
+                color: selectedDay ? "#fff" : T.muted,
+                border:"none", borderRadius:4,
+                fontSize:10, fontWeight:800, letterSpacing:"0.06em",
+                cursor: selectedDay ? "pointer" : "not-allowed",
+                fontFamily:"inherit", transition:"background 0.2s",
+                opacity: selectedDay ? 1 : 0.6,
+              }}>
+                {isAdded ? "&#x2713; ADDED!" : "ADD TO CALENDAR"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, view: viewProp, setView: setViewProp }) {
   const [viewLocal, setViewLocal] = useSc("week");
   const view = viewProp !== undefined ? viewProp : viewLocal;
   const setView = setViewProp || setViewLocal;
-  // drag state: { fromDate, fromIdx } during a drag; hoverDate during dragover
   const [drag, setDrag] = useSc(null);
   const [hoverDate, setHoverDate] = useSc(null);
+  const [selectedDay, setSelectedDay] = useSc(null);
+  const [deleteConfirm, setDeleteConfirm] = useSc(null); // {dk, idx, post}
+  const [showMobileList, setShowMobileList] = useSc(false);
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+
+  const safeToPostList = toPostList || [];
+  const safeSetToPostList = setToPostList || (() => {});
 
   const updatePost = (dk, idx, post) => {
-    onSetContent(prev => {
-      const arr = (prev[dk] || []).slice();
-      arr[idx] = post;
-      return { ...prev, [dk]: arr };
-    });
+    onSetContent(prev => { const arr = (prev[dk]||[]).slice(); arr[idx]=post; return {...prev,[dk]:arr}; });
   };
   const deletePost = (dk, idx) => {
+    const post = (content[dk]||[])[idx];
+    setDeleteConfirm({ dk, idx, post });
+  };
+  const confirmDelete = () => {
+    if (!deleteConfirm) return;
+    const { dk, idx } = deleteConfirm;
     onSetContent(prev => {
-      const arr = (prev[dk] || []).filter((_, i) => i !== idx);
-      const next = { ...prev };
+      const arr = (prev[dk]||[]).filter((_,i)=>i!==idx);
+      const next = {...prev};
       if (arr.length === 0) delete next[dk]; else next[dk] = arr;
       return next;
     });
+    setDeleteConfirm(null);
   };
-  const addPost = (dk, post) => {
+  const returnToList = () => {
+    if (!deleteConfirm) return;
+    const { dk, idx, post } = deleteConfirm;
     onSetContent(prev => {
-      const arr = (prev[dk] || []).slice();
-      arr.push(post);
-      return { ...prev, [dk]: arr };
+      const arr = (prev[dk]||[]).filter((_,i)=>i!==idx);
+      const next = {...prev};
+      if (arr.length === 0) delete next[dk]; else next[dk] = arr;
+      return next;
     });
+    safeSetToPostList(prev => [{
+      id: Date.now() + "_ret",
+      title: post.title || "",
+      type: post.type || "Post",
+      createdAt: new Date().toISOString(),
+    }, ...prev]);
+    setDeleteConfirm(null);
+  };
+
+  const addPost = (dk, post) => {
+    onSetContent(prev => { const arr = (prev[dk]||[]).slice(); arr.push(post); return {...prev,[dk]:arr}; });
+  };
+  const addToCalendar = (item, dk) => {
+    onSetContent(prev => {
+      const arr = (prev[dk]||[]).slice();
+      arr.push({ title: item.title, type: item.type, pillar: item.pillar || null, notes: item.notes || "" });
+      return {...prev,[dk]:arr};
+    });
+    safeSetToPostList(prev => prev.filter(p => p.id !== item.id));
   };
   const movePost = (fromDate, fromIdx, toDate) => {
     if (fromDate === toDate) return;
     onSetContent(prev => {
-      const fromArr = (prev[fromDate] || []).slice();
+      const fromArr = (prev[fromDate]||[]).slice();
       if (!fromArr[fromIdx]) return prev;
       const post = fromArr[fromIdx];
       fromArr.splice(fromIdx, 1);
-      const toArr = (prev[toDate] || []).slice();
+      const toArr = (prev[toDate]||[]).slice();
       toArr.push(post);
-      const next = { ...prev };
+      const next = {...prev};
       if (fromArr.length === 0) delete next[fromDate]; else next[fromDate] = fromArr;
       next[toDate] = toArr;
       return next;
@@ -7793,61 +7996,41 @@ function ContentCalendar({ selDate, content, onSetContent, view: viewProp, setVi
 
   const todayD = today();
 
-  const handleDragStart = (e, dk, idx) => {
-    setDrag({ fromDate: dk, fromIdx: idx });
-    try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", `${dk}|${idx}`); } catch (_) {}
-  };
+  const handleDragStart = (e, dk, idx) => { setDrag({ fromDate:dk, fromIdx:idx }); try { e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",`${dk}|${idx}`); } catch(_){} };
   const handleDragEnd = () => { setDrag(null); setHoverDate(null); };
-  const handleDragOver = (e, dk) => {
-    if (!drag) return;
-    e.preventDefault();
-    try { e.dataTransfer.dropEffect = "move"; } catch (_) {}
-    if (hoverDate !== dk) setHoverDate(dk);
-  };
-  const handleDragLeave = (e, dk) => {
-    if (hoverDate === dk) setHoverDate(null);
-  };
-  const handleDrop = (e, dk) => {
-    e.preventDefault();
-    if (!drag) return;
-    movePost(drag.fromDate, drag.fromIdx, dk);
-    setDrag(null); setHoverDate(null);
-  };
+  const handleDragOver = (e, dk) => { if (!drag) return; e.preventDefault(); try { e.dataTransfer.dropEffect="move"; } catch(_){} if (hoverDate!==dk) setHoverDate(dk); };
+  const handleDragLeave = (e, dk) => { if (hoverDate===dk) setHoverDate(null); };
+  const handleDrop = (e, dk) => { e.preventDefault(); if (!drag) return; movePost(drag.fromDate, drag.fromIdx, dk); setDrag(null); setHoverDate(null); };
 
-  const dragProps = (dk, idx) => ({
-    onDragStart: (e) => handleDragStart(e, dk, idx),
-    onDragEnd: handleDragEnd,
-    dragging: drag && drag.fromDate === dk && drag.fromIdx === idx,
-  });
-  const dropProps = (dk) => ({
-    onDragOver: (e) => handleDragOver(e, dk),
-    onDragLeave: (e) => handleDragLeave(e, dk),
-    onDrop: (e) => handleDrop(e, dk),
-    hover: hoverDate === dk,
-  });
+  const dragProps = (dk, idx) => ({ onDragStart:(e)=>handleDragStart(e,dk,idx), onDragEnd:handleDragEnd, dragging:drag&&drag.fromDate===dk&&drag.fromIdx===idx });
+  const dropProps = (dk) => ({ onDragOver:(e)=>handleDragOver(e,dk), onDragLeave:(e)=>handleDragLeave(e,dk), onDrop:(e)=>handleDrop(e,dk), hover:hoverDate===dk });
 
   const viewBtn = (key, label) => (
     <button key={key} onClick={() => setView(key)} style={{
-      padding:"6px 14px",
-      background: view===key ? T.navy : "transparent",
-      color: view===key ? "#fff" : T.text,
-      border:"none",
-      fontSize:11, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase",
+      padding:"6px 14px", background:view===key?T.navy:"transparent", color:view===key?"#fff":T.text,
+      border:"none", fontSize:11, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase",
       cursor:"pointer", fontFamily:"inherit",
     }}>{label}</button>
   );
 
   return (
     <div>
+      {/* Header */}
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:14, marginBottom:24 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>
-            {view === "week" ? `WEEK OF ${startOfWeek(selDate).getDate()} ${MONTHS[startOfWeek(selDate).getMonth()].toUpperCase().slice(0,3)}` : `${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}`}
+            {view==="week" ? `WEEK OF ${startOfWeek(selDate).getDate()} ${MONTHS[startOfWeek(selDate).getMonth()].toUpperCase().slice(0,3)}` : `${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}`}
           </p>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>CONTENT CALENDAR</h1>
-          <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Click to edit the title or change the type. <strong style={{ color:T.ink }}>Drag any post to another day</strong> to reschedule it.</p>
+          <h1 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>CONTENT CALENDAR</h1>
+          <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Click a calendar date to select it, then use <strong style={{ color:T.ink }}>Add to Calendar</strong> in the To Post List.</p>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {isMobile && (
+            <button onClick={() => setShowMobileList(true)} style={{
+              padding:"7px 14px", background:T.navy, color:"#fff", border:"none",
+              borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+            }}>TO POST LIST ({safeToPostList.length})</button>
+          )}
           <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
             {viewBtn("week","Week")}
             {viewBtn("month","Month")}
@@ -7868,20 +8051,79 @@ function ContentCalendar({ selDate, content, onSetContent, view: viewProp, setVi
         })}
       </div>
 
-      {view === "week" ? (
-        <ContentWeek selDate={selDate} content={content} todayD={todayD}
-          updatePost={updatePost} deletePost={deletePost} addPost={addPost}
-          dragProps={dragProps} dropProps={dropProps}/>
-      ) : (
-        <ContentMonth selDate={selDate} content={content} todayD={todayD}
-          updatePost={updatePost} deletePost={deletePost} addPost={addPost}
-          dragProps={dragProps} dropProps={dropProps}/>
+      {/* Main layout: calendar + sidebar */}
+      <div style={{ display:"flex", gap:20, alignItems:"flex-start" }}>
+        <div style={{ flex:1, minWidth:0 }}>
+          {view==="week" ? (
+            <ContentWeek selDate={selDate} content={content} todayD={todayD}
+              updatePost={updatePost} deletePost={deletePost} addPost={addPost}
+              dragProps={dragProps} dropProps={dropProps}
+              selectedDay={selectedDay} onSelectDay={setSelectedDay}/>
+          ) : (
+            <ContentMonth selDate={selDate} content={content} todayD={todayD}
+              updatePost={updatePost} deletePost={deletePost} addPost={addPost}
+              dragProps={dragProps} dropProps={dropProps}
+              selectedDay={selectedDay} onSelectDay={setSelectedDay}/>
+          )}
+          <MonthlyPillarsBar selDate={selDate} content={content}/>
+        </div>
+
+        {!isMobile && (
+          <ToPostListPanel
+            toPostList={safeToPostList} setToPostList={safeSetToPostList}
+            selectedDay={selectedDay}
+            onAddToCalendar={addToCalendar}
+            isMobile={false}
+          />
+        )}
+      </div>
+
+      {/* Mobile drawer */}
+      {isMobile && showMobileList && (
+        <div onClick={() => setShowMobileList(false)} style={{ position:"fixed", inset:0, zIndex:299, background:"rgba(15,27,58,0.4)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, left:0, right:0 }}>
+            <ToPostListPanel
+              toPostList={safeToPostList} setToPostList={safeSetToPostList}
+              selectedDay={selectedDay}
+              onAddToCalendar={addToCalendar}
+              isMobile={true}
+              open={showMobileList}
+              onClose={() => setShowMobileList(false)}
+            />
+          </div>
+        </div>
       )}
 
-      <MonthlyPillarsBar selDate={selDate} content={content}/>
+      {/* Delete confirm modal */}
+      {deleteConfirm && (
+        <div onClick={() => setDeleteConfirm(null)} style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:380, padding:24, boxShadow:"0 24px 60px rgba(15,27,58,0.35)" }}>
+            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:14, color:T.heading, marginBottom:8 }}>Remove post from calendar?</p>
+            <p style={{ fontSize:12, color:T.muted, marginBottom:20, lineHeight:1.5 }}>"{deleteConfirm.post?.title || "Untitled"}" &#x2014; what would you like to do with it?</p>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              <button onClick={returnToList} style={{
+                padding:"10px 14px", background:T.navy, color:"#fff", border:"none",
+                borderRadius:6, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em",
+              }}>Return to To Post List</button>
+              <button onClick={confirmDelete} style={{
+                padding:"10px 14px", background:"transparent", color:T.urgent,
+                border:`1px solid ${T.urgent}`, borderRadius:6, fontSize:12, fontWeight:800,
+                cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em",
+              }}>Delete permanently</button>
+              <button onClick={() => setDeleteConfirm(null)} style={{
+                padding:"8px 14px", background:"transparent", color:T.muted,
+                border:`1px solid ${T.border}`, borderRadius:6, fontSize:11,
+                cursor:"pointer", fontFamily:"inherit",
+              }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+Object.assign(window, { ContentCalendar });
 
 function MonthlyPillarsBar({ selDate, content }) {
   const year = selDate.getFullYear(), month = selDate.getMonth();
@@ -7943,7 +8185,7 @@ function MonthlyPillarsBar({ selDate, content }) {
   );
 }
 
-function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps }) {
+function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay }) {
   const today = todayD;
   const monday = startOfWeek(selDate);
   const days = Array.from({ length: 5 }, (_, i) => addDays(monday, i));
@@ -7957,13 +8199,16 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
         return (
           <div key={dk}
             onDragOver={dp.onDragOver} onDragLeave={dp.onDragLeave} onDrop={dp.onDrop}
+            onClick={() => onSelectDay && onSelectDay(selectedDay === dk ? null : dk)}
             style={{
-              background: dp.hover ? T.surface : T.cardBg, border:`1px solid ${dp.hover ? T.gold : T.border}`,
+              background: dp.hover ? T.surface : T.cardBg,
+              border:`1px solid ${selectedDay===dk ? "#3B82F6" : dp.hover ? T.gold : T.border}`,
               borderTop:`3px solid ${isToday ? T.gold : T.borderStrong}`,
               borderRadius:8, padding:"14px 14px 16px",
               minHeight:260, display:"flex", flexDirection:"column",
-              outline: dp.hover ? `2px dashed ${T.gold}` : "none", outlineOffset:"-4px",
+              outline: selectedDay===dk ? `2px solid #3B82F688` : dp.hover ? `2px dashed ${T.gold}` : "none", outlineOffset:"-4px",
               transition:"background 0.1s, outline 0.1s",
+              cursor:"pointer",
             }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
               <div>
@@ -7991,7 +8236,7 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
   );
 }
 
-function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps }) {
+function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay }) {
   const today = todayD;
   const year = selDate.getFullYear();
   const month = selDate.getMonth();
@@ -8031,14 +8276,16 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                 onDragOver={inMonth ? dp.onDragOver : undefined}
                 onDragLeave={inMonth ? dp.onDragLeave : undefined}
                 onDrop={inMonth ? dp.onDrop : undefined}
+                onClick={inMonth && !isWeekend ? () => onSelectDay && onSelectDay(selectedDay===dk ? null : dk) : undefined}
                 style={{
                   minHeight:130, padding:"8px 9px",
                   background: dp.hover && inMonth ? T.surface : (!inMonth ? T.surface2 : isWeekend ? T.surface : T.cardBg),
                   borderRight: di < 6 ? `1px solid ${T.border}` : "none",
                   opacity: inMonth ? 1 : 0.6,
                   display:"flex", flexDirection:"column", gap:5,
-                  outline: dp.hover && inMonth ? `2px dashed ${T.gold}` : "none", outlineOffset:"-3px",
+                  outline: selectedDay===dk ? `2px solid #3B82F6` : dp.hover && inMonth ? `2px dashed ${T.gold}` : "none", outlineOffset:"-3px",
                   transition:"background 0.1s",
+                  cursor: inMonth && !isWeekend ? "pointer" : "default",
                 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:3 }}>
                   <span style={{
@@ -8070,7 +8317,7 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                           {p.notes && (
                             <span title={p.notes} style={{ position:"absolute", bottom:2, right:18, fontSize:9, color:tc.color, opacity:0.7 }}>📝</span>
                           )}
-                          <button onClick={(e) => { e.stopPropagation(); if (confirm("Delete this post?")) deletePost(dk, i); }} title="Delete" style={{
+                          <button onClick={(e) => { e.stopPropagation(); deletePost(dk, i); }} title="Delete" style={{
                             position:"absolute", top:2, right:2,
                             width:14, height:14, background:"transparent", border:"none",
                             color:tc.color, opacity:0.5, cursor:"pointer", padding:0,
@@ -8107,8 +8354,6 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
     </div>
   );
 }
-
-Object.assign(window, { ContentCalendar });
 
 // ── Shared modal: full add/edit form (used in Month view) ──
 function PostModal({ post, onSave, onClose, onDelete }) {
@@ -10650,7 +10895,7 @@ const DEFAULT_TABS = [
   { key:"uniform",    label:"UNIFORM",     on:true },
   { key:"resources",  label:"RESOURCES",   on:true },
   { key:"activity",   label:"ACTIVITY",    on:true },
-  { key:"analytics",  label:"ANALYTICS",   on:true },
+  { key:"analytics",  label:"ANALYTICS",   on:false },
   { key:"brain-dump", label:"BRAIN DUMP",  on:true },
   // settings is accessible via ⚙ gear icon in header — not in tab bar by default
   { key:"settings",   label:"SETTINGS",    on:false },
@@ -10750,6 +10995,7 @@ function App() {
   const [dayNotes, setDayNotes] = useS(() => loadOr("dayNotes", () => ({})));
   // Recurring daily tasks — appear every day with orange checkbox
   const [recurringTasks, setRecurringTasks] = useS(() => loadOr("recurringTasks", () => []));
+  const [toPostList, setToPostList] = useS(() => loadOr("toPostList", () => []));
   // Ongoing Jobs — long-running tasks, tickable daily, never auto-removed
   const [ongoingJobs, setOngoingJobs] = useS(() => loadOr("ongoingJobs", () => [
     { id:"oj1", text:"Edit the video of Mark", owner:"oloka" },
@@ -10812,7 +11058,7 @@ function App() {
     branding, categories, postApprovals, videoEvents, visibleTabs,
     contentLabels, videoLabels,
     recurringTasks, ongoingJobs, toBeCompleted,
-    uniform, brainDumpItems,
+    uniform, brainDumpItems, toPostList,
   });
 
   // Sync chatAs to todayUser when user logs in via TodayPicker
@@ -10830,7 +11076,7 @@ function App() {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems, toPostList]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
 
@@ -10914,6 +11160,7 @@ function App() {
     if (s.toBeCompleted)  setToBeCompleted(s.toBeCompleted);
     if (s.uniform) setUniform(s.uniform);
     if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
+    if (s.toPostList) setToPostList(s.toPostList);
   };
 
   // ── Export schedule as .ics (for Samsung Calendar / Outlook import) ──
@@ -11295,37 +11542,6 @@ function App() {
             borderRadius:6, color:T.text, fontSize:11.5, fontWeight:700,
             cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em",
           }}>{today().toLocaleDateString("en-NZ", { weekday:"short", day:"numeric", month:"short", year:"numeric" })}</button>
-          {/* User avatar circles in header */}
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            {[{key:"vanja",color:T.vanja,soft:T.vanjaSoft},{key:"oloka",color:T.oloka,soft:T.olokaSoft}].map(u => {
-              const presence = onlineUsers.find(p => p.id === u.key);
-              const name = u.key === "vanja" ? "Vanja" : "Oloka";
-              const presTitle = presence
-                ? presence.online
-                  ? `${name} · Active now${presence.tab ? " · " + presence.tab : ""}`
-                  : `${name} · Last active ${Math.round((Date.now() - (presence.lastSeen||Date.now())) / 60000)}m ago`
-                : `${name} · Offline`;
-              return (
-              <div key={u.key} title={presTitle} style={{
-                width:30, height:30, borderRadius:"50%", overflow:"hidden", flexShrink:0,
-                border:`2px solid ${todayUser===u.key ? u.color : presence?.online ? u.color+"88" : T.border}`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                background: u.soft, cursor:"pointer",
-                transition:"border-color 0.15s",
-                position:"relative",
-              }} onClick={() => { setTab("settings"); }}>
-                {(avatars && avatars[u.key]) ? (
-                  <img src={avatars[u.key]} alt={u.key} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-                ) : (
-                  <span style={{ fontFamily:"'ProximaNova Black', sans-serif", fontSize:11, fontWeight:900, color:u.color }}>{u.key==="vanja"?"V":"O"}</span>
-                )}
-                {presence?.online && (
-                  <span style={{ position:"absolute", bottom:0, right:0, width:8, height:8, borderRadius:"50%", background:"#10B981", border:"1.5px solid white" }}/>
-                )}
-              </div>
-              );
-            })}
-          </div>
           <div style={{ height:18, width:1, background:T.border }}></div>
           {/* Settings gear */}
           <button onClick={() => setSettingsOpen(true)} title="Settings" style={{
@@ -11379,7 +11595,7 @@ function App() {
         gap:20, flexWrap:"wrap",
       }}>
         <div className="tab-bar" style={{ display:"flex", flexWrap:"wrap" }}>
-          {TABS.filter(t => visibleTabs.includes(t.key)).map(t => tabBtn(t.key, t.label))}
+          {TABS.filter(t => visibleTabs.includes(t.key) && t.key !== "settings").map(t => tabBtn(t.key, t.label))}
         </div>
         {showDateStrip && (
           <div className="date-strip" style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10 }}>
@@ -11460,7 +11676,9 @@ function App() {
         {tab === "schedule" && (
           <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser} isMobile={isMobile}/>
         )}
-        {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent} view={contentView} setView={setContentView}/>}
+        {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent}
+          toPostList={toPostList} setToPostList={setToPostList}
+          view={contentView} setView={setContentView}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
         {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd}/>}
         {tab === "plan" && <PlanView plan={plan} setPlan={setPlan}/>}
