@@ -711,15 +711,18 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
               title="Move to another date"
               style={{
                 fontSize:9.5, fontWeight:800, letterSpacing:"0.06em",
-                color:T.muted, background:"transparent",
-                border:`1px solid ${T.border}`, padding:"2px 7px", borderRadius:3,
+                color: showMove ? accent : T.muted,
+                background:"transparent",
+                border:`1px solid ${showMove ? accent : T.border}`,
+                padding:"2px 7px", borderRadius:3,
                 cursor:"pointer", fontFamily:"inherit",
                 display:"inline-flex", alignItems:"center", gap:4,
               }}
               onMouseEnter={e => { e.currentTarget.style.color=accent; e.currentTarget.style.borderColor=accent; }}
-              onMouseLeave={e => { e.currentTarget.style.color=T.muted; e.currentTarget.style.borderColor=T.border; }}
+              onMouseLeave={e => { if(!showMove){ e.currentTarget.style.color=T.muted; e.currentTarget.style.borderColor=T.border; } }}
             >
-              📅 MOVE
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="3" width="14" height="12" rx="2"/><path d="M1 7h14M5 1v4M11 1v4"/></svg>
+              Move to Calendar
             </button>
           )}
         </div>
