@@ -7403,6 +7403,15 @@ const { useState: useSc, useEffect: useEc, useRef: useRc, useMemo: useMc } = Rea
 // Mon-first day labels (grid starts on Monday via startOfWeek)
 const CAL_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
+const CONTENT_STATUSES = [
+  { key:"idea",      label:"Idea",      color:"#9AA0AE" },
+  { key:"filming",   label:"Filming",   color:"#F59E0B" },
+  { key:"editing",   label:"Editing",   color:"#8B5CF6" },
+  { key:"ready",     label:"Ready",     color:"#3B82F6" },
+  { key:"scheduled", label:"Scheduled", color:"#0EA5E9" },
+  { key:"posted",    label:"Posted",    color:"#10B981" },
+];
+
 // ── Monthly Pillars: each is a goal to hit per month ──
 const MONTHLY_PILLARS = [
   { id:"pronto-pick", label:"Pronto Pick",       target:1, color:"#DC9F09" },
@@ -7612,6 +7621,35 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
               paddingLeft:8, borderLeft:`2px solid ${T.border}`,
             }}>{post.notes}</p>
           )}
+          {(() => {
+            const statusKey = post.status || "idea";
+            const st = CONTENT_STATUSES.find(s => s.key === statusKey) || CONTENT_STATUSES[0];
+            return (
+              <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:6 }}>
+                <span style={{
+                  display:"inline-flex", alignItems:"center", gap:4,
+                  padding:"2px 7px", borderRadius:10,
+                  background: st.color + "18",
+                  border:`1px solid ${st.color}44`,
+                  fontSize:9, fontWeight:800, letterSpacing:"0.08em", color:st.color,
+                }}>
+                  <span style={{ width:5, height:5, borderRadius:"50%", background:st.color }}></span>
+                  {st.label.toUpperCase()}
+                </span>
+                <select
+                  value={statusKey}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => { e.stopPropagation(); onChange({...post, status:e.target.value}); }}
+                  style={{
+                    fontSize:9, border:"none", background:"transparent", color:T.faint,
+                    cursor:"pointer", fontFamily:"inherit", outline:"none", padding:0,
+                  }}
+                >
+                  {CONTENT_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+            );
+          })()}
         </React.Fragment>
       )}
     </div>
@@ -7917,10 +7955,152 @@ function ToPostListPanel({ toPostList, setToPostList, selectedDay, onAddToCalend
   );
 }
 
+function IdeaCaptureModal({ onClose, onAddToCalendar, onAddUnscheduled }) {
+  const [title, setTitle] = useSc("");
+  const [type, setType] = useSc("Post");
+  const [date, setDate] = useSc("");
+  const inputRef = useRc(null);
+  useEc(() => { inputRef.current && inputRef.current.focus(); }, []);
+  const submit = () => {
+    if (!title.trim()) return;
+    const post = { title: title.trim(), type, status: "idea" };
+    if (date) {
+      onAddToCalendar(post, date);
+    } else {
+      onAddUnscheduled(post);
+    }
+    onClose();
+  };
+  const tc = CONTENT_TYPES[type] || CONTENT_TYPES.Post;
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:420, boxShadow:"0 24px 60px rgba(15,27,58,0.35)", borderTop:`4px solid ${tc.color}` }}>
+        <div style={{ padding:"16px 20px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>CAPTURE IDEA</p>
+          <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>&#x00D7;</button>
+        </div>
+        <div style={{ padding:"16px 20px" }}>
+          <label style={{ display:"block", fontSize:9, color:T.muted, fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>TITLE</label>
+          <input ref={inputRef} value={title} onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => { if (e.key==="Enter") submit(); if (e.key==="Escape") onClose(); }}
+            placeholder="Content idea title…"
+            style={{ width:"100%", padding:"8px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:13, fontFamily:"inherit", color:T.ink, fontWeight:600, outline:"none", marginBottom:12, boxSizing:"border-box" }}
+          />
+          <label style={{ display:"block", fontSize:9, color:T.muted, fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>TYPE</label>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:12 }}>
+            {Object.keys(CONTENT_TYPES).map(t => {
+              const c = CONTENT_TYPES[t]; const active = type===t;
+              return (
+                <button key={t} onClick={() => setType(t)} style={{ padding:"3px 8px", borderRadius:3, background:active?c.color:c.soft, color:active?"#fff":c.color, border:`1px solid ${active?c.color:c.color+"33"}`, fontSize:9, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", cursor:"pointer", fontFamily:"inherit" }}>{t}</button>
+              );
+            })}
+          </div>
+          <label style={{ display:"block", fontSize:9, color:T.muted, fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>DATE <span style={{ color:T.faint, fontWeight:600, letterSpacing:0 }}>(optional — leave blank to save as unscheduled)</span></label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            style={{ width:"100%", padding:"8px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, fontFamily:"inherit", color:T.ink, outline:"none", marginBottom:16, boxSizing:"border-box" }}
+          />
+        </div>
+        <div style={{ padding:"12px 20px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"flex-end", gap:8, background:T.surface, borderRadius:"0 0 10px 10px" }}>
+          <button onClick={onClose} style={{ background:"transparent", color:T.muted, border:`1px solid ${T.border}`, borderRadius:4, padding:"7px 14px", fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+          <button onClick={submit} disabled={!title.trim()} style={{ background:tc.color, color:"#fff", border:"none", borderRadius:4, padding:"7px 16px", fontSize:11, fontWeight:800, letterSpacing:"0.08em", cursor:title.trim()?"pointer":"not-allowed", fontFamily:"inherit", opacity:title.trim()?1:0.5 }}>SAVE IDEA</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContentKanbanView({ content, onSetContent, filterType }) {
+  const [dragInfo, setDragInfo] = useSc(null); // { dk, idx, post }
+
+  // Flatten all posts across all dates, apply filter
+  const allPosts = useMc(() => {
+    const result = [];
+    for (const dk of Object.keys(content)) {
+      (content[dk] || []).forEach((post, idx) => {
+        if (!filterType || post.type === filterType) {
+          result.push({ dk, idx, post });
+        }
+      });
+    }
+    return result;
+  }, [content, filterType]);
+
+  const getColumnPosts = (statusKey) => allPosts.filter(item => (item.post.status || "idea") === statusKey);
+
+  const handleDragStart = (e, dk, idx, post) => {
+    setDragInfo({ dk, idx, post });
+    try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", `${dk}|${idx}`); } catch(_){}
+  };
+  const handleDragOver = (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = "move"; } catch(_){} };
+  const handleDrop = (e, newStatus) => {
+    e.preventDefault();
+    if (!dragInfo) return;
+    const { dk, idx, post } = dragInfo;
+    if ((post.status || "idea") === newStatus) { setDragInfo(null); return; }
+    onSetContent(prev => {
+      const arr = (prev[dk]||[]).slice();
+      arr[idx] = { ...post, status: newStatus };
+      return { ...prev, [dk]: arr };
+    });
+    setDragInfo(null);
+  };
+
+  const colWidth = Math.floor(100 / CONTENT_STATUSES.length);
+
+  return (
+    <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:12 }}>
+      {CONTENT_STATUSES.map(st => {
+        const colPosts = getColumnPosts(st.key);
+        return (
+          <div key={st.key}
+            onDragOver={handleDragOver}
+            onDrop={e => handleDrop(e, st.key)}
+            style={{ minWidth:200, flex:"1 0 200px", background:T.surface, border:`1px solid ${st.color}33`, borderTop:`3px solid ${st.color}`, borderRadius:8, display:"flex", flexDirection:"column" }}
+          >
+            <div style={{ padding:"10px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ width:8, height:8, borderRadius:"50%", background:st.color, flexShrink:0 }}></span>
+              <span style={{ fontWeight:800, fontSize:11, letterSpacing:"0.1em", color:st.color, textTransform:"uppercase" }}>{st.label}</span>
+              <span style={{ marginLeft:"auto", background:st.color+"20", color:st.color, fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:10 }}>{colPosts.length}</span>
+            </div>
+            <div style={{ flex:1, padding:"8px 8px", display:"flex", flexDirection:"column", gap:7, minHeight:120 }}>
+              {colPosts.map(({ dk, idx, post }) => {
+                const tc = CONTENT_TYPES[post.type] || CONTENT_TYPES.Post;
+                const isDragging = dragInfo && dragInfo.dk===dk && dragInfo.idx===idx;
+                return (
+                  <div key={`${dk}-${idx}`}
+                    draggable
+                    onDragStart={e => handleDragStart(e, dk, idx, post)}
+                    onDragEnd={() => setDragInfo(null)}
+                    style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${tc.color}`, borderRadius:6, padding:"8px 10px", cursor:"grab", opacity:isDragging?0.4:1, transition:"opacity 0.1s" }}
+                  >
+                    <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:4, flexWrap:"wrap" }}>
+                      <span style={{ fontSize:8.5, fontWeight:800, letterSpacing:"0.08em", background:tc.soft, color:tc.color, padding:"2px 6px", borderRadius:3, border:`1px solid ${tc.color}33` }}>{post.type.toUpperCase()}</span>
+                    </div>
+                    {post.imageUrl && <img src={post.imageUrl} alt="" style={{ width:"100%", height:70, objectFit:"cover", borderRadius:4, marginBottom:5 }} />}
+                    <p style={{ fontSize:12, fontWeight:600, color:T.ink, lineHeight:1.35 }}>{post.title || <span style={{ color:T.faint, fontStyle:"italic" }}>(untitled)</span>}</p>
+                    <p style={{ fontSize:9.5, color:T.faint, marginTop:4 }}>{new Date(dk+"T12:00:00").toLocaleDateString("en-NZ",{day:"numeric",month:"short"})}</p>
+                  </div>
+                );
+              })}
+              {colPosts.length === 0 && (
+                <div style={{ textAlign:"center", padding:"20px 8px", color:T.faint, fontSize:11, fontStyle:"italic", border:`2px dashed ${st.color}22`, borderRadius:6 }}>Drop here</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, view: viewProp, setView: setViewProp }) {
   const [viewLocal, setViewLocal] = useSc("week");
   const view = viewProp !== undefined ? viewProp : viewLocal;
   const setView = setViewProp || setViewLocal;
+  const [calView, setCalView] = useSc("week");
+  const [filterType, setFilterType] = useSc("");
+  const [showIdeaModal, setShowIdeaModal] = useSc(false);
+  const [unscheduledIdeas, setUnscheduledIdeas] = useSc([]);
   const [drag, setDrag] = useSc(null);
   const [hoverDate, setHoverDate] = useSc(null);
   const [selectedDay, setSelectedDay] = useSc(null);
@@ -8013,29 +8193,81 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
     }}>{label}</button>
   );
 
+  const addIdeaToCalendar = (post, dk) => {
+    onSetContent(prev => { const arr = (prev[dk]||[]).slice(); arr.push(post); return {...prev,[dk]:arr}; });
+  };
+
+  const FILTER_TYPES = ["", "Reel", "Story", "Photo", "Blog", "Email", "Ad", "YouTube", "TikTok", "Facebook", "LinkedIn"];
+  const FILTER_LABELS = { "":"All", "Reel":"Reel", "Story":"Story", "Photo":"Photo", "Blog":"Blog", "Email":"Email", "Ad":"Ad", "YouTube":"YouTube", "TikTok":"TikTok", "Facebook":"Facebook", "LinkedIn":"LinkedIn" };
+
+  const calViewBtn = (key, label) => (
+    <button key={key} onClick={() => setCalView(key)} style={{
+      padding:"6px 13px", background:calView===key?T.navy:"transparent", color:calView===key?"#fff":T.text,
+      border:"none", fontSize:11, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase",
+      cursor:"pointer", fontFamily:"inherit",
+    }}>{label}</button>
+  );
+
   return (
     <div>
       {/* Header */}
-      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:14, marginBottom:24 }}>
+      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:14, marginBottom:16 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>
-            {view==="week" ? `WEEK OF ${startOfWeek(selDate).getDate()} ${MONTHS[startOfWeek(selDate).getMonth()].toUpperCase().slice(0,3)}` : `${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}`}
+            {calView==="week" ? `WEEK OF ${startOfWeek(selDate).getDate()} ${MONTHS[startOfWeek(selDate).getMonth()].toUpperCase().slice(0,3)}` : calView==="month" ? `${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}` : "ALL DATES"}
           </p>
           <h1 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>CONTENT CALENDAR</h1>
           <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Click a calendar date to select it, then use <strong style={{ color:T.ink }}>Add to Calendar</strong> in the To Post List.</p>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
           {isMobile && (
             <button onClick={() => setShowMobileList(true)} style={{
               padding:"7px 14px", background:T.navy, color:"#fff", border:"none",
               borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
             }}>TO POST LIST ({safeToPostList.length})</button>
           )}
+          <button onClick={() => setShowIdeaModal(true)} style={{
+            padding:"7px 14px", background:"#F59E0B", color:"#fff", border:"none",
+            borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+          }}>+ Idea</button>
           <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
-            {viewBtn("week","Week")}
-            {viewBtn("month","Month")}
+            {calViewBtn("week","Week")}
+            {calViewBtn("month","Month")}
+            {calViewBtn("kanban","Kanban")}
           </div>
         </div>
+      </div>
+
+      {/* Unscheduled ideas chips */}
+      {unscheduledIdeas.length > 0 && (
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12, padding:"10px 14px", background:"#F59E0B11", border:`1px solid #F59E0B33`, borderRadius:6 }}>
+          <span style={{ fontSize:9.5, fontWeight:800, color:"#F59E0B", letterSpacing:"0.14em", marginRight:4, alignSelf:"center" }}>UNSCHEDULED IDEAS</span>
+          {unscheduledIdeas.map((idea, i) => {
+            const tc = CONTENT_TYPES[idea.type] || CONTENT_TYPES.Post;
+            return (
+              <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"3px 9px 3px 7px", background:tc.soft, border:`1px solid ${tc.color}44`, borderRadius:12, fontSize:10.5, fontWeight:700, color:tc.color }}>
+                <span style={{ width:6, height:6, borderRadius:"50%", background:tc.color }}></span>
+                {idea.title}
+                <button onClick={() => setUnscheduledIdeas(prev => prev.filter((_,j)=>j!==i))} style={{ background:"transparent", border:"none", color:tc.color, cursor:"pointer", padding:0, marginLeft:2, fontSize:12, lineHeight:1, opacity:0.6 }}>&#x00D7;</button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Type filter bar */}
+      <div style={{ display:"flex", gap:5, marginBottom:16, overflowX:"auto", paddingBottom:2 }}>
+        <span style={{ fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.14em", alignSelf:"center", flexShrink:0, marginRight:4 }}>FILTER</span>
+        {FILTER_TYPES.map(ft => (
+          <button key={ft||"all"} onClick={() => setFilterType(ft)} style={{
+            flexShrink:0,
+            padding:"4px 11px", fontSize:10, fontWeight:800, letterSpacing:"0.06em",
+            background: filterType===ft ? T.navy : "transparent",
+            color: filterType===ft ? "#fff" : T.muted,
+            border:`1px solid ${filterType===ft ? T.navy : T.border}`,
+            borderRadius:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap",
+          }}>{FILTER_LABELS[ft]}</button>
+        ))}
       </div>
 
       {/* Legend */}
@@ -8054,18 +8286,20 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
       {/* Main layout: calendar + sidebar */}
       <div style={{ display:"flex", gap:20, alignItems:"flex-start" }}>
         <div style={{ flex:1, minWidth:0 }}>
-          {view==="week" ? (
+          {calView==="kanban" ? (
+            <ContentKanbanView content={content} onSetContent={onSetContent} filterType={filterType}/>
+          ) : calView==="week" ? (
             <ContentWeek selDate={selDate} content={content} todayD={todayD}
               updatePost={updatePost} deletePost={deletePost} addPost={addPost}
               dragProps={dragProps} dropProps={dropProps}
-              selectedDay={selectedDay} onSelectDay={setSelectedDay}/>
+              selectedDay={selectedDay} onSelectDay={setSelectedDay} filterType={filterType}/>
           ) : (
             <ContentMonth selDate={selDate} content={content} todayD={todayD}
               updatePost={updatePost} deletePost={deletePost} addPost={addPost}
               dragProps={dragProps} dropProps={dropProps}
-              selectedDay={selectedDay} onSelectDay={setSelectedDay}/>
+              selectedDay={selectedDay} onSelectDay={setSelectedDay} filterType={filterType}/>
           )}
-          <MonthlyPillarsBar selDate={selDate} content={content}/>
+          {calView !== "kanban" && <MonthlyPillarsBar selDate={selDate} content={content}/>}
         </div>
 
         {!isMobile && (
@@ -8092,6 +8326,15 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
             />
           </div>
         </div>
+      )}
+
+      {/* Idea capture modal */}
+      {showIdeaModal && (
+        <IdeaCaptureModal
+          onClose={() => setShowIdeaModal(false)}
+          onAddToCalendar={addIdeaToCalendar}
+          onAddUnscheduled={(post) => setUnscheduledIdeas(prev => [...prev, post])}
+        />
       )}
 
       {/* Delete confirm modal */}
@@ -8185,7 +8428,7 @@ function MonthlyPillarsBar({ selDate, content }) {
   );
 }
 
-function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay }) {
+function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay, filterType }) {
   const today = todayD;
   const monday = startOfWeek(selDate);
   const days = Array.from({ length: 5 }, (_, i) => addDays(monday, i));
@@ -8193,7 +8436,10 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
     <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:14 }}>
       {days.map(d => {
         const dk = isoDate(d);
-        const posts = content[dk] || [];
+        const allDayPosts = content[dk] || [];
+        const postsWithIdx = filterType
+          ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => p.type === filterType)
+          : allDayPosts.map((p,i) => ({p,i}));
         const isToday = sameDay(d, today);
         const dp = dropProps(dk);
         return (
@@ -8218,7 +8464,7 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
               {isToday && <span style={{ background:T.gold, color:"#fff", fontSize:8.5, fontWeight:800, padding:"3px 7px", borderRadius:3, letterSpacing:"0.1em" }}>TODAY</span>}
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:7, flex:1 }}>
-              {posts.map((p, i) => {
+              {postsWithIdx.map(({p, i}) => {
                 const dgp = dragProps(dk, i);
                 return (
                   <ContentCard key={i} post={p}
@@ -8236,7 +8482,7 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
   );
 }
 
-function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay }) {
+function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay, filterType }) {
   const today = todayD;
   const year = selDate.getFullYear();
   const month = selDate.getMonth();
@@ -8268,7 +8514,10 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
             const inMonth = d.getMonth() === month;
             const isWeekend = di === 5 || di === 6;
             const dk = isoDate(d);
-            const posts = content[dk] || [];
+            const allDayPosts = content[dk] || [];
+            const postsWithIdx = filterType
+              ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => p.type === filterType)
+              : allDayPosts.map((p,i) => ({p,i}));
             const isToday = sameDay(d, today);
             const dp = dropProps(dk);
             return (
@@ -8297,7 +8546,7 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                 </div>
                 {inMonth && !isWeekend && (
                   <>
-                    {posts.map((p, i) => {
+                    {postsWithIdx.map(({p, i}) => {
                       const tc = CONTENT_TYPES[p.type] || CONTENT_TYPES.Post;
                       const dgp = dragProps(dk, i);
                       return (
@@ -8314,6 +8563,10 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                           }}>
                           <span style={{ fontSize:8.5, color:tc.color, fontWeight:800, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>{p.type.toUpperCase()}</span>
                           {p.title ? (p.title.length > 50 ? p.title.slice(0,50) + "…" : p.title) : <span style={{ color:T.faint, fontStyle:"italic", fontWeight:400 }}>(untitled)</span>}
+                          {(() => {
+                            const st = CONTENT_STATUSES.find(s => s.key === (p.status||"idea")) || CONTENT_STATUSES[0];
+                            return <span style={{ display:"inline-block", marginTop:2, padding:"1px 5px", borderRadius:8, background:st.color+"20", color:st.color, fontSize:8, fontWeight:800, letterSpacing:"0.06em" }}>{st.label}</span>;
+                          })()}
                           {p.notes && (
                             <span title={p.notes} style={{ position:"absolute", bottom:2, right:18, fontSize:9, color:tc.color, opacity:0.7 }}>📝</span>
                           )}
