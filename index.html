@@ -1152,7 +1152,71 @@ function PresenceAvatars({ users, myIdentity }) {
   );
 }
 
-// ── SyncButton — Firebase Realtime Database (fixed: photos stripped from sync) ──
+// ── Per-user conflict-free merge helpers ──
+
+// Merge deletedTasks maps; keep highest timestamp per id, purge entries > 14 days old
+function _mergeDeletedTasks(a, b) {
+  const out = { ...(a || {}) };
+  const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  Object.entries(b || {}).forEach(([id, ts]) => { if (!out[id] || ts > out[id]) out[id] = ts; });
+  Object.keys(out).forEach(id => { if (out[id] < cutoff) delete out[id]; });
+  return out;
+}
+
+// Merge two tasksByDate blobs; per task id, newest updatedAt wins; deletedTasks entries override
+function _mergeTasksByDate(tbd_a, tbd_b, del_a, del_b) {
+  const combinedDel = _mergeDeletedTasks(del_a, del_b);
+  const byId = {}; // id → { task, date }
+  [[tbd_a || {}, 'a'], [tbd_b || {}, 'b']].forEach(([tbd, _s]) => {
+    Object.entries(tbd).forEach(([dk, tasks]) => {
+      (tasks || []).forEach(t => {
+        if (!t || t.id == null) return;
+        const ex = byId[t.id];
+        if (!ex || (t.updatedAt || 0) > (ex.task.updatedAt || 0)) byId[t.id] = { task: t, date: dk };
+      });
+    });
+  });
+  const result = {};
+  Object.values(byId).forEach(({ task, date }) => {
+    const delAt = combinedDel[task.id] || 0;
+    if (delAt > 0 && delAt >= (task.updatedAt || 0)) return; // deleted version wins
+    if (!result[date]) result[date] = [];
+    result[date].push(task);
+  });
+  return result;
+}
+
+// Merge schedules: my identity's columns authoritative from mySchedule, other's from theirSchedule
+function _mergeScheduleCols(mySchedule, theirSchedule, myIdentity) {
+  const ms = mySchedule || {}, ts = theirSchedule || {};
+  const dates = new Set([...Object.keys(ms), ...Object.keys(ts)]);
+  const out = {};
+  for (const dk of dates) {
+    const myDay = ms[dk] || {}, theirDay = ts[dk] || {};
+    if (myIdentity === "oloka") {
+      out[dk] = { oloka: myDay.oloka || theirDay.oloka || [], vanja: theirDay.vanja || myDay.vanja || [] };
+    } else {
+      out[dk] = { oloka: theirDay.oloka || myDay.oloka || [], vanja: myDay.vanja || theirDay.vanja || [] };
+    }
+  }
+  return out;
+}
+
+// Produce final merged state: myState contributes my identity's data, theirState contributes the other's
+function _mergeState(myState, theirState, myIdentity) {
+  if (!myState && !theirState) return {};
+  if (!myState) return theirState;
+  if (!theirState) return myState;
+  return {
+    ...myState, // use my state as base (content, uniform, etc.)
+    tasksByDate: _mergeTasksByDate(myState.tasksByDate, theirState.tasksByDate, myState.deletedTasks, theirState.deletedTasks),
+    schedule: _mergeScheduleCols(myState.schedule, theirState.schedule, myIdentity),
+    actualSchedule: _mergeScheduleCols(myState.actualSchedule, theirState.actualSchedule, myIdentity),
+    deletedTasks: _mergeDeletedTasks(myState.deletedTasks, theirState.deletedTasks),
+  };
+}
+
+// ── SyncButton — Firebase Realtime Database (per-user paths, conflict-free) ──
 function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, activeTab, onPresenceChange }) {
   const [open, setOpen]         = useSy(false);
   const [conf, setConf]         = useSy(loadFbConf);
@@ -1163,13 +1227,14 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
   const [errMsg, setErrMsg]     = useSy("");
 
   const dbRef                  = useRy(null);
-  const listenerRef            = useRy(null);
+  const myListenerRef          = useRy(null);   // listener for my own Firebase path
+  const theirListenerRef       = useRy(null);   // listener for the other user's path
   const presListRef            = useRy(null);
   const myPresRef              = useRy(null);
   const writeTimerRef          = useRy(null);
   const pendingState           = useRy(null);
   const localWriteAt           = useRy(0);
-  const localStateChangedAt    = useRy(0);
+  const theirSnapRef           = useRy(null);   // other user's latest Firebase snapshot
   const popupRef               = useRy(null);
   const hasReceivedInitialData = useRy(false); // guard: never write before first server read
 
@@ -1180,18 +1245,20 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  // ── Connect / reconnect when conf changes ──
+  // ── Connect / reconnect when conf or identity changes ──
   useEy(() => {
-    if (listenerRef.current) { listenerRef.current.ref.off("value", listenerRef.current.handler); listenerRef.current = null; }
-    if (presListRef.current)  { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
-    if (myPresRef.current)    { myPresRef.current.remove(); myPresRef.current = null; }
+    if (myListenerRef.current)    { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
+    if (presListRef.current)      { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current)        { myPresRef.current.remove(); myPresRef.current = null; }
+    theirSnapRef.current = null;
     if (!conf || !conf.apiKey || !conf.databaseURL) {
       setStatus("disconnected"); dbRef.current = null;
       if (onPresenceChange) onPresenceChange([]);
       return;
     }
 
-    hasReceivedInitialData.current = false; // reset on every new connection
+    hasReceivedInitialData.current = false;
     setStatus("connecting");
     const db = tryInitFb(conf);
     if (!db) { setStatus("error"); setErrMsg("Could not initialise Firebase. Check your config."); return; }
@@ -1201,68 +1268,70 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
 
     // ── Presence ──
     const identity = myIdentity || "vanja";
+    const otherIdentity = identity === "oloka" ? "vanja" : "oloka";
     const meRef = db.ref(`${FB_PRES_PATH}/${identity}`);
     myPresRef.current = meRef;
     meRef.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:myColor||T.vanja, tab:activeTab||"tasks", online:true, lastSeen:Date.now() });
     meRef.onDisconnect().remove();
-
     const presRef = db.ref(FB_PRES_PATH);
     const presHandler = snap => { if (onPresenceChange) onPresenceChange(Object.values(snap.val() || {})); };
     presRef.on("value", presHandler);
     presListRef.current = { ref:presRef, handler:presHandler };
 
-    // ── State sync ──
-    const stateRef = db.ref(FB_STATE_PATH);
-    const stateHandler = snap => {
+    // ── Per-user state paths (each user writes only to their own slot) ──
+    const myPath    = `${FB_STATE_PATH}/${identity}`;
+    const theirPath = `${FB_STATE_PATH}/${otherIdentity}`;
+
+    // ── MY path: seed if empty; first connect trusts server; echo-suppress own writes ──
+    const myRef = db.ref(myPath);
+    const myHandler = snap => {
       const data = snap.val();
       if (!data) {
-        // Firebase empty — push our state up as seed
+        // My slot is empty — seed it from local state
         if (pendingState.current && dbRef.current) {
           localWriteAt.current = Date.now();
-          dbRef.current.ref(FB_STATE_PATH).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } });
+          dbRef.current.ref(myPath).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } });
         }
         return;
       }
-      if (Date.now() - localWriteAt.current < 2000) return; // ignore our own echo
-
+      if (Date.now() - localWriteAt.current < 2000) return; // suppress our own echo
       const { _meta, ...incoming } = data;
-      const fbUpdatedAt = _meta?.updatedAt || 0;
-
-      // ── First connect: always trust the server ──
-      // Prevents phone bug: old localStorage state → scheduleWrite sets localStateChangedAt=now
-      // → conflict check wrongly thinks local is "newer" → overwrites server with stale data.
       if (!hasReceivedInitialData.current) {
         hasReceivedInitialData.current = true;
-        applyState(incoming);
+        // First connect: server wins for my data; merge with their snapshot if already available
+        applyState(_mergeState(incoming, theirSnapRef.current, identity));
         setLastSync(new Date());
         return;
       }
-
-      // Conflict: local is newer — push ours instead of applying stale remote
-      if (localStateChangedAt.current > fbUpdatedAt + 2000 && pendingState.current) {
-        if (dbRef.current) {
-          clearTimeout(writeTimerRef.current);
-          localWriteAt.current = Date.now();
-          dbRef.current.ref(FB_STATE_PATH)
-            .set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } })
-            .then(() => setLastSync(new Date()))
-            .catch(err => console.error("Firebase write (conflict):", err));
-        }
-        return;
-      }
-
-      applyState(incoming);
+      // Subsequent fire on my path (rare — another device or stale echo past 2 s)
+      applyState(_mergeState(incoming, theirSnapRef.current, identity));
       setLastSync(new Date());
     };
-    stateRef.on("value", stateHandler, err => { setStatus("error"); setErrMsg(err.message || "Firebase error."); });
-    listenerRef.current = { ref:stateRef, handler:stateHandler };
+    myRef.on("value", myHandler, err => { setStatus("error"); setErrMsg(err.message || "Firebase error."); });
+    myListenerRef.current = { ref:myRef, handler:myHandler };
+
+    // ── THEIR path: always merge with my current pending state (preserves in-flight changes) ──
+    const theirRef = db.ref(theirPath);
+    const theirHandler = snap => {
+      const data = snap.val();
+      if (!data) return; // They haven't connected yet — nothing to merge
+      const { _meta, ...incoming } = data;
+      theirSnapRef.current = { ...incoming, _meta };
+      if (!hasReceivedInitialData.current) return; // Wait until we've loaded our own data first
+      // Merge their Firebase state with our current in-memory state (pendingState has latest incl. in-flight changes)
+      applyState(_mergeState(pendingState.current, theirSnapRef.current, identity));
+      setLastSync(new Date());
+    };
+    theirRef.on("value", theirHandler, err => console.warn("[Pronto] Other user path error:", err.message));
+    theirListenerRef.current = { ref:theirRef, handler:theirHandler };
 
     return () => {
-      stateRef.off("value", stateHandler);
+      myRef.off("value", myHandler);
+      theirRef.off("value", theirHandler);
       presRef.off("value", presHandler);
       try { db.ref(".info/connected").off(); } catch(_) {}
     };
-  }, [conf]);
+  }, [conf, myIdentity]);
 
   // Update my presence tab when active tab changes
   useEy(() => {
@@ -1270,37 +1339,25 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     myPresRef.current.update({ tab:activeTab, lastSeen:Date.now() });
   }, [activeTab]);
 
-  // Re-write presence when identity changes (Vanja ↔ Oloka switch)
-  useEy(() => {
-    if (!dbRef.current || !conf) return;
-    if (myPresRef.current) myPresRef.current.remove();
-    const identity = myIdentity || "vanja";
-    const meRef = dbRef.current.ref(`${FB_PRES_PATH}/${identity}`);
-    myPresRef.current = meRef;
-    meRef.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:myColor||T.vanja, tab:activeTab||"tasks", online:true, lastSeen:Date.now() });
-    meRef.onDisconnect().remove();
-  }, [myIdentity]);
-
-  // ── Expose scheduleWrite via syncRef ──
+  // ── Expose scheduleWrite via syncRef — writes ONLY to my own Firebase path ──
   useEy(() => {
     if (!syncRef) return;
     syncRef.current = {
       scheduleWrite(state) {
         pendingState.current = state;
-        localStateChangedAt.current = Date.now();
         if (!dbRef.current) return;
         clearTimeout(writeTimerRef.current);
         writeTimerRef.current = setTimeout(() => {
           const s = pendingState.current;
           if (!s || !dbRef.current) return;
           if (!hasReceivedInitialData.current) return; // never write before first server read
+          const identity = myIdentity || "vanja";
           localWriteAt.current = Date.now();
-          // ← THE KEY FIX: stripForSync removes staff photos before sending
-          dbRef.current.ref(FB_STATE_PATH)
+          dbRef.current.ref(`${FB_STATE_PATH}/${identity}`)
             .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
             .then(() => setLastSync(new Date()))
             .catch(err => console.error("Firebase write:", err));
-        }, 1500); // 1500 ms debounce (was 300 ms) — 5× fewer writes
+        }, 1500);
       }
     };
     return () => clearTimeout(writeTimerRef.current);
@@ -1314,9 +1371,10 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
 
   const disconnect = () => {
     if (!confirm("Disconnect Firebase? The app will keep working locally but changes won't sync.")) return;
-    if (listenerRef.current) { listenerRef.current.ref.off("value", listenerRef.current.handler); listenerRef.current = null; }
-    if (presListRef.current)  { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
-    if (myPresRef.current)    { myPresRef.current.remove(); myPresRef.current = null; }
+    if (myListenerRef.current)    { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
+    if (presListRef.current)      { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current)        { myPresRef.current.remove(); myPresRef.current = null; }
     try { if (dbRef.current) dbRef.current.ref(".info/connected").off(); } catch(_) {}
     dbRef.current = null;
     clearTimeout(writeTimerRef.current);
@@ -11220,6 +11278,7 @@ function App() {
   const [tab, setTab] = useS("tasks");
   const [view, setView] = useS("day");
   const [contentView, setContentView] = useS("week");  // controls Content tab nav & view
+  const [deletedTasks, setDeletedTasks] = useS(() => loadOr("deletedTasks", () => ({})));
   const [tasksByDate, setTasksByDate] = useS(() => {
     const loaded = loadOr("tasksByDate", () => buildTasks());
     // Migration: strip any recurring-template tasks that were auto-injected by old code
@@ -11370,6 +11429,7 @@ function App() {
   const fullState = () => ({
     version: 1,
     savedAt: new Date().toISOString(),
+    deletedTasks,
     tasksByDate, content,
     ideas, suppliers, budget, onboarding, courses, testimonials, photos,
     plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog,
@@ -11449,6 +11509,7 @@ function App() {
   // ── Apply a full state blob (used by Sheet pull) ──
   const applyState = (s) => {
     if (!s) return;
+    if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
     if (s.tasksByDate) setTasksByDate(s.tasksByDate);
     if (s.content) setContent(s.content);
     if (s.ideas) setIdeas(s.ideas);
@@ -11523,12 +11584,13 @@ function App() {
     window.location.reload();
   };
 
+  const _now = () => Date.now();
   const onToggle = (id) => setTasksByDate(prev => {
     const next = { ...prev };
     let taskText = "";
     let wasDone = false;
     for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => {
-      if (t.id === id) { taskText = t.text; wasDone = t.done; return { ...t, done: !t.done }; }
+      if (t.id === id) { taskText = t.text; wasDone = t.done; return { ...t, done: !t.done, updatedAt: _now() }; }
       return t;
     });
     logActivity(todayUser, wasDone ? "unchecked" : "completed", taskText);
@@ -11536,22 +11598,22 @@ function App() {
   });
   const onChangePriority = (id, priority) => setTasksByDate(prev => {
     const next = { ...prev };
-    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, priority } : t);
+    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, priority, updatedAt: _now() } : t);
     return next;
   });
   const onChangeOwner = (id, owner) => setTasksByDate(prev => {
     const next = { ...prev };
-    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, owner } : t);
+    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, owner, updatedAt: _now() } : t);
     return next;
   });
   const onChangeText = (id, text) => setTasksByDate(prev => {
     const next = { ...prev };
-    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, text } : t);
+    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, text, updatedAt: _now() } : t);
     return next;
   });
   const onChangeCategory = (id, category) => setTasksByDate(prev => {
     const next = { ...prev };
-    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, category } : t);
+    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, category, updatedAt: _now() } : t);
     return next;
   });
   const onAdd = (dateKey, data) => {
@@ -11559,17 +11621,17 @@ function App() {
     setTasksByDate(prev => {
       const arr = prev[dateKey] || [];
       const id = Math.max(0, ...Object.values(prev).flat().map(t => t.id)) + 1;
-      return { ...prev, [dateKey]: [...arr, { ...data, id }] };
+      return { ...prev, [dateKey]: [...arr, { ...data, id, updatedAt: _now() }] };
     });
   };
   const onChangeSubtasks = (id, subtasks) => setTasksByDate(prev => {
     const next = { ...prev };
-    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, subtasks } : t);
+    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, subtasks, updatedAt: _now() } : t);
     return next;
   });
   const onChangeNotes = (id, notes) => setTasksByDate(prev => {
     const next = { ...prev };
-    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, notes } : t);
+    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, notes, updatedAt: _now() } : t);
     return next;
   });
   // Drag a task onto another → convert it to a subtask of the target
@@ -11609,12 +11671,16 @@ function App() {
       return next;
     });
   };
-  const onDeleteTask = (dateKey, id) => setTasksByDate(prev => {
-    const arr = (prev[dateKey] || []).filter(t => t.id !== id);
-    const next = { ...prev };
-    if (arr.length === 0) delete next[dateKey]; else next[dateKey] = arr;
-    return next;
-  });
+  const onDeleteTask = (dateKey, id) => {
+    // Record deletion so the merge knows to suppress this task on other devices
+    setDeletedTasks(prev => ({ ...prev, [id]: _now() }));
+    setTasksByDate(prev => {
+      const arr = (prev[dateKey] || []).filter(t => t.id !== id);
+      const next = { ...prev };
+      if (arr.length === 0) delete next[dateKey]; else next[dateKey] = arr;
+      return next;
+    });
+  };
 
   // Move a task to the next weekday (Fri → Mon)
   const onShift = (id, fromKey) => setTasksByDate(prev => {
@@ -11632,7 +11698,7 @@ function App() {
     let nd = addDays(d, 1);
     while (nd.getDay() === 0 || nd.getDay() === 6) nd = addDays(nd, 1);
     const toKey = isoDate(nd);
-    next[toKey] = [...(next[toKey] || []), { ...task, recurring: false }];
+    next[toKey] = [...(next[toKey] || []), { ...task, recurring: false, updatedAt: _now() }];
     return next;
   });
 
@@ -11648,7 +11714,7 @@ function App() {
       });
     }
     if (!task) return prev;
-    next[toKey] = [...(next[toKey] || []), { ...task, recurring: false }];
+    next[toKey] = [...(next[toKey] || []), { ...task, recurring: false, updatedAt: _now() }];
     return next;
   });
 
