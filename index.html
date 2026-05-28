@@ -2147,7 +2147,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} avatars={avatars}
+                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
               />}
               {showOloka && <PersonColumn name="Oloka" role="Content · Photo, Video, Social" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
                 tasks={olokaFiltered} allTasks={olokaAll} dateKey={dateKey}
@@ -2155,7 +2155,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} avatars={avatars}
+                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
               />}
             </div>
           );
@@ -2189,7 +2189,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, selectedTaskId, onSelectTask, avatars }) {
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
@@ -2268,7 +2268,10 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                 onConvertToSubtask={onConvertToSubtask}
                 onChangeNotes={onChangeNotes ? (notes) => onChangeNotes(t.id, notes) : undefined}
                 onDelete={onDelete ? () => onDelete(dateKey, t.id) : undefined}
-                onMoveTask={onMoveTask ? (newDate) => onMoveTask(t.id, dateKey, newDate) : undefined}
+                onMoveTask={onMoveTask ? (newDate) => {
+                  onMoveTask(t.id, dateKey, newDate);
+                  if (onPickDate) onPickDate(new Date(newDate + "T00:00"));
+                } : undefined}
               />
             </div>
           ))}
