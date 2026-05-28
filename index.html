@@ -1581,8 +1581,8 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
               <span style={{ fontSize:9, color:ORANGE, fontWeight:700, letterSpacing:"0.06em" }}>TEAM</span>
             </div>
           ))}
-          {/* User-added recurring tasks */}
-          {recurringTasks.map(rt => (
+          {/* User-added recurring tasks (exclude any that duplicate built-in templates) */}
+          {recurringTasks.filter(rt => !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text)).map(rt => (
             <div key={rt.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
               <OrangeCheckbox done={!!recurringDone[rt.id]} onToggle={() => setRecDone(rt.id, !recurringDone[rt.id])} />
               <span style={{ fontSize:12, color: recurringDone[rt.id] ? T.muted : T.ink, flex:1, textDecoration: recurringDone[rt.id] ? "line-through" : "none" }}>{rt.text}</span>
@@ -5602,12 +5602,14 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     });
   };
 
-  const removeBlock = (owner, taskId, breakId) => {
+  const removeBlock = (owner, taskId, breakId, qeId) => {
     setSchedule(prev => {
       const next = { ...prev };
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
       if (breakId) {
         day[owner] = (day[owner] || []).filter(b => b.breakId !== breakId);
+      } else if (qeId) {
+        day[owner] = (day[owner] || []).filter(b => b.qeId !== qeId);
       } else {
         day[owner] = (day[owner] || []).filter(b => b.taskId !== taskId);
       }
@@ -5616,12 +5618,14 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     });
   };
 
-  const updateBlock = (owner, taskId, patch, breakId) => {
+  const updateBlock = (owner, taskId, patch, breakId, qeId) => {
     setSchedule(prev => {
       const next = { ...prev };
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
       if (breakId) {
         day[owner] = (day[owner] || []).map(b => b.breakId === breakId ? { ...b, ...patch } : b);
+      } else if (qeId) {
+        day[owner] = (day[owner] || []).map(b => b.qeId === qeId ? { ...b, ...patch } : b);
       } else {
         day[owner] = (day[owner] || []).map(b => b.taskId === taskId ? { ...b, ...patch } : b);
       }
@@ -5952,8 +5956,14 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                               </div>
                             </div>
                             {!isScheduled&&(
-                              <button onClick={()=>addBlock(task.owner||"oloka", task.id, 9*60, 30)}
-                                title="Add to 9am"
+                              <button onClick={()=>{
+                                const o=task.owner||"oloka";
+                                const ownerBlocks=daySchedule[o]||[];
+                                const lastEnd=ownerBlocks.reduce((mx,b)=>Math.max(mx,(b.startMin||0)+(b.durationMin||30)),9*60);
+                                const slot=Math.min(lastEnd,(SCHED_END-1)*60);
+                                addBlock(o,task.id,slot,30);
+                              }}
+                                title="Add to next free slot"
                                 style={{ width:20, height:20, borderRadius:4, background:T.surface, border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, padding:0, fontFamily:"inherit" }}
                               >+</button>
                             )}
@@ -6401,6 +6411,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                     onRemove={removeFn} onUpdate={updateFn}
                     onAddActual={addActualBlock} onAddActualBreak={addActualBreakBlock}
                     onRemoveActual={removeActualBlock} onUpdateActual={updateActualBlock}
+                    onAddQuickEvent={isActualCol ? null : addQuickEvent}
                     onOpenEdit={(taskId) => !isActualCol && setSelectedBlock({ owner, taskId, type:"planned", _date: dk })}
                     onClickEmpty={(startMin, durationMin) => setQuickAdd({ owner, startMin, isActual: !!isActualCol, durationMin: durationMin || 30 })}
                   />
@@ -6461,8 +6472,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
           const task = sb.taskId ? tasksByIdRef[sb.taskId] : null;
           const label = sb.isBreak ? sb.breakLabel : (task?.text || sb.qeTitle || "Event");
           const scheme = getBlockScheme(sb, task);
-          const endMin = (sb.startMin||0) + (sb.durationMin||30);
-          const dH = Math.floor((sb.durationMin||30)/60), dM = (sb.durationMin||30) % 60;
+          const endMin = (block?.startMin||0) + (block?.durationMin||30);
+          const dH = Math.floor((block?.durationMin||30)/60), dM = (block?.durationMin||30) % 60;
           const durationStr = dH > 0 ? `${dH}h ${dM > 0 ? dM+"m" : ""}`.trim() : `${dM}m`;
           const todayBlocks2 = [...(daySchedule.vanja||[]).map(b=>({...b,owner:"vanja"})), ...(daySchedule.oloka||[]).map(b=>({...b,owner:"oloka"}))];
           const scheduledCount = todayBlocks2.filter(b=>!b.isBreak&&!b.isQuickEvent).length;
@@ -6478,7 +6489,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:6 }}>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:15, fontWeight:800, color:scheme.text, lineHeight:1.2, marginBottom:4 }}>{label}</div>
-                    <div style={{ fontSize:11, color:scheme.border, fontWeight:700 }}>{fmtTime(sb.startMin||0)} – {fmtTime(endMin)} · {durationStr}</div>
+                    <div style={{ fontSize:11, color:scheme.border, fontWeight:700 }}>{fmtTime(block?.startMin||0)} – {fmtTime(endMin)} · {durationStr}</div>
                   </div>
                   <span style={{ fontSize:9, fontWeight:800, padding:"3px 8px", borderRadius:4, background:scheme.border, color:"#fff", flexShrink:0 }}>Scheduled</span>
                 </div>
@@ -6777,6 +6788,7 @@ function TimeColumn({
   onAdd, onAddBreak, onRemove, onUpdate,
   onAddActual, onAddActualBreak, onRemoveActual, onUpdateActual,
   onOpenEdit, onClickEmpty,
+  onAddQuickEvent,
 }) {
   const colRef = useRh(null);
   const [hoverMin, setHoverMin] = useSh(null);
@@ -6816,10 +6828,30 @@ function TimeColumn({
     if (drag.isBreak) {
       // Drop a break block
       if (actualMode) {
+        if (drag.fromCol === "sched") onRemoveActual(drag.fromOwner, null, drag.breakId);
         onAddActualBreak(owner, drag.breakLabel, startMin, drag.durationMin);
       } else {
+        if (drag.fromCol === "sched") {
+          if (drag.fromOwner === owner) {
+            // Same column: just reposition
+            onUpdate(owner, null, { startMin }, drag.breakId);
+            setDrag(null); setHoverMin(null); return;
+          }
+          onRemove(drag.fromOwner, null, drag.breakId);
+        }
         onAddBreak(owner, drag.breakLabel, startMin, drag.durationMin);
       }
+    } else if (drag.isQuickEvent) {
+      // Drop a quick event block
+      if (drag.fromCol === "sched") {
+        if (drag.fromOwner === owner) {
+          // Same column: just reposition
+          onUpdate(owner, null, { startMin }, null, drag.qeId);
+          setDrag(null); setHoverMin(null); return;
+        }
+        onRemove(drag.fromOwner, null, null, drag.qeId);
+      }
+      if (onAddQuickEvent) onAddQuickEvent(owner, drag.qeTitle, startMin, drag.durationMin || 30);
     } else {
       // Drop a task block
       if (actualMode) {
@@ -6950,7 +6982,7 @@ function TimeColumn({
               onMoveStart={(min) => onUpdate(owner, b.taskId, { startMin: min }, b.breakId)}
               onRemove={() => onRemove(owner, b.taskId, b.breakId)}
               onOpen={() => !b.isBreak && onOpenEdit && onOpenEdit(b.taskId)}
-              onDragStart={() => setDrag({ taskId: b.taskId, breakId: b.breakId, isBreak: b.isBreak, breakLabel: b.breakLabel, durationMin: b.durationMin, fromOwner: owner, fromCol: "sched" })}
+              onDragStart={() => setDrag({ taskId: b.taskId, breakId: b.breakId, isBreak: b.isBreak, breakLabel: b.breakLabel, qeId: b.qeId, isQuickEvent: b.isQuickEvent, qeTitle: b.qeTitle, durationMin: b.durationMin, fromOwner: owner, fromCol: "sched" })}
               onDragEnd={() => setDrag(null)}
             />
           );
@@ -13075,6 +13107,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
   const MENS_ITEMS = [
     { key:"polo_m",        label:"Polos",                       sizes:["S","M","L","XL","2XL","3XL"] },
     { key:"hivis_m",       label:"Hi-vis t-shirt",              sizes:["S","M","L","XL","2XL"] },
+    { key:"hivis_polo_m",  label:"Hi-vis polo",                 sizes:["S","M","L","XL","2XL","3XL"] },
     { key:"ls_orange_m",   label:"Long sleeve orange hi-vis",   sizes:["S","M","L","XL","2XL","3XL"] },
     { key:"jacket_m",      label:"Jackets",                     sizes:["S","M","L","XL","2XL","3XL"] },
     { key:"swanndri",      label:"Swanndri jerseys (Sales)",     sizes:["S","M","L","XL","2XL","3XL"] },
@@ -13117,6 +13150,14 @@ function UniformView({ uniform, setUniform, staff = [] }) {
 
   const Counter = ({ sec, item, size, itemLabel }) => {
     const count = getCount(sec, item, size);
+    const [editing, setEditing] = useU(false);
+    const [inputVal, setInputVal] = useU("");
+    const startEdit = () => { setEditing(true); setInputVal(String(count)); };
+    const commitEdit = () => {
+      const n = parseInt(inputVal, 10);
+      if (!isNaN(n) && n >= 0) adjustCount(sec, item, size, n - count);
+      setEditing(false);
+    };
     return (
       <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
         <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"center" }}>
@@ -13126,11 +13167,22 @@ function UniformView({ uniform, setUniform, staff = [] }) {
             display:"flex", alignItems:"center", justifyContent:"center",
             opacity: count === 0 ? 0.4 : 1,
           }}>−</button>
-          <span style={{
-            minWidth:26, textAlign:"center", fontSize:13, fontWeight:700,
-            color: count === 0 ? T.faint : count <= 2 ? "#EF4444" : T.ink,
-            fontFamily:"'ProximaNova Black', sans-serif",
-          }}>{count}</span>
+          {editing ? (
+            <input autoFocus value={inputVal}
+              onChange={e => setInputVal(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={e => { if(e.key==="Enter") commitEdit(); if(e.key==="Escape") setEditing(false); }}
+              style={{ width:32, textAlign:"center", fontSize:13, fontWeight:700,
+                color:T.ink, background:T.bg, border:`1px solid ${T.oloka}`,
+                borderRadius:3, outline:"none", fontFamily:"'ProximaNova Black', sans-serif", padding:0 }}
+            />
+          ) : (
+            <span onClick={startEdit} title="Click to type a number"
+              style={{ minWidth:26, textAlign:"center", fontSize:13, fontWeight:700,
+                color: count === 0 ? T.faint : count <= 2 ? "#EF4444" : T.ink,
+                fontFamily:"'ProximaNova Black', sans-serif", cursor:"text",
+              }}>{count}</span>
+          )}
           <button onClick={() => adjustCount(sec, item, size, 1)} style={{
             width:20, height:20, borderRadius:4, border:`1px solid ${T.border}`,
             background:T.surface, color:T.muted, cursor:"pointer", fontSize:13, lineHeight:1,
