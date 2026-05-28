@@ -711,18 +711,15 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
               title="Move to another date"
               style={{
                 fontSize:9.5, fontWeight:800, letterSpacing:"0.06em",
-                color: showMove ? accent : T.muted,
-                background:"transparent",
-                border:`1px solid ${showMove ? accent : T.border}`,
-                padding:"2px 7px", borderRadius:3,
+                color:T.muted, background:"transparent",
+                border:`1px solid ${T.border}`, padding:"2px 7px", borderRadius:3,
                 cursor:"pointer", fontFamily:"inherit",
                 display:"inline-flex", alignItems:"center", gap:4,
               }}
               onMouseEnter={e => { e.currentTarget.style.color=accent; e.currentTarget.style.borderColor=accent; }}
-              onMouseLeave={e => { if(!showMove){ e.currentTarget.style.color=T.muted; e.currentTarget.style.borderColor=T.border; } }}
+              onMouseLeave={e => { e.currentTarget.style.color=T.muted; e.currentTarget.style.borderColor=T.border; }}
             >
-              <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="3" width="14" height="12" rx="2"/><path d="M1 7h14M5 1v4M11 1v4"/></svg>
-              Move to Calendar
+              📅 MOVE
             </button>
           )}
         </div>
@@ -1162,15 +1159,16 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
   const [lastSync, setLastSync] = useSy(null);
   const [errMsg, setErrMsg]     = useSy("");
 
-  const dbRef               = useRy(null);
-  const listenerRef         = useRy(null);
-  const presListRef         = useRy(null);
-  const myPresRef           = useRy(null);
-  const writeTimerRef       = useRy(null);
-  const pendingState        = useRy(null);
-  const localWriteAt        = useRy(0);
-  const localStateChangedAt = useRy(0);
-  const popupRef            = useRy(null);
+  const dbRef                  = useRy(null);
+  const listenerRef            = useRy(null);
+  const presListRef            = useRy(null);
+  const myPresRef              = useRy(null);
+  const writeTimerRef          = useRy(null);
+  const pendingState           = useRy(null);
+  const localWriteAt           = useRy(0);
+  const localStateChangedAt    = useRy(0);
+  const popupRef               = useRy(null);
+  const hasReceivedInitialData = useRy(false); // guard: never write before first server read
 
   // Close popup on outside click
   useEy(() => {
@@ -1190,6 +1188,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
       return;
     }
 
+    hasReceivedInitialData.current = false; // reset on every new connection
     setStatus("connecting");
     const db = tryInitFb(conf);
     if (!db) { setStatus("error"); setErrMsg("Could not initialise Firebase. Check your config."); return; }
@@ -1225,6 +1224,16 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
 
       const { _meta, ...incoming } = data;
       const fbUpdatedAt = _meta?.updatedAt || 0;
+
+      // ── First connect: always trust the server, never let stale local state overwrite ──
+      // This prevents the phone bug: app loads old localStorage state → scheduleWrite sets
+      // localStateChangedAt=now → conflict check wrongly thinks local is "newer" → overwrites server.
+      if (!hasReceivedInitialData.current) {
+        hasReceivedInitialData.current = true;
+        applyState(incoming);
+        setLastSync(new Date());
+        return;
+      }
 
       // Conflict: local is newer — push ours instead of applying stale remote
       if (localStateChangedAt.current > fbUpdatedAt + 2000 && pendingState.current) {
@@ -1281,6 +1290,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
         writeTimerRef.current = setTimeout(() => {
           const s = pendingState.current;
           if (!s || !dbRef.current) return;
+          if (!hasReceivedInitialData.current) return; // never write before first server read
           localWriteAt.current = Date.now();
           // ← THE KEY FIX: stripForSync removes staff photos before sending
           dbRef.current.ref(FB_STATE_PATH)
@@ -4547,6 +4557,8 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars, brainDumpItems, setB
   const [processed, setProcessed] = useBd([]);
   const [showSidebar, setShowSidebar] = useBd(false);   // mobile: toggle sidebar
   const [showCapture, setShowCapture] = useBd(true);    // mobile: toggle capture panel
+  const [emailConvertItem, setEmailConvertItem] = useBd(null); // item being converted to email
+  const [emailConvertType, setEmailConvertType] = useBd("campaign"); // campaign | draft | scheduled
   const [winW, setWinW] = useBd(() => window.innerWidth);
   const textareaRef = useRbd(null);
 
@@ -4733,6 +4745,39 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars, brainDumpItems, setB
     </div>
   );
 
+  const handleEmailConvert = (convertType) => {
+    if (!emailConvertItem) return;
+    const statusMap = { campaign:"ideas", draft:"planning", scheduled:"scheduled" };
+    const newEmail = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+      title: emailConvertItem.text,
+      type: "other",
+      status: statusMap[convertType] || "ideas",
+      owner_id: user || "oloka",
+      priority: false,
+      audience: "",
+      target_send_date: null, due_date: null,
+      scheduled_at: null, sent_at: null,
+      started_by: null, started_at: null,
+      last_edited_by: null, last_edited_at: null,
+      approval_status: "not_started",
+      submitted_by: null, submitted_at: null,
+      approved_by: null, approved_at: null,
+      subject_line: "", preview_text: "", content_notes: emailConvertItem.text, cta: "",
+      mailchimp_campaign_name: "", mailchimp_campaign_url: "",
+      open_rate: "", click_rate: "", performance_notes: "",
+      checklist: [],
+      linked_items: [],
+      html_content: "",
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    };
+    // Use window-level emailItems setter if available
+    if (window._addEmailItem) window._addEmailItem(newEmail);
+    markProcessed(emailConvertItem.id);
+    setEmailConvertItem(null);
+    alert("Email created: \"" + newEmail.title + "\"\nSwitch to the Emails tab to see it.");
+  };
+
   // ── MOBILE LAYOUT ──
   if (isMobile) {
     return (
@@ -4802,11 +4847,13 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars, brainDumpItems, setB
                   </div>
                 </div>
               </div>
-              <div style={{ display:"flex", gap:6, marginTop:8, justifyContent:"flex-end" }}>
+              <div style={{ display:"flex", gap:6, marginTop:8, justifyContent:"flex-end", flexWrap:"wrap" }}>
                 {(item.type === "Task" || item.dest === "Tasks") && (
                   <button onClick={() => convertItem(item)}
                     style={{ padding:"5px 10px", background:T.gold+"22", border:"none", borderRadius:4, color:T.gold, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Convert to Task</button>
                 )}
+                <button onClick={() => setEmailConvertItem(item)}
+                  style={{ padding:"5px 10px", background:"#3B82F620", border:"none", borderRadius:4, color:"#3B82F6", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>→ Email</button>
                 <button onClick={() => deleteItem(item.id)}
                   style={{ padding:"5px 10px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Delete</button>
               </div>
@@ -4814,6 +4861,7 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars, brainDumpItems, setB
           ))}
         </div>
       </div>
+      <BrainDumpEmailModal item={emailConvertItem} emailConvertType={emailConvertType} setEmailConvertType={setEmailConvertType} onConfirm={handleEmailConvert} onClose={() => setEmailConvertItem(null)} />
     );
   }
 
@@ -4877,6 +4925,8 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars, brainDumpItems, setB
                   <button onClick={() => convertItem(item)}
                     style={{ padding:"4px 8px", background:T.gold+"22", border:"none", borderRadius:4, color:T.gold, fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Convert</button>
                 )}
+                <button onClick={() => setEmailConvertItem(item)}
+                  style={{ padding:"4px 8px", background:"#3B82F620", border:"none", borderRadius:4, color:"#3B82F6", fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>→ Email</button>
                 <button onClick={() => deleteItem(item.id)}
                   style={{ padding:"4px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
               </div>
@@ -4922,11 +4972,50 @@ function BrainDumpView({ tasksByDate, onAdd, user, avatars, brainDumpItems, setB
           ))}
         </div>
       </div>
+      <BrainDumpEmailModal item={emailConvertItem} emailConvertType={emailConvertType} setEmailConvertType={setEmailConvertType} onConfirm={handleEmailConvert} onClose={() => setEmailConvertItem(null)} />
     </div>
   );
 }
 
 Object.assign(window, { BrainDumpView });
+
+// ─── BrainDumpToEmailModal — appended to BrainDumpView render ─────────────────
+
+function BrainDumpEmailModal({ item, emailConvertType, setEmailConvertType, onConfirm, onClose }) {
+  if (!item) return null;
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:9000, background:"rgba(0,0,0,0.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:12, width:"100%", maxWidth:380, padding:24, boxShadow:"0 24px 60px rgba(0,0,0,0.3)" }}>
+        <h3 style={{ margin:"0 0 6px", fontSize:15, fontWeight:800, color:"#0F1B3A" }}>Convert to Email</h3>
+        <p style={{ fontSize:12, color:"#9AA0AE", marginBottom:16, lineHeight:1.5 }}>"{item.text}"</p>
+        <p style={{ fontSize:11, fontWeight:700, color:"#9AA0AE", letterSpacing:"0.08em", marginBottom:8 }}>EMAIL TYPE</p>
+        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:18 }}>
+          {[
+            { key:"campaign", label:"📣 Campaign", desc:"New email campaign idea" },
+            { key:"draft",    label:"📝 Draft Email", desc:"Start drafting right away" },
+            { key:"scheduled",label:"📅 Scheduled Task", desc:"Add to scheduled pipeline" },
+          ].map(t => (
+            <button key={t.key} onClick={() => setEmailConvertType(t.key)} style={{
+              padding:"10px 14px", border:"1px solid " + (emailConvertType===t.key ? "#0F1B3A" : "#E5E7EB"),
+              borderRadius:8, background: emailConvertType===t.key ? "#0F1B3A" : "#fff",
+              color: emailConvertType===t.key ? "#fff" : "#0F1B3A",
+              cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+            }}>
+              <div style={{ fontSize:12, fontWeight:700 }}>{t.label}</div>
+              <div style={{ fontSize:10, opacity:0.7, marginTop:2 }}>{t.desc}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"9px 0", background:"transparent", border:"1px solid #E5E7EB", borderRadius:6, fontSize:12, fontWeight:700, color:"#9AA0AE", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+          <button onClick={() => onConfirm(emailConvertType)} style={{ flex:2, padding:"9px 0", background:"#0F1B3A", border:"none", borderRadius:6, fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", fontFamily:"inherit" }}>Create Email →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+window.BrainDumpEmailModal = BrainDumpEmailModal;
 
 </script>
 <script type="text/babel">
@@ -7406,15 +7495,6 @@ const { useState: useSc, useEffect: useEc, useRef: useRc, useMemo: useMc } = Rea
 // Mon-first day labels (grid starts on Monday via startOfWeek)
 const CAL_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
-const CONTENT_STATUSES = [
-  { key:"idea",      label:"Idea",      color:"#9AA0AE" },
-  { key:"filming",   label:"Filming",   color:"#F59E0B" },
-  { key:"editing",   label:"Editing",   color:"#8B5CF6" },
-  { key:"ready",     label:"Ready",     color:"#3B82F6" },
-  { key:"scheduled", label:"Scheduled", color:"#0EA5E9" },
-  { key:"posted",    label:"Posted",    color:"#10B981" },
-];
-
 // ── Monthly Pillars: each is a goal to hit per month ──
 const MONTHLY_PILLARS = [
   { id:"pronto-pick", label:"Pronto Pick",       target:1, color:"#DC9F09" },
@@ -7585,6 +7665,9 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
           </button>
         </div>
       </div>
+      {post.imageUrl && !editing && (
+        <img src={post.imageUrl} alt="" style={{ width:"100%", height:70, objectFit:"cover", borderRadius:4, marginBottom:6 }} onError={e => e.target.style.display="none"} />
+      )}
       {editing ? (
         <React.Fragment>
           <textarea autoFocus value={text} onChange={e => setText(e.target.value)}
@@ -7597,7 +7680,10 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
             onKeyDown={e => { if (e.key === "Escape") { setNotesDraft(post.notes || ""); setEditing(false); } if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save(); }}
             rows={2}
             placeholder="Notes (angle, caption, assets needed…)"
-            style={{ width:"100%", border:`1px solid ${T.border}`, borderRadius:4, padding:"6px 8px", fontSize:11, fontFamily:"inherit", color:T.text, outline:"none", resize:"vertical", lineHeight:1.4, fontStyle:"italic" }}
+            style={{ width:"100%", border:`1px solid ${T.border}`, borderRadius:4, padding:"6px 8px", fontSize:11, fontFamily:"inherit", color:T.text, outline:"none", resize:"vertical", lineHeight:1.4, fontStyle:"italic", marginBottom:6 }}
+          />
+          <input value={post.imageUrl||""} onChange={e => onChange({...post, imageUrl: e.target.value})} placeholder="Image URL (optional)…"
+            style={{ width:"100%", border:`1px solid ${T.border}`, borderRadius:4, padding:"5px 8px", fontSize:10.5, fontFamily:"inherit", color:T.text, outline:"none", marginBottom:6 }}
           />
           <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginTop:6 }}>
             <button onClick={(e) => { e.stopPropagation(); setText(post.title); setNotesDraft(post.notes || ""); setEditing(false); }} style={{
@@ -7624,35 +7710,13 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
               paddingLeft:8, borderLeft:`2px solid ${T.border}`,
             }}>{post.notes}</p>
           )}
-          {(() => {
-            const statusKey = post.status || "idea";
-            const st = CONTENT_STATUSES.find(s => s.key === statusKey) || CONTENT_STATUSES[0];
-            return (
-              <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:6 }}>
-                <span style={{
-                  display:"inline-flex", alignItems:"center", gap:4,
-                  padding:"2px 7px", borderRadius:10,
-                  background: st.color + "18",
-                  border:`1px solid ${st.color}44`,
-                  fontSize:9, fontWeight:800, letterSpacing:"0.08em", color:st.color,
-                }}>
-                  <span style={{ width:5, height:5, borderRadius:"50%", background:st.color }}></span>
-                  {st.label.toUpperCase()}
-                </span>
-                <select
-                  value={statusKey}
-                  onClick={e => e.stopPropagation()}
-                  onChange={e => { e.stopPropagation(); onChange({...post, status:e.target.value}); }}
-                  style={{
-                    fontSize:9, border:"none", background:"transparent", color:T.faint,
-                    cursor:"pointer", fontFamily:"inherit", outline:"none", padding:0,
-                  }}
-                >
-                  {CONTENT_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                </select>
-              </div>
-            );
-          })()}
+          {post.approvalStatus && (
+            <div style={{ marginTop:5, display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", background: post.approvalStatus==="approved" ? "#10B98120" : post.approvalStatus==="needs_review" ? "#F59E0B20" : T.surface, border:"1px solid "+(post.approvalStatus==="approved"?"#10B981":post.approvalStatus==="needs_review"?"#F59E0B":T.border), borderRadius:10 }}>
+              <span style={{ fontSize:9.5, fontWeight:700, color: post.approvalStatus==="approved"?"#10B981":post.approvalStatus==="needs_review"?"#F59E0B":T.muted }}>
+                {post.approvalStatus==="approved"?"✓ Approved":post.approvalStatus==="needs_review"?"? Needs Review":post.approvalStatus==="posted"?"📤 Posted":post.approvalStatus}
+              </span>
+            </div>
+          )}
         </React.Fragment>
       )}
     </div>
@@ -7958,158 +8022,34 @@ function ToPostListPanel({ toPostList, setToPostList, selectedDay, onAddToCalend
   );
 }
 
-function IdeaCaptureModal({ onClose, onAddToCalendar, onAddUnscheduled }) {
-  const [title, setTitle] = useSc("");
-  const [type, setType] = useSc("Post");
-  const [date, setDate] = useSc("");
-  const inputRef = useRc(null);
-  useEc(() => { inputRef.current && inputRef.current.focus(); }, []);
-  const submit = () => {
-    if (!title.trim()) return;
-    const post = { title: title.trim(), type, status: "idea" };
-    if (date) {
-      onAddToCalendar(post, date);
-    } else {
-      onAddUnscheduled(post);
-    }
-    onClose();
-  };
-  const tc = CONTENT_TYPES[type] || CONTENT_TYPES.Post;
-  return (
-    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:420, boxShadow:"0 24px 60px rgba(15,27,58,0.35)", borderTop:`4px solid ${tc.color}` }}>
-        <div style={{ padding:"16px 20px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>CAPTURE IDEA</p>
-          <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>&#x00D7;</button>
-        </div>
-        <div style={{ padding:"16px 20px" }}>
-          <label style={{ display:"block", fontSize:9, color:T.muted, fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>TITLE</label>
-          <input ref={inputRef} value={title} onChange={e => setTitle(e.target.value)}
-            onKeyDown={e => { if (e.key==="Enter") submit(); if (e.key==="Escape") onClose(); }}
-            placeholder="Content idea title…"
-            style={{ width:"100%", padding:"8px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:13, fontFamily:"inherit", color:T.ink, fontWeight:600, outline:"none", marginBottom:12, boxSizing:"border-box" }}
-          />
-          <label style={{ display:"block", fontSize:9, color:T.muted, fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>TYPE</label>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:12 }}>
-            {Object.keys(CONTENT_TYPES).map(t => {
-              const c = CONTENT_TYPES[t]; const active = type===t;
-              return (
-                <button key={t} onClick={() => setType(t)} style={{ padding:"3px 8px", borderRadius:3, background:active?c.color:c.soft, color:active?"#fff":c.color, border:`1px solid ${active?c.color:c.color+"33"}`, fontSize:9, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", cursor:"pointer", fontFamily:"inherit" }}>{t}</button>
-              );
-            })}
-          </div>
-          <label style={{ display:"block", fontSize:9, color:T.muted, fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>DATE <span style={{ color:T.faint, fontWeight:600, letterSpacing:0 }}>(optional — leave blank to save as unscheduled)</span></label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            style={{ width:"100%", padding:"8px 10px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, fontFamily:"inherit", color:T.ink, outline:"none", marginBottom:16, boxSizing:"border-box" }}
-          />
-        </div>
-        <div style={{ padding:"12px 20px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"flex-end", gap:8, background:T.surface, borderRadius:"0 0 10px 10px" }}>
-          <button onClick={onClose} style={{ background:"transparent", color:T.muted, border:`1px solid ${T.border}`, borderRadius:4, padding:"7px 14px", fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
-          <button onClick={submit} disabled={!title.trim()} style={{ background:tc.color, color:"#fff", border:"none", borderRadius:4, padding:"7px 16px", fontSize:11, fontWeight:800, letterSpacing:"0.08em", cursor:title.trim()?"pointer":"not-allowed", fontFamily:"inherit", opacity:title.trim()?1:0.5 }}>SAVE IDEA</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ContentKanbanView({ content, onSetContent, filterType }) {
-  const [dragInfo, setDragInfo] = useSc(null); // { dk, idx, post }
-
-  // Flatten all posts across all dates, apply filter
-  const allPosts = useMc(() => {
-    const result = [];
-    for (const dk of Object.keys(content)) {
-      (content[dk] || []).forEach((post, idx) => {
-        if (!filterType || post.type === filterType) {
-          result.push({ dk, idx, post });
-        }
-      });
-    }
-    return result;
-  }, [content, filterType]);
-
-  const getColumnPosts = (statusKey) => allPosts.filter(item => (item.post.status || "idea") === statusKey);
-
-  const handleDragStart = (e, dk, idx, post) => {
-    setDragInfo({ dk, idx, post });
-    try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", `${dk}|${idx}`); } catch(_){}
-  };
-  const handleDragOver = (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = "move"; } catch(_){} };
-  const handleDrop = (e, newStatus) => {
-    e.preventDefault();
-    if (!dragInfo) return;
-    const { dk, idx, post } = dragInfo;
-    if ((post.status || "idea") === newStatus) { setDragInfo(null); return; }
-    onSetContent(prev => {
-      const arr = (prev[dk]||[]).slice();
-      arr[idx] = { ...post, status: newStatus };
-      return { ...prev, [dk]: arr };
-    });
-    setDragInfo(null);
-  };
-
-  const colWidth = Math.floor(100 / CONTENT_STATUSES.length);
-
-  return (
-    <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:12 }}>
-      {CONTENT_STATUSES.map(st => {
-        const colPosts = getColumnPosts(st.key);
-        return (
-          <div key={st.key}
-            onDragOver={handleDragOver}
-            onDrop={e => handleDrop(e, st.key)}
-            style={{ minWidth:200, flex:"1 0 200px", background:T.surface, border:`1px solid ${st.color}33`, borderTop:`3px solid ${st.color}`, borderRadius:8, display:"flex", flexDirection:"column" }}
-          >
-            <div style={{ padding:"10px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ width:8, height:8, borderRadius:"50%", background:st.color, flexShrink:0 }}></span>
-              <span style={{ fontWeight:800, fontSize:11, letterSpacing:"0.1em", color:st.color, textTransform:"uppercase" }}>{st.label}</span>
-              <span style={{ marginLeft:"auto", background:st.color+"20", color:st.color, fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:10 }}>{colPosts.length}</span>
-            </div>
-            <div style={{ flex:1, padding:"8px 8px", display:"flex", flexDirection:"column", gap:7, minHeight:120 }}>
-              {colPosts.map(({ dk, idx, post }) => {
-                const tc = CONTENT_TYPES[post.type] || CONTENT_TYPES.Post;
-                const isDragging = dragInfo && dragInfo.dk===dk && dragInfo.idx===idx;
-                return (
-                  <div key={`${dk}-${idx}`}
-                    draggable
-                    onDragStart={e => handleDragStart(e, dk, idx, post)}
-                    onDragEnd={() => setDragInfo(null)}
-                    style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${tc.color}`, borderRadius:6, padding:"8px 10px", cursor:"grab", opacity:isDragging?0.4:1, transition:"opacity 0.1s" }}
-                  >
-                    <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:4, flexWrap:"wrap" }}>
-                      <span style={{ fontSize:8.5, fontWeight:800, letterSpacing:"0.08em", background:tc.soft, color:tc.color, padding:"2px 6px", borderRadius:3, border:`1px solid ${tc.color}33` }}>{post.type.toUpperCase()}</span>
-                    </div>
-                    {post.imageUrl && <img src={post.imageUrl} alt="" style={{ width:"100%", height:70, objectFit:"cover", borderRadius:4, marginBottom:5 }} />}
-                    <p style={{ fontSize:12, fontWeight:600, color:T.ink, lineHeight:1.35 }}>{post.title || <span style={{ color:T.faint, fontStyle:"italic" }}>(untitled)</span>}</p>
-                    <p style={{ fontSize:9.5, color:T.faint, marginTop:4 }}>{new Date(dk+"T12:00:00").toLocaleDateString("en-NZ",{day:"numeric",month:"short"})}</p>
-                  </div>
-                );
-              })}
-              {colPosts.length === 0 && (
-                <div style={{ textAlign:"center", padding:"20px 8px", color:T.faint, fontSize:11, fontStyle:"italic", border:`2px dashed ${st.color}22`, borderRadius:6 }}>Drop here</div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, view: viewProp, setView: setViewProp }) {
   const [viewLocal, setViewLocal] = useSc("week");
   const view = viewProp !== undefined ? viewProp : viewLocal;
   const setView = setViewProp || setViewLocal;
-  const [calView, setCalView] = useSc("week");
-  const [filterType, setFilterType] = useSc("");
-  const [showIdeaModal, setShowIdeaModal] = useSc(false);
-  const [unscheduledIdeas, setUnscheduledIdeas] = useSc([]);
   const [drag, setDrag] = useSc(null);
   const [hoverDate, setHoverDate] = useSc(null);
   const [selectedDay, setSelectedDay] = useSc(null);
   const [deleteConfirm, setDeleteConfirm] = useSc(null); // {dk, idx, post}
   const [showMobileList, setShowMobileList] = useSc(false);
+  const [filterContentType, setFilterContentType] = useSc("");
+  const [showIdeaModal, setShowIdeaModal] = useSc(false);
+  const [unscheduledIdeas, setUnscheduledIdeas] = useSc(() => {
+    try { return JSON.parse(localStorage.getItem("prontoHQ.unscheduledIdeas") || "[]"); } catch(_) { return []; }
+  });
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+
+  const saveUnscheduled = (listOrFn) => {
+    if (typeof listOrFn === "function") {
+      setUnscheduledIdeas(prev => {
+        const next = listOrFn(prev);
+        try { localStorage.setItem("prontoHQ.unscheduledIdeas", JSON.stringify(next)); } catch(_) {}
+        return next;
+      });
+    } else {
+      setUnscheduledIdeas(listOrFn);
+      try { localStorage.setItem("prontoHQ.unscheduledIdeas", JSON.stringify(listOrFn)); } catch(_) {}
+    }
+  };
 
   const safeToPostList = toPostList || [];
   const safeSetToPostList = setToPostList || (() => {});
@@ -8152,6 +8092,18 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
 
   const addPost = (dk, post) => {
     onSetContent(prev => { const arr = (prev[dk]||[]).slice(); arr.push(post); return {...prev,[dk]:arr}; });
+  };
+
+  const handleIdeaCapture = ({ title, type, date, imageUrl }) => {
+    const post = { title, type, status:"idea", imageUrl: imageUrl || undefined };
+    if (date) {
+      addPost(date, post);
+    } else {
+      // Add to unscheduled ideas
+      const newIdea = { id: Date.now().toString(36), ...post, createdAt: new Date().toISOString() };
+      const next = [...(Array.isArray(unscheduledIdeas) ? unscheduledIdeas : []), newIdea];
+      saveUnscheduled(next);
+    }
   };
   const addToCalendar = (item, dk) => {
     onSetContent(prev => {
@@ -8196,113 +8148,88 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
     }}>{label}</button>
   );
 
-  const addIdeaToCalendar = (post, dk) => {
-    onSetContent(prev => { const arr = (prev[dk]||[]).slice(); arr.push(post); return {...prev,[dk]:arr}; });
-  };
-
-  const FILTER_TYPES = ["", "Reel", "Story", "Photo", "Blog", "Email", "Ad", "YouTube", "TikTok", "Facebook", "LinkedIn"];
-  const FILTER_LABELS = { "":"All", "Reel":"Reel", "Story":"Story", "Photo":"Photo", "Blog":"Blog", "Email":"Email", "Ad":"Ad", "YouTube":"YouTube", "TikTok":"TikTok", "Facebook":"Facebook", "LinkedIn":"LinkedIn" };
-
-  const calViewBtn = (key, label) => (
-    <button key={key} onClick={() => setCalView(key)} style={{
-      padding:"6px 13px", background:calView===key?T.navy:"transparent", color:calView===key?"#fff":T.text,
-      border:"none", fontSize:11, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase",
-      cursor:"pointer", fontFamily:"inherit",
-    }}>{label}</button>
-  );
-
   return (
     <div>
       {/* Header */}
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:14, marginBottom:16 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>
-            {calView==="week" ? `WEEK OF ${startOfWeek(selDate).getDate()} ${MONTHS[startOfWeek(selDate).getMonth()].toUpperCase().slice(0,3)}` : calView==="month" ? `${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}` : "ALL DATES"}
+            {view==="kanban" ? "WORKFLOW VIEW" : view==="week" ? `WEEK OF ${startOfWeek(selDate).getDate()} ${MONTHS[startOfWeek(selDate).getMonth()].toUpperCase().slice(0,3)}` : `${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}`}
           </p>
-          <h1 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>CONTENT CALENDAR</h1>
-          <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Click a calendar date to select it, then use <strong style={{ color:T.ink }}>Add to Calendar</strong> in the To Post List.</p>
+          <h1 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize: isMobile ? 28 : 50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>CONTENT CALENDAR</h1>
+          <p style={{ color:T.muted, fontSize: isMobile ? 11 : 13.5, marginTop:8 }}>
+            {view==="kanban" ? "Drag cards between columns to update status." : "Click a calendar date to select it, then use Add to Calendar."}
+          </p>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-          {isMobile && (
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+          <button onClick={() => setShowIdeaModal(true)} style={{ padding:"7px 14px", background:T.gold, color:"#000", border:"none", borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em" }}>+ Capture Idea</button>
+          {isMobile && view !== "kanban" && (
             <button onClick={() => setShowMobileList(true)} style={{
               padding:"7px 14px", background:T.navy, color:"#fff", border:"none",
               borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
             }}>TO POST LIST ({safeToPostList.length})</button>
           )}
-          <button onClick={() => setShowIdeaModal(true)} style={{
-            padding:"7px 14px", background:"#F59E0B", color:"#fff", border:"none",
-            borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
-          }}>+ Idea</button>
           <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
-            {calViewBtn("week","Week")}
-            {calViewBtn("month","Month")}
-            {calViewBtn("kanban","Kanban")}
+            {viewBtn("week","Week")}
+            {viewBtn("month","Month")}
+            {viewBtn("kanban","Kanban")}
           </div>
         </div>
       </div>
 
-      {/* Unscheduled ideas chips */}
-      {unscheduledIdeas.length > 0 && (
-        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12, padding:"10px 14px", background:"#F59E0B11", border:`1px solid #F59E0B33`, borderRadius:6 }}>
-          <span style={{ fontSize:9.5, fontWeight:800, color:"#F59E0B", letterSpacing:"0.14em", marginRight:4, alignSelf:"center" }}>UNSCHEDULED IDEAS</span>
-          {unscheduledIdeas.map((idea, i) => {
-            const tc = CONTENT_TYPES[idea.type] || CONTENT_TYPES.Post;
-            return (
-              <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"3px 9px 3px 7px", background:tc.soft, border:`1px solid ${tc.color}44`, borderRadius:12, fontSize:10.5, fontWeight:700, color:tc.color }}>
-                <span style={{ width:6, height:6, borderRadius:"50%", background:tc.color }}></span>
-                {idea.title}
-                <button onClick={() => setUnscheduledIdeas(prev => prev.filter((_,j)=>j!==i))} style={{ background:"transparent", border:"none", color:tc.color, cursor:"pointer", padding:0, marginLeft:2, fontSize:12, lineHeight:1, opacity:0.6 }}>&#x00D7;</button>
-              </span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Type filter bar */}
-      <div style={{ display:"flex", gap:5, marginBottom:16, overflowX:"auto", paddingBottom:2 }}>
-        <span style={{ fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.14em", alignSelf:"center", flexShrink:0, marginRight:4 }}>FILTER</span>
-        {FILTER_TYPES.map(ft => (
-          <button key={ft||"all"} onClick={() => setFilterType(ft)} style={{
-            flexShrink:0,
-            padding:"4px 11px", fontSize:10, fontWeight:800, letterSpacing:"0.06em",
-            background: filterType===ft ? T.navy : "transparent",
-            color: filterType===ft ? "#fff" : T.muted,
-            border:`1px solid ${filterType===ft ? T.navy : T.border}`,
-            borderRadius:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap",
-          }}>{FILTER_LABELS[ft]}</button>
-        ))}
-      </div>
-
-      {/* Legend */}
-      <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:20, padding:"10px 14px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6 }}>
-        <span style={{ fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.14em", marginRight:6, alignSelf:"center" }}>TYPES</span>
+      {/* Filter bar */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:14, padding:"8px 14px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, alignItems:"center" }}>
+        <span style={{ fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.14em", alignSelf:"center" }}>FILTER</span>
+        <button onClick={() => setFilterContentType("")} style={{ padding:"3px 10px", background: !filterContentType ? T.navy : "transparent", color: !filterContentType ? "#fff" : T.text, border:"1px solid "+T.border, borderRadius:12, fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>All</button>
         {Object.keys(CONTENT_TYPES).map(t => {
           const tc = CONTENT_TYPES[t];
+          const isActive = filterContentType === t;
           return (
-            <span key={t} style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"3px 9px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:3, fontSize:10.5, fontWeight:700, color:T.text }}>
-              <span style={{ width:8, height:8, borderRadius:2, background:tc.color }}></span>{t}
-            </span>
+            <button key={t} onClick={() => setFilterContentType(isActive ? "" : t)} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"3px 9px", background: isActive ? tc.color+"20" : "transparent", border:"1px solid "+(isActive ? tc.color : T.border), borderRadius:12, fontSize:10, fontWeight:700, color: isActive ? tc.color : T.text, cursor:"pointer", fontFamily:"inherit" }}>
+              <span style={{ width:6, height:6, borderRadius:2, background:tc.color }}></span>{t}
+            </button>
           );
         })}
       </div>
 
+      {/* Unscheduled ideas bank */}
+      {Array.isArray(unscheduledIdeas) && unscheduledIdeas.length > 0 && (
+        <div style={{ marginBottom:14, background:T.surface, border:"1px solid "+T.border, borderRadius:8, padding:"10px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+            <span style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.08em" }}>💡 UNSCHEDULED IDEAS</span>
+            <span style={{ fontSize:9.5, color:T.faint }}>{unscheduledIdeas.length} idea{unscheduledIdeas.length!==1?"s":""}</span>
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {unscheduledIdeas.map(idea => {
+              const tc = CONTENT_TYPES[idea.type] || CONTENT_TYPES.Post;
+              return (
+                <div key={idea.id} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px", background:tc.color+"15", border:"1px solid "+tc.color+"40", borderRadius:20, fontSize:11, color:tc.color, fontWeight:600 }}>
+                  {idea.title}
+                  <button onClick={() => saveUnscheduled(unscheduledIdeas.filter(i => i.id !== idea.id))} style={{ background:"none", border:"none", color:tc.color, cursor:"pointer", padding:"0 0 0 4px", fontSize:13, lineHeight:1 }}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Main layout: calendar + sidebar */}
       <div style={{ display:"flex", gap:20, alignItems:"flex-start" }}>
         <div style={{ flex:1, minWidth:0 }}>
-          {calView==="kanban" ? (
-            <ContentKanbanView content={content} onSetContent={onSetContent} filterType={filterType}/>
-          ) : calView==="week" ? (
+          {view==="kanban" ? (
+            <ContentKanbanView content={content} onSetContent={onSetContent} filterType={filterContentType} />
+          ) : view==="week" ? (
             <ContentWeek selDate={selDate} content={content} todayD={todayD}
               updatePost={updatePost} deletePost={deletePost} addPost={addPost}
               dragProps={dragProps} dropProps={dropProps}
-              selectedDay={selectedDay} onSelectDay={setSelectedDay} filterType={filterType}/>
+              selectedDay={selectedDay} onSelectDay={setSelectedDay}/>
           ) : (
             <ContentMonth selDate={selDate} content={content} todayD={todayD}
               updatePost={updatePost} deletePost={deletePost} addPost={addPost}
               dragProps={dragProps} dropProps={dropProps}
-              selectedDay={selectedDay} onSelectDay={setSelectedDay} filterType={filterType}/>
+              selectedDay={selectedDay} onSelectDay={setSelectedDay}/>
           )}
-          {calView !== "kanban" && <MonthlyPillarsBar selDate={selDate} content={content}/>}
+          <MonthlyPillarsBar selDate={selDate} content={content}/>
         </div>
 
         {!isMobile && (
@@ -8331,15 +8258,6 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
         </div>
       )}
 
-      {/* Idea capture modal */}
-      {showIdeaModal && (
-        <IdeaCaptureModal
-          onClose={() => setShowIdeaModal(false)}
-          onAddToCalendar={addIdeaToCalendar}
-          onAddUnscheduled={(post) => setUnscheduledIdeas(prev => [...prev, post])}
-        />
-      )}
-
       {/* Delete confirm modal */}
       {deleteConfirm && (
         <div onClick={() => setDeleteConfirm(null)} style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
@@ -8365,11 +8283,161 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
           </div>
         </div>
       )}
+
+      {/* Idea capture modal */}
+      {showIdeaModal && <IdeaCaptureModal onSave={handleIdeaCapture} onClose={() => setShowIdeaModal(false)} />}
     </div>
   );
 }
 
 Object.assign(window, { ContentCalendar });
+
+// ─── Content Status System ────────────────────────────────────────────────────
+const CONTENT_STATUSES = [
+  { key:"idea",      label:"Idea",      color:"#9AA0AE" },
+  { key:"filming",   label:"Filming",   color:"#F59E0B" },
+  { key:"editing",   label:"Editing",   color:"#8B5CF6" },
+  { key:"ready",     label:"Ready",     color:"#3B82F6" },
+  { key:"scheduled", label:"Scheduled", color:"#0EA5E9" },
+  { key:"posted",    label:"Posted",    color:"#10B981" },
+];
+
+// ─── ContentKanbanView ────────────────────────────────────────────────────────
+
+function ContentKanbanView({ content, onSetContent, filterType }) {
+  const [dragItem, setDragItem] = useSc(null); // { dk, idx, status }
+  const [hoverStatus, setHoverStatus] = useSc(null);
+
+  // Collect all posts with their date keys
+  const allPosts = [];
+  for (const [dk, posts] of Object.entries(content)) {
+    for (let i = 0; i < posts.length; i++) {
+      allPosts.push({ ...posts[i], _dk: dk, _idx: i });
+    }
+  }
+  // Plus unscheduled (status = idea but no date)
+  const postsByStatus = {};
+  CONTENT_STATUSES.forEach(s => postsByStatus[s.key] = []);
+  allPosts.forEach(p => {
+    if (filterType && p.type !== filterType) return;
+    const st = p.status || "idea";
+    if (postsByStatus[st]) postsByStatus[st].push(p);
+    else postsByStatus["idea"].push(p);
+  });
+
+  const movePostStatus = (dk, idx, newStatus) => {
+    onSetContent(prev => {
+      const arr = (prev[dk]||[]).slice();
+      if (!arr[idx]) return prev;
+      arr[idx] = { ...arr[idx], status: newStatus };
+      return { ...prev, [dk]: arr };
+    });
+  };
+
+  return (
+    <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:8 }}>
+      {CONTENT_STATUSES.map(st => {
+        const posts = postsByStatus[st.key] || [];
+        const isHover = hoverStatus === st.key;
+        return (
+          <div
+            key={st.key}
+            onDragOver={e => { e.preventDefault(); setHoverStatus(st.key); }}
+            onDragLeave={() => { if(hoverStatus===st.key) setHoverStatus(null); }}
+            onDrop={e => {
+              e.preventDefault();
+              if (dragItem) movePostStatus(dragItem._dk, dragItem._idx, st.key);
+              setDragItem(null); setHoverStatus(null);
+            }}
+            style={{
+              flex:"0 0 200px", minWidth:200, background: isHover ? st.color+"18" : T.surface,
+              border:"1px solid " + (isHover ? st.color : T.border), borderRadius:8, padding:"10px 10px 8px",
+              transition:"border-color 0.15s, background 0.15s",
+            }}
+          >
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
+              <div style={{ width:8, height:8, borderRadius:"50%", background:st.color }} />
+              <span style={{ fontSize:10.5, fontWeight:800, color:st.color, letterSpacing:"0.06em" }}>{st.label.toUpperCase()}</span>
+              <span style={{ marginLeft:"auto", fontSize:9.5, fontWeight:700, color:T.muted }}>{posts.length}</span>
+            </div>
+            {posts.map(p => {
+              const tc = CONTENT_TYPES[p.type] || CONTENT_TYPES.Post;
+              return (
+                <div
+                  key={p._dk + "_" + p._idx}
+                  draggable
+                  onDragStart={() => setDragItem(p)}
+                  onDragEnd={() => { setDragItem(null); setHoverStatus(null); }}
+                  style={{ background:T.cardBg, border:"1px solid "+T.border, borderLeft:"3px solid "+tc.color, borderRadius:6, padding:"8px 10px", marginBottom:6, cursor:"grab" }}
+                >
+                  {p.imageUrl && (
+                    <img src={p.imageUrl} alt="" style={{ width:"100%", height:60, objectFit:"cover", borderRadius:4, marginBottom:5 }} onError={e => e.target.style.display="none"} />
+                  )}
+                  <div style={{ fontSize:11.5, fontWeight:700, color:T.heading, marginBottom:4, lineHeight:1.3 }}>{p.title}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
+                    <span style={{ fontSize:9, fontWeight:700, color:tc.color, background:tc.color+"20", padding:"1px 6px", borderRadius:3 }}>{p.type}</span>
+                    {p._dk && <span style={{ fontSize:9, color:T.faint }}>{p._dk}</span>}
+                    {p.approvalStatus && <span style={{ fontSize:9, fontWeight:700, color: p.approvalStatus==="approved"?"#10B981":p.approvalStatus==="needs_review"?"#F59E0B":T.muted, background: p.approvalStatus==="approved"?"#10B98118":p.approvalStatus==="needs_review"?"#F59E0B18":T.surface, padding:"1px 5px", borderRadius:3 }}>{p.approvalStatus==="approved"?"✓ Approved":p.approvalStatus==="needs_review"?"? Review":""}</span>}
+                  </div>
+                </div>
+              );
+            })}
+            {posts.length === 0 && <div style={{ fontSize:10.5, color:T.faint, textAlign:"center", padding:"12px 0", fontStyle:"italic" }}>No items</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── IdeaCaptureModal ─────────────────────────────────────────────────────────
+
+function IdeaCaptureModal({ onSave, onClose }) {
+  const [title, setTitle] = useSc("");
+  const [type, setType] = useSc("Post");
+  const [date, setDate] = useSc("");
+  const [imageUrl, setImageUrl] = useSc("");
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    onSave({ title: title.trim(), type, date: date || null, imageUrl: imageUrl.trim() || undefined });
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:9000, background:"rgba(15,27,58,0.45)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:12, width:"100%", maxWidth:400, padding:24, boxShadow:"0 24px 60px rgba(15,27,58,0.35)" }}>
+        <h3 style={{ margin:"0 0 16px", fontSize:15, fontWeight:800, color:T.heading }}>+ Capture Content Idea</h3>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          <div>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>TITLE *</label>
+            <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => { if(e.key==="Enter") handleSave(); if(e.key==="Escape") onClose(); }}
+              placeholder="What's the idea?" style={{ width:"100%", padding:"8px 10px", background:T.surface, border:"1px solid "+T.border, borderRadius:6, fontSize:13, color:T.text, fontFamily:"inherit" }} />
+          </div>
+          <div>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>TYPE</label>
+            <select value={type} onChange={e => setType(e.target.value)} style={{ width:"100%", padding:"8px 10px", background:T.surface, border:"1px solid "+T.border, borderRadius:6, fontSize:12, color:T.text, fontFamily:"inherit" }}>
+              {Object.keys(CONTENT_TYPES).map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>DATE (optional — leave blank for unscheduled)</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width:"100%", padding:"8px 10px", background:T.surface, border:"1px solid "+T.border, borderRadius:6, fontSize:12, color:T.text, fontFamily:"inherit" }} />
+          </div>
+          <div>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", display:"block", marginBottom:4 }}>IMAGE URL (optional)</label>
+            <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." style={{ width:"100%", padding:"8px 10px", background:T.surface, border:"1px solid "+T.border, borderRadius:6, fontSize:12, color:T.text, fontFamily:"inherit" }} />
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8, marginTop:18 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"9px 0", background:"transparent", border:"1px solid "+T.border, borderRadius:6, fontSize:12, fontWeight:700, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+          <button onClick={handleSave} style={{ flex:2, padding:"9px 0", background:T.navy, border:"none", borderRadius:6, fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", fontFamily:"inherit" }}>Save Idea</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function MonthlyPillarsBar({ selDate, content }) {
   const year = selDate.getFullYear(), month = selDate.getMonth();
@@ -8431,7 +8499,7 @@ function MonthlyPillarsBar({ selDate, content }) {
   );
 }
 
-function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay, filterType }) {
+function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay }) {
   const today = todayD;
   const monday = startOfWeek(selDate);
   const days = Array.from({ length: 5 }, (_, i) => addDays(monday, i));
@@ -8439,10 +8507,7 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
     <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:14 }}>
       {days.map(d => {
         const dk = isoDate(d);
-        const allDayPosts = content[dk] || [];
-        const postsWithIdx = filterType
-          ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => p.type === filterType)
-          : allDayPosts.map((p,i) => ({p,i}));
+        const posts = content[dk] || [];
         const isToday = sameDay(d, today);
         const dp = dropProps(dk);
         return (
@@ -8467,7 +8532,7 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
               {isToday && <span style={{ background:T.gold, color:"#fff", fontSize:8.5, fontWeight:800, padding:"3px 7px", borderRadius:3, letterSpacing:"0.1em" }}>TODAY</span>}
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:7, flex:1 }}>
-              {postsWithIdx.map(({p, i}) => {
+              {posts.map((p, i) => {
                 const dgp = dragProps(dk, i);
                 return (
                   <ContentCard key={i} post={p}
@@ -8485,7 +8550,7 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
   );
 }
 
-function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay, filterType }) {
+function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPost, dragProps, dropProps, selectedDay, onSelectDay }) {
   const today = todayD;
   const year = selDate.getFullYear();
   const month = selDate.getMonth();
@@ -8517,10 +8582,7 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
             const inMonth = d.getMonth() === month;
             const isWeekend = di === 5 || di === 6;
             const dk = isoDate(d);
-            const allDayPosts = content[dk] || [];
-            const postsWithIdx = filterType
-              ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => p.type === filterType)
-              : allDayPosts.map((p,i) => ({p,i}));
+            const posts = content[dk] || [];
             const isToday = sameDay(d, today);
             const dp = dropProps(dk);
             return (
@@ -8549,7 +8611,7 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                 </div>
                 {inMonth && !isWeekend && (
                   <>
-                    {postsWithIdx.map(({p, i}) => {
+                    {posts.map((p, i) => {
                       const tc = CONTENT_TYPES[p.type] || CONTENT_TYPES.Post;
                       const dgp = dragProps(dk, i);
                       return (
@@ -8566,10 +8628,6 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                           }}>
                           <span style={{ fontSize:8.5, color:tc.color, fontWeight:800, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>{p.type.toUpperCase()}</span>
                           {p.title ? (p.title.length > 50 ? p.title.slice(0,50) + "…" : p.title) : <span style={{ color:T.faint, fontStyle:"italic", fontWeight:400 }}>(untitled)</span>}
-                          {(() => {
-                            const st = CONTENT_STATUSES.find(s => s.key === (p.status||"idea")) || CONTENT_STATUSES[0];
-                            return <span style={{ display:"inline-block", marginTop:2, padding:"1px 5px", borderRadius:8, background:st.color+"20", color:st.color, fontSize:8, fontWeight:800, letterSpacing:"0.06em" }}>{st.label}</span>;
-                          })()}
                           {p.notes && (
                             <span title={p.notes} style={{ position:"absolute", bottom:2, right:18, fontSize:9, color:tc.color, opacity:0.7 }}>📝</span>
                           )}
@@ -11258,6 +11316,9 @@ function App() {
   const [emailComments, setEmailComments] = useS(() => loadOr("emailComments", () => []));
   const [emailActivity, setEmailActivity] = useS(() => loadOr("emailActivity", () => []));
   const [emailAttachments, setEmailAttachments] = useS(() => loadOr("emailAttachments", () => []));
+  const [emailTemplates, setEmailTemplates] = useS(() => {
+    try { return JSON.parse(localStorage.getItem("prontoHQ.emailTemplates") || "[]"); } catch(_) { return []; }
+  });
   // Ongoing Jobs — long-running tasks, tickable daily, never auto-removed
   const [ongoingJobs, setOngoingJobs] = useS(() => loadOr("ongoingJobs", () => [
     { id:"oj1", text:"Edit the video of Mark", owner:"oloka" },
@@ -11329,7 +11390,7 @@ function App() {
     contentLabels, videoLabels,
     recurringTasks, ongoingJobs, toBeCompleted,
     uniform, brainDumpItems, toPostList,
-    emailItems, emailComments, emailActivity, emailAttachments,
+    emailItems, emailComments, emailActivity, emailAttachments, emailTemplates,
   });
 
   // Sync chatAs to todayUser when user logs in via TodayPicker
@@ -11347,9 +11408,13 @@ function App() {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments, emailTemplates]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
+  // Expose email item adder so Brain Dump can push items across tabs
+  useE(() => { window._addEmailItem = (item) => setEmailItems(prev => [...prev, item]); }, [setEmailItems]);
+  // Persist emailTemplates to their own localStorage key for instant access
+  useE(() => { try { localStorage.setItem("prontoHQ.emailTemplates", JSON.stringify(emailTemplates)); } catch(_) {} }, [emailTemplates]);
 
   // ── Export current state to a JSON file download ──
   const exportState = () => {
@@ -11423,7 +11488,14 @@ function App() {
     if (s.categories) setCategories(s.categories);
     if (s.postApprovals) setPostApprovals(s.postApprovals);
     if (s.videoEvents) setVideoEvents(s.videoEvents);
-    if (s.visibleTabs) setVisibleTabs(s.visibleTabs);
+    if (s.visibleTabs) {
+      // Migration: always ensure new on:true tabs are present, and removed off:false tabs are absent
+      const restored = s.visibleTabs;
+      const newOnes = DEFAULT_TABS.filter(t => t.on && !restored.includes(t.key)).map(t=>t.key);
+      const removed = DEFAULT_TABS.filter(t => !t.on).map(t=>t.key);
+      const merged = [...restored.filter(k => !removed.includes(k)), ...newOnes];
+      setVisibleTabs(merged);
+    }
     if (s.contentLabels) setContentLabels(s.contentLabels);
     if (s.videoLabels) setVideoLabels(s.videoLabels);
     if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
@@ -11436,6 +11508,7 @@ function App() {
     if (s.emailComments) setEmailComments(s.emailComments);
     if (s.emailActivity) setEmailActivity(s.emailActivity);
     if (s.emailAttachments) setEmailAttachments(s.emailAttachments);
+    if (s.emailTemplates) { setEmailTemplates(s.emailTemplates); try { localStorage.setItem("prontoHQ.emailTemplates", JSON.stringify(s.emailTemplates)); } catch(_) {} }
   };
 
   // ── Export schedule as .ics (for Samsung Calendar / Outlook import) ──
@@ -11976,6 +12049,7 @@ function App() {
           emailComments={emailComments} setEmailComments={setEmailComments}
           emailActivity={emailActivity} setEmailActivity={setEmailActivity}
           emailAttachments={emailAttachments} setEmailAttachments={setEmailAttachments}
+          emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates}
           todayUser={todayUser} staff={staff}
         />}
         {tab === "brain-dump" && <BrainDumpView tasksByDate={tasksByDate} onAdd={onAdd} user={todayUser} avatars={avatars} brainDumpItems={brainDumpItems} setBrainDumpItems={setBrainDumpItems}/>}
@@ -13600,13 +13674,22 @@ const EMAIL_TYPES = [
 ];
 
 const EMAIL_STATUSES = [
-  { key:"ideas",             label:"IDEAS",             col:0 },
-  { key:"planning",          label:"PLANNING",          col:1 },
-  { key:"in_progress",       label:"IN PROGRESS",       col:2 },
-  { key:"awaiting_approval", label:"AWAITING APPROVAL", col:3 },
-  { key:"scheduled",         label:"SCHEDULED",         col:4 },
-  { key:"sent",              label:"SENT",              col:5 },
+  { key:"ideas",             label:"IDEA",             col:0 },
+  { key:"planning",          label:"DRAFTING",         col:1 },
+  { key:"in_progress",       label:"READY FOR REVIEW", col:2 },
+  { key:"awaiting_approval", label:"APPROVED",         col:3 },
+  { key:"scheduled",         label:"SCHEDULED",        col:4 },
+  { key:"sent",              label:"SENT",             col:5 },
 ];
+// Status key migration map (old -> new label displayed)
+const EMAIL_STATUS_DISPLAY = {
+  "ideas": "Idea",
+  "planning": "Drafting",
+  "in_progress": "Ready for Review",
+  "awaiting_approval": "Approved",
+  "scheduled": "Scheduled",
+  "sent": "Sent",
+};
 
 const DEFAULT_CHECKLIST = [
   "Topic / content planned",
@@ -14057,7 +14140,11 @@ function EmailDetailPanel({ item, onClose, onUpdate, onDelete, emailComments, se
   const typeInfo = getTypeInfo(item.type);
   const inputStyle = { width:"100%", padding:"7px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:12.5, color:T.text, fontFamily:"inherit" };
   const labelStyle = { fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.05em", display:"block", marginBottom:3 };
-  const DETAIL_TABS = ["overview","content","approval","notes","activity","attachments"];
+  const [previewMode, setPreviewMode] = useEP("desktop");
+  const [emailHtmlContent, setEmailHtmlContent] = useEP(item.html_content || "");
+  const DETAIL_TABS = ["overview","content","preview","links","approval","notes","activity","attachments"];
+  const [linkedItems, setLinkedItems] = useEP(item.linked_items || []);
+  const [linkSearch, setLinkSearch] = useEP("");
 
   return (
     <div style={{ position:"fixed", top:0, right:0, bottom:0, width: Math.min(600, window.innerWidth), background:T.bg, borderLeft:"1px solid " + T.border, boxShadow:"-8px 0 40px rgba(0,0,0,0.2)", overflowY:"auto", zIndex:7500, display:"flex", flexDirection:"column" }}>
@@ -14201,6 +14288,98 @@ function EmailDetailPanel({ item, onClose, onUpdate, onDelete, emailComments, se
               <textarea value={draft.content_notes||""} onChange={e => setDraft(d => ({...d,content_notes:e.target.value}))} style={{ ...inputStyle, height:100, resize:"vertical" }} placeholder="What's in this email..." />
             </div>
             <button onClick={saveEdit} style={{ padding:"9px", background:T.navy, border:"none", borderRadius:6, fontSize:11, fontWeight:700, color:"#fff", cursor:"pointer" }}>SAVE CONTENT</button>
+          </div>
+        )}
+
+        {activeTab === "preview" && (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+              <span style={{ fontSize:11, fontWeight:700, color:T.muted }}>VIEW:</span>
+              {["desktop","mobile"].map(m => (
+                <button key={m} onClick={() => setPreviewMode(m)} style={{
+                  padding:"5px 14px", borderRadius:5, border:"1px solid " + T.border,
+                  background: previewMode===m ? T.navy : "transparent",
+                  color: previewMode===m ? "#fff" : T.text,
+                  fontSize:11, fontWeight:700, cursor:"pointer",
+                  textTransform:"uppercase", letterSpacing:"0.05em"
+                }}>{m === "desktop" ? "🖥 Desktop (600px)" : "📱 Mobile (375px)"}</button>
+              ))}
+            </div>
+            <div style={{ marginBottom:10 }}>
+              <label style={labelStyle}>PASTE HTML EMAIL CONTENT</label>
+              <textarea
+                value={emailHtmlContent}
+                onChange={e => {
+                  setEmailHtmlContent(e.target.value);
+                  onUpdate({ ...item, html_content: e.target.value, updated_at: new Date().toISOString() });
+                }}
+                style={{ ...inputStyle, height:120, resize:"vertical", fontFamily:"monospace", fontSize:11 }}
+                placeholder="Paste your HTML email code here to preview it..."
+              />
+            </div>
+            <div style={{ border:"1px solid " + T.border, borderRadius:8, overflow:"hidden", background:"#f5f5f5" }}>
+              <div style={{ padding:"8px 12px", background:T.surface, borderBottom:"1px solid " + T.border, fontSize:10, color:T.muted, fontWeight:700 }}>
+                PREVIEW — {previewMode === "desktop" ? "600px" : "375px"} wide
+              </div>
+              <div style={{ padding:16, display:"flex", justifyContent:"center", background:"#e8e8e8", minHeight:200 }}>
+                {emailHtmlContent ? (
+                  <iframe
+                    srcDoc={emailHtmlContent}
+                    style={{ width: previewMode === "desktop" ? 600 : 375, minHeight:400, border:"none", background:"#fff", borderRadius:4, boxShadow:"0 2px 12px rgba(0,0,0,0.15)" }}
+                    sandbox="allow-same-origin"
+                    title="Email Preview"
+                  />
+                ) : (
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:200, color:"#999", fontSize:13 }}>
+                    Paste HTML above to see a preview
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "links" && (
+          <div>
+            <p style={{ fontSize:11, color:T.muted, marginBottom:12, lineHeight:1.5 }}>Link this email to content pieces, campaigns, or approvals to keep everything connected.</p>
+            {linkedItems.length > 0 && (
+              <div style={{ marginBottom:14 }}>
+                <label style={labelStyle}>LINKED ITEMS</label>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:4 }}>
+                  {linkedItems.map((li, i) => (
+                    <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"4px 10px", background:T.navy+"18", border:"1px solid " + T.navy + "30", borderRadius:20, fontSize:11, color:T.navy, fontWeight:600 }}>
+                      {li.type === "content" ? "📅" : li.type === "promotion" ? "🏷" : li.type === "campaign" ? "📣" : "✅"} {li.label}
+                      <button onClick={() => {
+                        const next = linkedItems.filter((_, idx) => idx !== i);
+                        setLinkedItems(next);
+                        onUpdate({ ...item, linked_items: next, updated_at: new Date().toISOString() });
+                      }} style={{ background:"none", border:"none", color:T.navy, cursor:"pointer", padding:"0 0 0 4px", fontSize:13, lineHeight:1 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ marginBottom:12 }}>
+              <label style={labelStyle}>ADD LINK</label>
+              <div style={{ display:"flex", gap:8, marginBottom:6 }}>
+                <input value={linkSearch} onChange={e => setLinkSearch(e.target.value)} style={{ ...inputStyle, flex:1 }} placeholder="Type a label for the linked item..." />
+              </div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {["content","promotion","campaign","approval"].map(linkType => (
+                  <button key={linkType} onClick={() => {
+                    if (!linkSearch.trim()) return;
+                    const newLI = { type: linkType, label: linkSearch.trim(), addedAt: new Date().toISOString() };
+                    const next = [...linkedItems, newLI];
+                    setLinkedItems(next);
+                    onUpdate({ ...item, linked_items: next, updated_at: new Date().toISOString() });
+                    setLinkSearch("");
+                  }} style={{ padding:"6px 14px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:11, fontWeight:700, color:T.text, cursor:"pointer" }}>
+                    + {linkType.charAt(0).toUpperCase() + linkType.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p style={{ fontSize:10, color:T.faint, lineHeight:1.5 }}>Tip: Type a label (e.g. "May Client Email") then click the type of item you're linking to.</p>
           </div>
         )}
 
@@ -14598,9 +14777,270 @@ function TodoThisMonthView({ emailItems, onSelectEmail }) {
 
 // ─── EmailPipelineView (main) ─────────────────────────────────────────────────
 
-function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailComments, emailActivity, setEmailActivity, emailAttachments, setEmailAttachments, todayUser, staff }) {
+// ─── EmailCalendarView ────────────────────────────────────────────────────────
+
+function EmailCalendarView({ emailItems, onUpdate, onSelect, filterStatus, filterOwner, staff }) {
+  const [calDate, setCalDate] = useEP(() => new Date());
+  const [dragId, setDragId] = useEP(null);
+  const [hoverDate, setHoverDate] = useEP(null);
+
+  const year = calDate.getFullYear();
+  const month = calDate.getMonth();
+  const monthName = calDate.toLocaleString("en-AU", { month:"long", year:"numeric" });
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startDow = firstDay.getDay(); // 0=Sun
+  const totalDays = lastDay.getDate();
+
+  // Build calendar grid (Sun-Sat, 6 rows)
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= totalDays; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const todayStr = toISO(new Date());
+
+  const emailsOnDay = (d) => {
+    if (!d) return [];
+    const dk = year + "-" + String(month+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+    return emailItems.filter(e => {
+      const eDate = (e.due_date || e.target_send_date || "").slice(0,10);
+      if (eDate !== dk) return false;
+      if (filterStatus && e.status !== filterStatus) return false;
+      if (filterOwner && e.owner_id !== filterOwner) return false;
+      return true;
+    });
+  };
+
+  const handleDrop = (e, d) => {
+    e.preventDefault();
+    if (!dragId || !d) return;
+    const dk = year + "-" + String(month+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+    const emailToMove = emailItems.find(em => em.id === dragId);
+    if (emailToMove) {
+      onUpdate({ ...emailToMove, due_date: dk, target_send_date: dk, updated_at: new Date().toISOString() });
+    }
+    setDragId(null); setHoverDate(null);
+  };
+
+  const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i+7));
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+        <button onClick={() => setCalDate(new Date(year, month-1, 1))} style={{ padding:"5px 10px", background:T.surface, border:"1px solid "+T.border, borderRadius:5, cursor:"pointer", fontSize:14, color:T.text }}>‹</button>
+        <span style={{ fontSize:15, fontWeight:800, color:T.heading, minWidth:160, textAlign:"center" }}>{monthName}</span>
+        <button onClick={() => setCalDate(new Date(year, month+1, 1))} style={{ padding:"5px 10px", background:T.surface, border:"1px solid "+T.border, borderRadius:5, cursor:"pointer", fontSize:14, color:T.text }}>›</button>
+        <button onClick={() => setCalDate(new Date())} style={{ padding:"5px 12px", background:T.surface, border:"1px solid "+T.border, borderRadius:5, cursor:"pointer", fontSize:11, fontWeight:700, color:T.muted }}>Today</button>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", border:"1px solid "+T.border, borderRadius:8, overflow:"hidden" }}>
+        {DOW.map(d => (
+          <div key={d} style={{ padding:"6px 4px", textAlign:"center", fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.08em", background:T.surface, borderBottom:"1px solid "+T.border }}>{d}</div>
+        ))}
+        {weeks.map((week, wi) => week.map((d, di) => {
+          const dk = d ? (year + "-" + String(month+1).padStart(2,"0") + "-" + String(d).padStart(2,"0")) : null;
+          const isToday = dk === todayStr;
+          const isHover = hoverDate === dk;
+          const emails = emailsOnDay(d);
+          return (
+            <div
+              key={wi*7+di}
+              onDragOver={e => { if(d){ e.preventDefault(); setHoverDate(dk); }}}
+              onDragLeave={() => { if(hoverDate===dk) setHoverDate(null); }}
+              onDrop={e => handleDrop(e, d)}
+              style={{
+                minHeight:90, padding:"4px 4px 2px", borderRight: di<6 ? "1px solid "+T.border : "none",
+                borderBottom: wi < weeks.length-1 ? "1px solid "+T.border : "none",
+                background: isHover ? T.navy+"10" : d ? T.cardBg : T.surface,
+                verticalAlign:"top", position:"relative",
+              }}
+            >
+              {d && (
+                <>
+                  <div style={{ fontSize:11, fontWeight: isToday ? 800 : 500, color: isToday ? T.navy : T.muted, marginBottom:3, textAlign:"right", paddingRight:2 }}>
+                    {isToday ? <span style={{ background:T.navy, color:"#fff", borderRadius:"50%", width:18, height:18, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:10 }}>{d}</span> : d}
+                  </div>
+                  {emails.slice(0,3).map(em => {
+                    const ti = getTypeInfo(em.type);
+                    return (
+                      <div
+                        key={em.id}
+                        draggable
+                        onDragStart={() => setDragId(em.id)}
+                        onDragEnd={() => { setDragId(null); setHoverDate(null); }}
+                        onClick={() => onSelect(em)}
+                        style={{ background:ti.color+"20", border:"1px solid "+ti.color+"50", borderRadius:3, padding:"2px 5px", marginBottom:2, fontSize:9.5, color:ti.color, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
+                        title={em.title}
+                      >{em.title}</div>
+                    );
+                  })}
+                  {emails.length > 3 && <div style={{ fontSize:9, color:T.muted, paddingLeft:2 }}>+{emails.length-3} more</div>}
+                </>
+              )}
+            </div>
+          );
+        }))}
+      </div>
+    </div>
+  );
+}
+
+// ─── EmailTemplatesPanel ──────────────────────────────────────────────────────
+
+function EmailTemplatesPanel({ emailTemplates, setEmailTemplates, onUseTemplate }) {
+  const [newTitle, setNewTitle] = useEP("");
+  const [newContent, setNewContent] = useEP("");
+  const [showAdd, setShowAdd] = useEP(false);
+
+  const saveTemplate = () => {
+    if (!newTitle.trim()) return;
+    const t = { id: mkId(), title: newTitle.trim(), content: newContent, createdAt: new Date().toISOString() };
+    setEmailTemplates(prev => [...prev, t]);
+    setNewTitle(""); setNewContent(""); setShowAdd(false);
+  };
+
+  const deleteTemplate = (id) => setEmailTemplates(prev => prev.filter(t => t.id !== id));
+
+  return (
+    <div style={{ padding:"16px 14px" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+        <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.07em" }}>TEMPLATES</p>
+        <button onClick={() => setShowAdd(v => !v)} style={{ fontSize:10, fontWeight:700, padding:"3px 8px", background:T.navy, border:"none", borderRadius:4, color:"#fff", cursor:"pointer" }}>+ New</button>
+      </div>
+      {showAdd && (
+        <div style={{ marginBottom:12, background:T.surface, borderRadius:7, padding:10, border:"1px solid "+T.border }}>
+          <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Template name..." style={{ width:"100%", marginBottom:6, padding:"6px 8px", background:T.cardBg, border:"1px solid "+T.border, borderRadius:5, fontSize:11.5, color:T.text, fontFamily:"inherit" }} />
+          <textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="Paste HTML or notes for this template..." style={{ width:"100%", height:70, padding:"6px 8px", background:T.cardBg, border:"1px solid "+T.border, borderRadius:5, fontSize:11, color:T.text, fontFamily:"monospace", resize:"none" }} />
+          <div style={{ display:"flex", gap:6, marginTop:7 }}>
+            <button onClick={() => setShowAdd(false)} style={{ flex:1, padding:"5px 0", background:"transparent", border:"1px solid "+T.border, borderRadius:4, fontSize:10, color:T.muted, cursor:"pointer" }}>Cancel</button>
+            <button onClick={saveTemplate} style={{ flex:2, padding:"5px 0", background:T.navy, border:"none", borderRadius:4, fontSize:10, fontWeight:700, color:"#fff", cursor:"pointer" }}>Save Template</button>
+          </div>
+        </div>
+      )}
+      {emailTemplates.length === 0 && !showAdd && (
+        <p style={{ fontSize:11, color:T.faint, textAlign:"center", padding:"12px 0" }}>No templates yet.<br/>Save a template to reuse it when creating emails.</p>
+      )}
+      {emailTemplates.map(t => (
+        <div key={t.id} style={{ background:T.surface, borderRadius:6, padding:"8px 10px", marginBottom:7, border:"1px solid "+T.border }}>
+          <div style={{ fontSize:11.5, fontWeight:700, color:T.heading, marginBottom:5 }}>{t.title}</div>
+          {t.content && <div style={{ fontSize:10, color:T.muted, marginBottom:6, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.content.slice(0,60)}...</div>}
+          <div style={{ display:"flex", gap:5 }}>
+            <button onClick={() => onUseTemplate(t)} style={{ flex:1, padding:"4px 0", background:T.navy, border:"none", borderRadius:4, fontSize:9.5, fontWeight:700, color:"#fff", cursor:"pointer" }}>Use</button>
+            <button onClick={() => deleteTemplate(t.id)} style={{ padding:"4px 8px", background:"transparent", border:"1px solid "+T.border, borderRadius:4, fontSize:9.5, color:T.muted, cursor:"pointer" }}>✕</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── EmailAnalyticsView ───────────────────────────────────────────────────────
+
+function EmailAnalyticsView({ emailItems }) {
+  const sentEmails = emailItems.filter(e => e.status === "sent" && (e.open_rate || e.click_rate));
+
+  const avg = (arr, field) => {
+    const vals = arr.map(e => parseFloat(e[field]||"0")).filter(v => !isNaN(v) && v > 0);
+    if (!vals.length) return null;
+    return (vals.reduce((a,b) => a+b, 0) / vals.length).toFixed(1);
+  };
+
+  const avgOpen = avg(sentEmails, "open_rate");
+  const avgClick = avg(sentEmails, "click_rate");
+
+  const topByOpen = [...sentEmails].sort((a,b) => parseFloat(b.open_rate||0) - parseFloat(a.open_rate||0)).slice(0,5);
+  const typeStats = {};
+  sentEmails.forEach(e => {
+    if (!typeStats[e.type]) typeStats[e.type] = { count:0, opens:[], clicks:[] };
+    typeStats[e.type].count++;
+    if (e.open_rate) typeStats[e.type].opens.push(parseFloat(e.open_rate)||0);
+    if (e.click_rate) typeStats[e.type].clicks.push(parseFloat(e.click_rate)||0);
+  });
+
+  const metricCard = (label, value, icon, color) => (
+    <div style={{ background:T.cardBg, border:"1px solid "+T.border, borderRadius:8, padding:"14px 16px", flex:1 }}>
+      <div style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.07em", marginBottom:6 }}>{label}</div>
+      <div style={{ fontSize:28, fontWeight:800, color: color || T.heading }}>{value !== null ? value + "%" : "—"}</div>
+      <div style={{ fontSize:10, color:T.muted, marginTop:2 }}>{icon}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <p style={{ fontSize:16, fontWeight:800, color:T.heading, marginBottom:14 }}>EMAIL ANALYTICS</p>
+      {sentEmails.length === 0 ? (
+        <div style={{ background:T.surface, borderRadius:8, padding:24, textAlign:"center" }}>
+          <div style={{ fontSize:32, marginBottom:10 }}>📊</div>
+          <p style={{ fontSize:13, fontWeight:600, color:T.muted }}>No analytics data yet</p>
+          <p style={{ fontSize:11, color:T.faint, marginTop:4 }}>Mark emails as Sent and enter open/click rates in the Approval tab to see analytics here.</p>
+        </div>
+      ) : (
+        <>
+          <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>
+            {metricCard("AVG OPEN RATE", avgOpen, "📬 Based on " + sentEmails.length + " sent emails", "#10B981")}
+            {metricCard("AVG CLICK RATE", avgClick, "🖱 Across all campaigns", "#3B82F6")}
+            {metricCard("EMAILS TRACKED", sentEmails.length, "📋 With performance data", T.navy)}
+          </div>
+          <div style={{ marginBottom:18 }}>
+            <p style={{ fontSize:11, fontWeight:800, color:T.muted, letterSpacing:"0.06em", marginBottom:10 }}>TOP PERFORMING BY OPEN RATE</p>
+            {topByOpen.map(e => {
+              const ti = getTypeInfo(e.type);
+              const openVal = parseFloat(e.open_rate||0);
+              return (
+                <div key={e.id} style={{ background:T.cardBg, border:"1px solid "+T.border, borderRadius:7, padding:"10px 14px", marginBottom:8 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
+                    <div style={{ fontSize:12.5, fontWeight:700, color:T.heading, flex:1, marginRight:8 }}>{e.title}</div>
+                    <div style={{ fontSize:14, fontWeight:800, color:"#10B981" }}>{e.open_rate}%</div>
+                  </div>
+                  <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                    <span style={{ fontSize:9.5, color:ti.color, fontWeight:700, background:ti.color+"20", padding:"2px 7px", borderRadius:3 }}>{ti.label}</span>
+                    {e.click_rate && <span style={{ fontSize:10, color:T.muted }}>CTR: {e.click_rate}%</span>}
+                    {e.subject_line && <span style={{ fontSize:10, color:T.faint, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>"{e.subject_line}"</span>}
+                  </div>
+                  <div style={{ marginTop:6, height:4, background:T.border, borderRadius:2, overflow:"hidden" }}>
+                    <div style={{ width: Math.min(openVal,100)+"%", height:"100%", background:"#10B981", borderRadius:2 }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {Object.keys(typeStats).length > 1 && (
+            <div>
+              <p style={{ fontSize:11, fontWeight:800, color:T.muted, letterSpacing:"0.06em", marginBottom:10 }}>BY EMAIL TYPE</p>
+              {Object.entries(typeStats).map(([typeKey, stats]) => {
+                const ti = getTypeInfo(typeKey);
+                const avgO = stats.opens.length ? (stats.opens.reduce((a,b)=>a+b,0)/stats.opens.length).toFixed(1) : null;
+                const avgC = stats.clicks.length ? (stats.clicks.reduce((a,b)=>a+b,0)/stats.clicks.length).toFixed(1) : null;
+                return (
+                  <div key={typeKey} style={{ background:T.cardBg, border:"1px solid "+T.border, borderRadius:7, padding:"10px 14px", marginBottom:8, display:"flex", alignItems:"center", gap:12 }}>
+                    <div style={{ width:10, height:10, borderRadius:"50%", background:ti.color, flexShrink:0 }} />
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:11.5, fontWeight:700, color:T.heading }}>{ti.label}</div>
+                      <div style={{ fontSize:10, color:T.muted }}>{stats.count} email{stats.count!==1?"s":""}</div>
+                    </div>
+                    {avgO && <div style={{ textAlign:"center" }}><div style={{ fontSize:14, fontWeight:800, color:"#10B981" }}>{avgO}%</div><div style={{ fontSize:9, color:T.muted }}>open</div></div>}
+                    {avgC && <div style={{ textAlign:"center" }}><div style={{ fontSize:14, fontWeight:800, color:"#3B82F6" }}>{avgC}%</div><div style={{ fontSize:9, color:T.muted }}>click</div></div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── EmailPipelineView (main) ─────────────────────────────────────────────────
+
+function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailComments, emailActivity, setEmailActivity, emailAttachments, setEmailAttachments, emailTemplates, setEmailTemplates, todayUser, staff }) {
   const [sidebarView, setSidebarView] = useEP("pipeline");
   const [filterType, setFilterType] = useEP("");
+  const [filterStatus, setFilterStatus] = useEP("");
+  const [filterOwner, setFilterOwner] = useEP("");
   const [selectedEmail, setSelectedEmail] = useEP(null);
   const [showNewModal, setShowNewModal] = useEP(false);
   const [newEmailDefaultStatus, setNewEmailDefaultStatus] = useEP("ideas");
@@ -14633,16 +15073,22 @@ function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailC
   const EMAIL_TYPE_FILTERS = [{ key:"", label:"All Types" }, ...EMAIL_TYPES];
 
   const SIDEBAR_ITEMS = [
-    { key:"pipeline", label:"Email Pipeline", icon:"&#128203;" },
-    { key:"todo",     label:"To Do This Month", icon:"&#128197;" },
-    { key:"all",      label:"All Emails", icon:"&#128231;" },
-    { key:"sent",     label:"Sent Archive", icon:"&#9989;" },
+    { key:"pipeline",   label:"Kanban Pipeline",   icon:"&#128203;" },
+    { key:"calendar",   label:"Email Calendar",     icon:"&#128197;" },
+    { key:"analytics",  label:"Analytics",          icon:"&#128200;" },
+    { key:"todo",       label:"To Do This Month",   icon:"&#9989;" },
+    { key:"all",        label:"All Emails",         icon:"&#128231;" },
+    { key:"sent",       label:"Sent Archive",       icon:"&#10004;" },
   ];
+
+  const safeTpl = emailTemplates || [];
+  const setSafeTpl = setEmailTemplates || (() => {});
 
   return (
     <div style={{ display:"flex", height:"calc(100vh - 110px)", overflow:"hidden" }}>
-      <div style={{ width:200, flexShrink:0, background:T.cardBg, borderRight:"1px solid " + T.border, padding:"16px 0", display:"flex", flexDirection:"column", overflowY:"auto" }}>
-        <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.07em", padding:"0 14px 10px" }}>EMAILS</p>
+      {/* LEFT SIDEBAR */}
+      <div style={{ width:210, flexShrink:0, background:T.cardBg, borderRight:"1px solid " + T.border, display:"flex", flexDirection:"column", overflowY:"auto" }}>
+        <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.07em", padding:"16px 14px 10px" }}>EMAILS</p>
         {SIDEBAR_ITEMS.map(s => (
           <button key={s.key} onClick={() => setSidebarView(s.key)} style={{
             display:"flex", alignItems:"center", gap:8, width:"100%", padding:"8px 14px",
@@ -14663,7 +15109,18 @@ function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailC
             </div>
           ))}
         </div>
-        <div style={{ margin:"8px 10px 0", background:T.surface, borderRadius:8, padding:"10px 10px 8px", border:"1px solid " + T.border }}>
+        {/* Templates section */}
+        <EmailTemplatesPanel
+          emailTemplates={safeTpl}
+          setEmailTemplates={setSafeTpl}
+          onUseTemplate={(tpl) => {
+            setNewEmailDefaultStatus("ideas");
+            setShowNewModal(true);
+            // Store template for NewEmailModal to pick up
+            window._pendingEmailTemplate = tpl;
+          }}
+        />
+        <div style={{ margin:"8px 10px 8px", background:T.surface, borderRadius:8, padding:"10px 10px 8px", border:"1px solid " + T.border }}>
           <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
             <span style={{ fontSize:16 }}>&#129671;</span>
             <span style={{ fontSize:11, fontWeight:800, color:T.heading }}>Mailchimp</span>
@@ -14685,6 +15142,7 @@ function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailC
         </div>
       </div>
 
+      {/* MAIN CONTENT */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
         <div style={{ padding:"14px 20px 12px", borderBottom:"1px solid " + T.border, display:"flex", alignItems:"center", gap:10, flexShrink:0, flexWrap:"wrap" }}>
           <div style={{ flex:1 }}>
@@ -14695,6 +15153,19 @@ function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailC
             <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ padding:"6px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:11, fontWeight:700, color:T.text, cursor:"pointer" }}>
               {EMAIL_TYPE_FILTERS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
+            {sidebarView === "calendar" && (
+              <>
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding:"6px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:11, fontWeight:700, color:T.text, cursor:"pointer" }}>
+                  <option value="">All Statuses</option>
+                  {EMAIL_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+                <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)} style={{ padding:"6px 10px", background:T.surface, border:"1px solid " + T.border, borderRadius:6, fontSize:11, fontWeight:700, color:T.text, cursor:"pointer" }}>
+                  <option value="">All Team</option>
+                  <option value="oloka">Oloka</option>
+                  <option value="vanja">Vanja</option>
+                </select>
+              </>
+            )}
             <button onClick={() => handleAddEmail("ideas")} style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", background:T.navy, border:"none", borderRadius:7, fontSize:12, fontWeight:800, color:"#fff", cursor:"pointer", letterSpacing:"0.03em" }}>
               + New Email
             </button>
@@ -14719,6 +15190,17 @@ function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailC
               <MonthlyEmailTracker emailItems={emailItems} />
             </div>
           )}
+          {sidebarView === "calendar" && (
+            <EmailCalendarView
+              emailItems={emailItems}
+              onUpdate={handleUpdateEmail}
+              onSelect={setSelectedEmail}
+              filterStatus={filterStatus}
+              filterOwner={filterOwner}
+              staff={staff}
+            />
+          )}
+          {sidebarView === "analytics" && <EmailAnalyticsView emailItems={emailItems} />}
           {sidebarView === "todo" && <TodoThisMonthView emailItems={emailItems} onSelectEmail={setSelectedEmail} />}
           {sidebarView === "all" && <AllEmailsView emailItems={emailItems} onSelectEmail={setSelectedEmail} />}
           {sidebarView === "sent" && <SentArchiveView emailItems={emailItems} />}
@@ -14746,7 +15228,7 @@ function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailC
 
       {showNewModal && (
         <NewEmailModal
-          onClose={() => setShowNewModal(false)}
+          onClose={() => { setShowNewModal(false); window._pendingEmailTemplate = null; }}
           onSave={handleSaveEmail}
           defaultStatus={newEmailDefaultStatus}
           todayUser={todayUser}
