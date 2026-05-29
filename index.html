@@ -779,17 +779,26 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
         <NoteThread task={task} onChangeNotes={onChangeNotes} />
       </div>
     )}
-    {showMove && onMoveTask && (
-      <input type="date" autoFocus defaultValue={dateKey}
-        style={{ fontSize:11, padding:"5px 8px", border:`1px solid ${accent}`, borderRadius:5, background:T.surface, color:T.ink, fontFamily:"inherit", outline:"none", margin:"4px 8px 8px", display:"block", width:"calc(100% - 16px)", boxSizing:"border-box" }}
-        onBlur={() => setShowMove(false)}
-        onChange={e => {
-          const val = e.target.value;
-          if (val && val !== dateKey) onMoveTask(val);
-          setShowMove(false);
-        }}
-      />
-    )}
+    {showMove && onMoveTask && (() => {
+      // Use a ref so the → button can read the current value without onChange race
+      const dateRef = React.createRef();
+      const doMove = () => {
+        const val = dateRef.current?.value;
+        if (val && val !== dateKey) onMoveTask(val);
+        setShowMove(false);
+      };
+      return (
+        <div style={{ display:"flex", gap:4, margin:"4px 8px 8px", alignItems:"center" }}>
+          <input type="date" autoFocus defaultValue={dateKey} ref={dateRef}
+            style={{ flex:1, fontSize:11, padding:"5px 8px", border:`1px solid ${accent}`, borderRadius:5, background:T.surface, color:T.ink, fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
+            onKeyDown={e => { if (e.key === "Enter") doMove(); if (e.key === "Escape") setShowMove(false); }}
+            onBlur={() => setTimeout(() => setShowMove(false), 150)}
+          />
+          <button onMouseDown={e => { e.preventDefault(); doMove(); }}
+            style={{ padding:"4px 8px", background:accent, color:"#fff", border:"none", borderRadius:4, cursor:"pointer", fontSize:13, fontWeight:800, fontFamily:"inherit", flexShrink:0 }}>→</button>
+        </div>
+      );
+    })()}
     </div>
   );
 }
@@ -7901,35 +7910,36 @@ function AddPostForm({ onAdd, defaultType = "Post" }) {
   );
 }
 
-function ToPostListPanel({ toPostList, setToPostList, selectedDay, onAddToCalendar, isMobile, open, onClose }) {
-  const [filterType, setFilterType] = useSc("All");
+function IdeasSidePanel({ toPostList, setToPostList, dayNotes, setDayNotes, onIdeaDragStart, onIdeaDragEnd, isMobile, onClose }) {
   const [addingNew, setAddingNew] = useSc(false);
   const [newTitle, setNewTitle] = useSc("");
   const [newType, setNewType] = useSc("Post");
-  const [justAdded, setJustAdded] = useSc(null);
+  const [statusFilter, setStatusFilter] = useSc("all");
 
-  const types = ["All", ...Object.keys(CONTENT_TYPES)];
-  const filtered = toPostList.filter(p => filterType === "All" || p.type === filterType);
+  const safeList = toPostList || [];
+  const filtered = statusFilter === "all" ? safeList : safeList.filter(p => (p.status || "idea") === statusFilter);
 
   const addToList = () => {
     if (!newTitle.trim()) return;
-    const item = { id: Date.now() + "_" + Math.random().toString(36).slice(2,6), title: newTitle.trim(), type: newType, createdAt: new Date().toISOString() };
+    const item = { id: Date.now() + "_" + Math.random().toString(36).slice(2,6), title: newTitle.trim(), type: newType, status: "idea", createdAt: new Date().toISOString() };
     setToPostList(prev => [item, ...prev]);
     setNewTitle(""); setAddingNew(false);
   };
 
   const removeFromList = (id) => setToPostList(prev => prev.filter(p => p.id !== id));
 
-  const handleAddToCalendar = (item) => {
-    if (!selectedDay) return;
-    onAddToCalendar(item, selectedDay);
-    setJustAdded(item.id);
-    setTimeout(() => setJustAdded(null), 1500);
+  const cycleStatus = (id) => {
+    const keys = IDEA_STATUSES.map(s => s.key);
+    setToPostList(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const cur = keys.indexOf(p.status || "idea");
+      return { ...p, status: keys[(cur + 1) % keys.length] };
+    }));
   };
 
-  const panel = (
+  return (
     <div style={{
-      width: isMobile ? "100%" : 340, flexShrink:0,
+      width: isMobile ? "100%" : 260, flexShrink:0,
       background:T.cardBg, border:`1px solid ${T.border}`,
       borderRadius:8, display:"flex", flexDirection:"column",
       maxHeight: isMobile ? "80vh" : "calc(100vh - 180px)",
@@ -7942,120 +7952,105 @@ function ToPostListPanel({ toPostList, setToPostList, selectedDay, onAddToCalend
       boxShadow: isMobile ? "0 -8px 32px rgba(15,27,58,0.2)" : "none",
     }}>
       {/* Header */}
-      <div style={{ padding:"14px 16px", borderBottom:`1px solid ${T.border}`, background:T.surface, borderRadius:"8px 8px 0 0" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.04em" }}>TO POST LIST</p>
-            <span style={{ background:T.navy, color:"#fff", fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:10, letterSpacing:"0.06em" }}>{toPostList.length}</span>
+      <div style={{ padding:"12px 14px", borderBottom:`1px solid ${T.border}`, background:T.surface, borderRadius:"8px 8px 0 0" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.06em" }}>&#x1F4A1; IDEAS</p>
+            <span style={{ background:T.navy, color:"#fff", fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:10 }}>{safeList.length}</span>
           </div>
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             <button onClick={() => setAddingNew(v => !v)} style={{
-              padding:"4px 10px", background: addingNew ? T.navy : "transparent",
+              padding:"3px 9px", background: addingNew ? T.navy : "transparent",
               border:`1px solid ${addingNew ? T.navy : T.border}`,
               borderRadius:4, color: addingNew ? "#fff" : T.muted,
-              fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+              fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
             }}>+ ADD</button>
             {isMobile && <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>&#x00D7;</button>}
           </div>
         </div>
 
-        {/* Selected date indicator */}
-        <div style={{
-          padding:"6px 10px", borderRadius:5,
-          background: selectedDay ? "#E4F7EF" : T.surface2,
-          border:`1px solid ${selectedDay ? "#0E9F6E33" : T.border}`,
-        }}>
-          {selectedDay ? (
-            <p style={{ fontSize:11, color:"#0E9F6E", fontWeight:700 }}>
-              &#x1F4C5; Adding to: <strong>{new Date(selectedDay + "T12:00:00").toLocaleDateString("en-NZ", { weekday:"short", day:"numeric", month:"short" })}</strong>
-            </p>
-          ) : (
-            <p style={{ fontSize:11, color:T.muted, fontWeight:600 }}>Click a calendar date to select it</p>
-          )}
-        </div>
+        <p style={{ fontSize:9.5, color:T.faint, marginBottom:8, lineHeight:1.4 }}>Drag a card onto a calendar date to schedule it</p>
 
         {/* Add new form */}
         {addingNew && (
-          <div style={{ marginTop:10, padding:"10px", background:T.surface2, borderRadius:6, border:`1px solid ${T.border}` }}>
+          <div style={{ marginBottom:8, padding:"8px", background:T.surface2, borderRadius:5, border:`1px solid ${T.border}` }}>
             <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
               onKeyDown={e => { if(e.key==="Enter") addToList(); if(e.key==="Escape") setAddingNew(false); }}
-              autoFocus placeholder="Post title&#x2026;"
-              style={{ width:"100%", background:"transparent", border:"none", color:T.ink, fontSize:12, outline:"none", marginBottom:8, fontFamily:"inherit", boxSizing:"border-box" }}
+              autoFocus placeholder="Content idea&#x2026;"
+              style={{ width:"100%", background:"transparent", border:"none", color:T.ink, fontSize:11.5, outline:"none", marginBottom:6, fontFamily:"inherit", boxSizing:"border-box" }}
             />
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            <div style={{ display:"flex", gap:5, alignItems:"center" }}>
               <select value={newType} onChange={e => setNewType(e.target.value)} style={{
                 flex:1, background:T.cardBg, border:`1px solid ${T.border}`, color:T.text,
-                borderRadius:4, fontSize:10, padding:"4px 6px", fontFamily:"inherit",
+                borderRadius:3, fontSize:9.5, padding:"3px 5px", fontFamily:"inherit",
               }}>
                 {Object.keys(CONTENT_TYPES).map(t => <option key={t}>{t}</option>)}
               </select>
-              <button onClick={addToList} style={{ padding:"4px 12px", background:T.navy, color:"#fff", border:"none", borderRadius:4, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>SAVE</button>
-              <button onClick={() => setAddingNew(false)} style={{ padding:"4px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:4, fontSize:10, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>&#x2715;</button>
+              <button onClick={addToList} style={{ padding:"3px 10px", background:T.navy, color:"#fff", border:"none", borderRadius:3, fontSize:9.5, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>SAVE</button>
+              <button onClick={() => setAddingNew(false)} style={{ padding:"3px 7px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:3, fontSize:10, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>&#x2715;</button>
             </div>
           </div>
         )}
 
-        {/* Type filter */}
-        <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginTop:8 }}>
-          {types.map(t => (
-            <button key={t} onClick={() => setFilterType(t)} style={{
-              padding:"2px 8px", fontSize:9.5, fontWeight:800, letterSpacing:"0.05em",
-              background: filterType===t ? T.navy : "transparent",
-              color: filterType===t ? "#fff" : T.muted,
-              border:`1px solid ${filterType===t ? T.navy : T.border}`,
+        {/* Status filter tabs */}
+        <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+          <button onClick={() => setStatusFilter("all")} style={{
+            padding:"2px 7px", fontSize:9, fontWeight:800, letterSpacing:"0.05em",
+            background: statusFilter==="all" ? T.navy : "transparent",
+            color: statusFilter==="all" ? "#fff" : T.muted,
+            border:`1px solid ${statusFilter==="all" ? T.navy : T.border}`,
+            borderRadius:3, cursor:"pointer", fontFamily:"inherit",
+          }}>ALL</button>
+          {IDEA_STATUSES.map(st => (
+            <button key={st.key} onClick={() => setStatusFilter(st.key)} style={{
+              padding:"2px 7px", fontSize:9, fontWeight:800, letterSpacing:"0.05em",
+              background: statusFilter===st.key ? st.color : "transparent",
+              color: statusFilter===st.key ? "#fff" : T.muted,
+              border:`1px solid ${statusFilter===st.key ? st.color : T.border}`,
               borderRadius:3, cursor:"pointer", fontFamily:"inherit",
-            }}>{t.toUpperCase()}</button>
+            }}>{st.label.toUpperCase()}</button>
           ))}
         </div>
       </div>
 
-      {/* List */}
-      <div style={{ flex:1, overflowY:"auto", padding:"8px 0" }}>
+      {/* Ideas list */}
+      <div style={{ flex:1, overflowY:"auto", padding:"4px 0" }}>
         {filtered.length === 0 ? (
-          <div style={{ padding:"24px 16px", textAlign:"center" }}>
-            <p style={{ color:T.muted, fontSize:12, marginBottom:6 }}>{toPostList.length === 0 ? "No posts yet" : "No posts match this filter"}</p>
-            <p style={{ color:T.faint, fontSize:11 }}>Click <strong>+ ADD</strong> to create a post ready to schedule</p>
+          <div style={{ padding:"20px 14px", textAlign:"center" }}>
+            <p style={{ color:T.muted, fontSize:11, marginBottom:4 }}>{safeList.length === 0 ? "No ideas yet" : "Nothing in this stage"}</p>
+            <p style={{ color:T.faint, fontSize:10 }}>Click <strong>+ ADD</strong> to capture an idea</p>
           </div>
         ) : filtered.map(item => {
           const tc = CONTENT_TYPES[item.type] || CONTENT_TYPES.Post;
-          const isAdded = justAdded === item.id;
+          const st = IDEA_STATUSES.find(s => s.key === (item.status || "idea")) || IDEA_STATUSES[0];
           return (
-            <div key={item.id} style={{
-              padding:"10px 14px",
-              borderBottom:`1px solid ${T.border}`,
-              background: isAdded ? "#E4F7EF" : "transparent",
-              transition:"background 0.3s",
-              display:"flex", flexDirection:"column", gap:6,
-            }}>
-              <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
-                <span style={{
-                  marginTop:2, flexShrink:0, fontSize:8.5, fontWeight:800, letterSpacing:"0.08em",
-                  background:tc.soft, color:tc.color, padding:"2px 6px", borderRadius:3,
-                  border:`1px solid ${tc.color}33`,
-                }}>{item.type.toUpperCase()}</span>
-                <p style={{ flex:1, fontSize:12, fontWeight:600, color:T.ink, lineHeight:1.35, wordBreak:"break-word" }}>{item.title}</p>
-                <button onClick={() => removeFromList(item.id)} title="Remove from list" style={{
-                  flexShrink:0, background:"transparent", border:"none", color:T.faint,
-                  cursor:"pointer", fontSize:14, padding:0, lineHeight:1,
-                }} onMouseEnter={e => e.currentTarget.style.color=T.urgent} onMouseLeave={e => e.currentTarget.style.color=T.faint}>&#x00D7;</button>
-              </div>
-              {item.createdAt && (
-                <p style={{ fontSize:10, color:T.faint }}>
-                  {new Date(item.createdAt).toLocaleDateString("en-NZ", { day:"numeric", month:"short", year:"numeric" })}
-                </p>
-              )}
-              <button onClick={() => handleAddToCalendar(item)} disabled={!selectedDay} style={{
-                padding:"5px 10px",
-                background: isAdded ? "#0E9F6E" : selectedDay ? T.navy : T.surface2,
-                color: selectedDay ? "#fff" : T.muted,
-                border:"none", borderRadius:4,
-                fontSize:10, fontWeight:800, letterSpacing:"0.06em",
-                cursor: selectedDay ? "pointer" : "not-allowed",
-                fontFamily:"inherit", transition:"background 0.2s",
-                opacity: selectedDay ? 1 : 0.6,
+            <div key={item.id}
+              draggable
+              onDragStart={e => { try { e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain", item.id); } catch(_){} onIdeaDragStart(item); }}
+              onDragEnd={() => onIdeaDragEnd()}
+              style={{
+                padding:"9px 12px",
+                borderBottom:`1px solid ${T.border}`,
+                display:"flex", flexDirection:"column", gap:5,
+                cursor:"grab", userSelect:"none",
+                borderLeft:`3px solid ${tc.color}`,
               }}>
-                {isAdded ? "&#x2713; ADDED!" : "ADD TO CALENDAR"}
-              </button>
+              <div style={{ display:"flex", alignItems:"flex-start", gap:6 }}>
+                <span style={{
+                  flexShrink:0, fontSize:8, fontWeight:800, letterSpacing:"0.07em",
+                  background:tc.soft, color:tc.color, padding:"2px 5px", borderRadius:3,
+                  border:`1px solid ${tc.color}33`, marginTop:1,
+                }}>{item.type.toUpperCase()}</span>
+                <p style={{ flex:1, fontSize:11.5, fontWeight:600, color:T.ink, lineHeight:1.3, wordBreak:"break-word" }}>{item.title}</p>
+                <button onClick={e => { e.stopPropagation(); removeFromList(item.id); }} title="Remove"
+                  style={{ flexShrink:0, background:"transparent", border:"none", color:T.faint, cursor:"pointer", fontSize:13, padding:0, lineHeight:1 }}
+                  onMouseEnter={e => e.currentTarget.style.color=T.urgent} onMouseLeave={e => e.currentTarget.style.color=T.faint}>&#x00D7;</button>
+              </div>
+              <button onClick={() => cycleStatus(item.id)} title="Click to advance stage" style={{
+                alignSelf:"flex-start", padding:"2px 8px", borderRadius:3, border:"none",
+                background: st.color+"22", color:st.color, fontSize:9, fontWeight:800,
+                letterSpacing:"0.07em", cursor:"pointer", fontFamily:"inherit",
+              }}>{st.label.toUpperCase()} &#x203A;</button>
             </div>
           );
         })}
@@ -8118,91 +8113,153 @@ function IdeaCaptureModal({ onClose, onAddToCalendar, onAddUnscheduled }) {
   );
 }
 
-function ContentKanbanView({ content, onSetContent, filterType }) {
-  const [dragInfo, setDragInfo] = useSc(null); // { dk, idx, post }
+// Kanban columns for the ideas board (no "posted" — that's the calendar's job)
+const IDEA_STATUSES = [
+  { key:"idea",     label:"Ideas",    color:"#9AA0AE" },
+  { key:"filming",  label:"Filming",  color:"#F59E0B" },
+  { key:"editing",  label:"Editing",  color:"#8B5CF6" },
+  { key:"ready",    label:"Ready",    color:"#3B82F6" },
+  { key:"scheduled",label:"Scheduled",color:"#10B981" },
+];
 
-  // Flatten all posts across all dates, apply filter
-  const allPosts = useMc(() => {
-    const result = [];
-    for (const dk of Object.keys(content)) {
-      (content[dk] || []).forEach((post, idx) => {
-        if (!filterType || post.type === filterType) {
-          result.push({ dk, idx, post });
-        }
-      });
-    }
-    return result;
-  }, [content, filterType]);
+function ContentKanbanView({ toPostList, setToPostList, onSetContent, filterType, dayNotes, setDayNotes }) {
+  const [dragId, setDragId] = useSc(null);
+  const [scheduleFor, setScheduleFor] = useSc(null); // { id } — which card has date picker open
+  const [scheduleDate, setScheduleDate] = useSc("");
 
-  const getColumnPosts = (statusKey) => allPosts.filter(item => (item.post.status || "idea") === statusKey);
+  const filtered = useMc(() =>
+    (toPostList || []).filter(p => !filterType || p.type === filterType),
+    [toPostList, filterType]
+  );
+  const getCol = (st) => filtered.filter(p => (p.status || "idea") === st);
 
-  const handleDragStart = (e, dk, idx, post) => {
-    setDragInfo({ dk, idx, post });
-    try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", `${dk}|${idx}`); } catch(_){}
+  // Auto-tick recurring tasks when scheduling
+  const tickRecurringForDate = (post, dk) => {
+    if (!setDayNotes || !dk) return;
+    setDayNotes(prev => {
+      const day = (prev || {})[dk] || {};
+      const rd = { ...(day.recurringDone || {}), __socialpost__: true };
+      const title = (post.title || "").toLowerCase();
+      if (title.includes("casual"))          rd["__stories_casual__"]  = true;
+      if (title.includes("machine hire"))    rd["__stories_hire__"]    = true;
+      if (title.includes("machine for sale")) rd["__stories_forsale__"] = true;
+      return { ...(prev || {}), [dk]: { ...day, recurringDone: rd } };
+    });
+  };
+
+  const scheduleIdea = (item) => {
+    if (!scheduleDate) return;
+    // Add to content calendar
+    onSetContent(prev => {
+      const arr = (prev[scheduleDate] || []).slice();
+      arr.push({ title: item.title, type: item.type, notes: item.notes || "", status: "scheduled" });
+      return { ...prev, [scheduleDate]: arr };
+    });
+    // Mark as scheduled in toPostList
+    setToPostList(prev => prev.map(p => p.id === item.id
+      ? { ...p, status: "scheduled", scheduledDate: scheduleDate }
+      : p
+    ));
+    // Tick recurring task for that date
+    tickRecurringForDate(item, scheduleDate);
+    setScheduleFor(null);
+    setScheduleDate("");
+  };
+
+  const handleDragStart = (e, id) => {
+    setDragId(id);
+    try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); } catch(_){}
   };
   const handleDragOver = (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = "move"; } catch(_){} };
   const handleDrop = (e, newStatus) => {
     e.preventDefault();
-    if (!dragInfo) return;
-    const { dk, idx, post } = dragInfo;
-    if ((post.status || "idea") === newStatus) { setDragInfo(null); return; }
-    onSetContent(prev => {
-      const arr = (prev[dk]||[]).slice();
-      arr[idx] = { ...post, status: newStatus };
-      return { ...prev, [dk]: arr };
-    });
-    setDragInfo(null);
+    if (!dragId) return;
+    setToPostList(prev => prev.map(p => p.id === dragId ? { ...p, status: newStatus } : p));
+    setDragId(null);
   };
 
-  const colWidth = Math.floor(100 / CONTENT_STATUSES.length);
+  const removeIdea = (id) => setToPostList(prev => prev.filter(p => p.id !== id));
 
   return (
-    <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:12 }}>
-      {CONTENT_STATUSES.map(st => {
-        const colPosts = getColumnPosts(st.key);
-        return (
-          <div key={st.key}
-            onDragOver={handleDragOver}
-            onDrop={e => handleDrop(e, st.key)}
-            style={{ minWidth:200, flex:"1 0 200px", background:T.surface, border:`1px solid ${st.color}33`, borderTop:`3px solid ${st.color}`, borderRadius:8, display:"flex", flexDirection:"column" }}
-          >
-            <div style={{ padding:"10px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ width:8, height:8, borderRadius:"50%", background:st.color, flexShrink:0 }}></span>
-              <span style={{ fontWeight:800, fontSize:11, letterSpacing:"0.1em", color:st.color, textTransform:"uppercase" }}>{st.label}</span>
-              <span style={{ marginLeft:"auto", background:st.color+"20", color:st.color, fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:10 }}>{colPosts.length}</span>
-            </div>
-            <div style={{ flex:1, padding:"8px 8px", display:"flex", flexDirection:"column", gap:7, minHeight:120 }}>
-              {colPosts.map(({ dk, idx, post }) => {
-                const tc = CONTENT_TYPES[post.type] || CONTENT_TYPES.Post;
-                const isDragging = dragInfo && dragInfo.dk===dk && dragInfo.idx===idx;
-                return (
-                  <div key={`${dk}-${idx}`}
-                    draggable
-                    onDragStart={e => handleDragStart(e, dk, idx, post)}
-                    onDragEnd={() => setDragInfo(null)}
-                    style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${tc.color}`, borderRadius:6, padding:"8px 10px", cursor:"grab", opacity:isDragging?0.4:1, transition:"opacity 0.1s" }}
-                  >
-                    <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:4, flexWrap:"wrap" }}>
-                      <span style={{ fontSize:8.5, fontWeight:800, letterSpacing:"0.08em", background:tc.soft, color:tc.color, padding:"2px 6px", borderRadius:3, border:`1px solid ${tc.color}33` }}>{post.type.toUpperCase()}</span>
+    <div>
+      <p style={{ fontSize:10, color:T.muted, marginBottom:10 }}>
+        Ideas board — drag cards between stages. Hit <strong>→ Calendar</strong> to schedule an idea on a specific date.
+      </p>
+      <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:12 }}>
+        {IDEA_STATUSES.map(st => {
+          const colItems = getCol(st.key);
+          return (
+            <div key={st.key}
+              onDragOver={handleDragOver}
+              onDrop={e => handleDrop(e, st.key)}
+              style={{ minWidth:210, flex:"1 0 210px", background:T.surface, border:`1px solid ${st.color}33`, borderTop:`3px solid ${st.color}`, borderRadius:8, display:"flex", flexDirection:"column" }}
+            >
+              <div style={{ padding:"10px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ width:8, height:8, borderRadius:"50%", background:st.color, flexShrink:0 }}></span>
+                <span style={{ fontWeight:800, fontSize:11, letterSpacing:"0.1em", color:st.color, textTransform:"uppercase" }}>{st.label}</span>
+                <span style={{ marginLeft:"auto", background:st.color+"20", color:st.color, fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:10 }}>{colItems.length}</span>
+              </div>
+              <div style={{ flex:1, padding:"8px", display:"flex", flexDirection:"column", gap:7, minHeight:120 }}>
+                {colItems.map(item => {
+                  const tc = CONTENT_TYPES[item.type] || CONTENT_TYPES.Post;
+                  const isDragging = dragId === item.id;
+                  const isScheduling = scheduleFor?.id === item.id;
+                  const isScheduled = item.status === "scheduled";
+                  return (
+                    <div key={item.id}
+                      draggable={!isScheduling}
+                      onDragStart={e => handleDragStart(e, item.id)}
+                      onDragEnd={() => setDragId(null)}
+                      style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${tc.color}`, borderRadius:6, padding:"8px 10px", opacity:isDragging?0.4:1, transition:"opacity 0.1s" }}
+                    >
+                      <div style={{ display:"flex", alignItems:"flex-start", gap:5, marginBottom:5 }}>
+                        <span style={{ fontSize:8, fontWeight:800, letterSpacing:"0.08em", background:tc.soft, color:tc.color, padding:"2px 5px", borderRadius:3, flexShrink:0, marginTop:1 }}>{item.type.toUpperCase()}</span>
+                        <p style={{ flex:1, fontSize:11.5, fontWeight:600, color: isScheduled ? T.muted : T.ink, lineHeight:1.3, textDecoration: isScheduled ? "line-through" : "none" }}>
+                          {item.title || <span style={{ color:T.faint, fontStyle:"italic" }}>(untitled)</span>}
+                        </p>
+                        <button onClick={() => removeIdea(item.id)} title="Remove idea"
+                          style={{ flexShrink:0, background:"transparent", border:"none", color:T.faint, cursor:"pointer", fontSize:13, padding:0, lineHeight:1 }}>×</button>
+                      </div>
+                      {isScheduled && item.scheduledDate && (
+                        <p style={{ fontSize:9, color:"#10B981", fontWeight:700, marginBottom:4 }}>
+                          ✓ Scheduled {new Date(item.scheduledDate+"T12:00:00").toLocaleDateString("en-NZ",{day:"numeric",month:"short"})}
+                        </p>
+                      )}
+                      {!isScheduled && (
+                        isScheduling ? (
+                          <div style={{ display:"flex", gap:4, alignItems:"center", marginTop:4 }}>
+                            <input type="date" autoFocus value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
+                              onKeyDown={e => { if(e.key==="Enter") scheduleIdea(item); if(e.key==="Escape") { setScheduleFor(null); setScheduleDate(""); } }}
+                              style={{ flex:1, fontSize:10, padding:"3px 6px", border:`1px solid ${tc.color}`, borderRadius:4, fontFamily:"inherit", color:T.ink, background:T.bg }}
+                            />
+                            <button onMouseDown={e => { e.preventDefault(); scheduleIdea(item); }}
+                              style={{ padding:"3px 7px", background:tc.color, color:"#fff", border:"none", borderRadius:3, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>→</button>
+                            <button onClick={() => { setScheduleFor(null); setScheduleDate(""); }}
+                              style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:13, padding:0 }}>×</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setScheduleFor(item); setScheduleDate(""); }}
+                            style={{ fontSize:9, fontWeight:800, letterSpacing:"0.06em", color:T.navy, background:T.surface2, border:`1px solid ${T.border}`, borderRadius:3, padding:"2px 7px", cursor:"pointer", fontFamily:"inherit", marginTop:4 }}>
+                            → Calendar
+                          </button>
+                        )
+                      )}
                     </div>
-                    {post.imageUrl && <img src={post.imageUrl} alt="" style={{ width:"100%", height:70, objectFit:"cover", borderRadius:4, marginBottom:5 }} />}
-                    <p style={{ fontSize:12, fontWeight:600, color:T.ink, lineHeight:1.35 }}>{post.title || <span style={{ color:T.faint, fontStyle:"italic" }}>(untitled)</span>}</p>
-                    <p style={{ fontSize:9.5, color:T.faint, marginTop:4 }}>{new Date(dk+"T12:00:00").toLocaleDateString("en-NZ",{day:"numeric",month:"short"})}</p>
-                  </div>
-                );
-              })}
-              {colPosts.length === 0 && (
-                <div style={{ textAlign:"center", padding:"20px 8px", color:T.faint, fontSize:11, fontStyle:"italic", border:`2px dashed ${st.color}22`, borderRadius:6 }}>Drop here</div>
-              )}
+                  );
+                })}
+                {colItems.length === 0 && (
+                  <div style={{ textAlign:"center", padding:"20px 8px", color:T.faint, fontSize:11, fontStyle:"italic", border:`2px dashed ${st.color}22`, borderRadius:6 }}>Drop here</div>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, view: viewProp, setView: setViewProp }) {
+function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, dayNotes, setDayNotes, view: viewProp, setView: setViewProp }) {
   const [viewLocal, setViewLocal] = useSc("week");
   const view = viewProp !== undefined ? viewProp : viewLocal;
   const setView = setViewProp || setViewLocal;
@@ -8211,10 +8268,12 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
   const [showIdeaModal, setShowIdeaModal] = useSc(false);
   const [unscheduledIdeas, setUnscheduledIdeas] = useSc([]);
   const [drag, setDrag] = useSc(null);
+  const [ideaDrag, setIdeaDrag] = useSc(null); // idea being dragged from panel
   const [hoverDate, setHoverDate] = useSc(null);
   const [selectedDay, setSelectedDay] = useSc(null);
   const [deleteConfirm, setDeleteConfirm] = useSc(null); // {dk, idx, post}
   const [showMobileList, setShowMobileList] = useSc(false);
+  const [showIdeasPanel, setShowIdeasPanel] = useSc(true);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
   const safeToPostList = toPostList || [];
@@ -8287,9 +8346,14 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
 
   const handleDragStart = (e, dk, idx) => { setDrag({ fromDate:dk, fromIdx:idx }); try { e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",`${dk}|${idx}`); } catch(_){} };
   const handleDragEnd = () => { setDrag(null); setHoverDate(null); };
-  const handleDragOver = (e, dk) => { if (!drag) return; e.preventDefault(); try { e.dataTransfer.dropEffect="move"; } catch(_){} if (hoverDate!==dk) setHoverDate(dk); };
+  const handleDragOver = (e, dk) => { if (!drag && !ideaDrag) return; e.preventDefault(); try { e.dataTransfer.dropEffect="move"; } catch(_){} if (hoverDate!==dk) setHoverDate(dk); };
   const handleDragLeave = (e, dk) => { if (hoverDate===dk) setHoverDate(null); };
-  const handleDrop = (e, dk) => { e.preventDefault(); if (!drag) return; movePost(drag.fromDate, drag.fromIdx, dk); setDrag(null); setHoverDate(null); };
+  const handleDrop = (e, dk) => {
+    e.preventDefault();
+    if (ideaDrag) { addToCalendar(ideaDrag, dk); setIdeaDrag(null); setHoverDate(null); return; }
+    if (!drag) return;
+    movePost(drag.fromDate, drag.fromIdx, dk); setDrag(null); setHoverDate(null);
+  };
 
   const dragProps = (dk, idx) => ({ onDragStart:(e)=>handleDragStart(e,dk,idx), onDragEnd:handleDragEnd, dragging:drag&&drag.fromDate===dk&&drag.fromIdx===idx });
   const dropProps = (dk) => ({ onDragOver:(e)=>handleDragOver(e,dk), onDragLeave:(e)=>handleDragLeave(e,dk), onDrop:(e)=>handleDrop(e,dk), hover:hoverDate===dk });
@@ -8333,16 +8397,24 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
             <button onClick={() => setShowMobileList(true)} style={{
               padding:"7px 14px", background:T.navy, color:"#fff", border:"none",
               borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
-            }}>TO POST LIST ({safeToPostList.length})</button>
+            }}>💡 IDEAS ({safeToPostList.length})</button>
           )}
           <button onClick={() => setShowIdeaModal(true)} style={{
             padding:"7px 14px", background:"#F59E0B", color:"#fff", border:"none",
             borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
           }}>+ Idea</button>
+          {!isMobile && (
+            <button onClick={() => setShowIdeasPanel(v => !v)} style={{
+              padding:"7px 14px",
+              background: showIdeasPanel ? T.navy : "transparent",
+              color: showIdeasPanel ? "#fff" : T.muted,
+              border:`1px solid ${showIdeasPanel ? T.navy : T.border}`,
+              borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+            }}>💡 IDEAS{safeToPostList.length > 0 ? ` (${safeToPostList.length})` : ""}</button>
+          )}
           <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
             {calViewBtn("week","Week")}
             {calViewBtn("month","Month")}
-            {calViewBtn("kanban","Kanban")}
           </div>
         </div>
       </div>
@@ -8392,12 +8464,10 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
         })}
       </div>
 
-      {/* Main layout: calendar + sidebar */}
+      {/* Main layout: calendar + ideas panel */}
       <div style={{ display:"flex", gap:20, alignItems:"flex-start" }}>
         <div style={{ flex:1, minWidth:0 }}>
-          {calView==="kanban" ? (
-            <ContentKanbanView content={content} onSetContent={onSetContent} filterType={filterType}/>
-          ) : calView==="week" ? (
+          {calView==="week" ? (
             <ContentWeek selDate={selDate} content={content} todayD={todayD}
               updatePost={updatePost} deletePost={deletePost} addPost={addPost}
               dragProps={dragProps} dropProps={dropProps}
@@ -8408,14 +8478,15 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
               dragProps={dragProps} dropProps={dropProps}
               selectedDay={selectedDay} onSelectDay={setSelectedDay} filterType={filterType}/>
           )}
-          {calView !== "kanban" && <MonthlyPillarsBar selDate={selDate} content={content}/>}
+          <MonthlyPillarsBar selDate={selDate} content={content}/>
         </div>
 
-        {!isMobile && (
-          <ToPostListPanel
+        {!isMobile && showIdeasPanel && (
+          <IdeasSidePanel
             toPostList={safeToPostList} setToPostList={safeSetToPostList}
-            selectedDay={selectedDay}
-            onAddToCalendar={addToCalendar}
+            dayNotes={dayNotes || {}} setDayNotes={setDayNotes || (() => {})}
+            onIdeaDragStart={item => setIdeaDrag(item)}
+            onIdeaDragEnd={() => setIdeaDrag(null)}
             isMobile={false}
           />
         )}
@@ -8425,12 +8496,12 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
       {isMobile && showMobileList && (
         <div onClick={() => setShowMobileList(false)} style={{ position:"fixed", inset:0, zIndex:299, background:"rgba(15,27,58,0.4)" }}>
           <div onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, left:0, right:0 }}>
-            <ToPostListPanel
+            <IdeasSidePanel
               toPostList={safeToPostList} setToPostList={safeSetToPostList}
-              selectedDay={selectedDay}
-              onAddToCalendar={addToCalendar}
+              dayNotes={dayNotes || {}} setDayNotes={setDayNotes || (() => {})}
+              onIdeaDragStart={item => setIdeaDrag(item)}
+              onIdeaDragEnd={() => setIdeaDrag(null)}
               isMobile={true}
-              open={showMobileList}
               onClose={() => setShowMobileList(false)}
             />
           </div>
@@ -12067,6 +12138,7 @@ function App() {
         )}
         {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent}
           toPostList={toPostList} setToPostList={setToPostList}
+          dayNotes={dayNotes} setDayNotes={setDayNotes}
           view={contentView} setView={setContentView}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
         {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd}/>}
