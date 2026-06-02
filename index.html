@@ -11367,7 +11367,7 @@ const DEFAULT_TABS = [
 ];
 const TABS = DEFAULT_TABS; // alias used elsewhere
 
-function App() {
+function App({ onSwitchWorkspace = () => {} }) {
   // ── Persistence: load from localStorage once, save on every change ──
   const LS_KEY = "prontoHQ.state.v1";
   const saved = (() => {
@@ -11989,6 +11989,31 @@ function App() {
             activeTab={tab}
             onPresenceChange={setOnlineUsers}
           />
+          <div style={{ height:18, width:1, background:T.border }}></div>
+          {todayUser && (
+            <button onClick={() => { setTodayUser(null); try { localStorage.removeItem("prontoHQ.todayUser"); } catch(_) {} }} style={{
+              padding:"5px 12px", background:"transparent", border:`1px solid ${T.border}`,
+              borderRadius:6, color:T.muted, fontSize:11, fontWeight:700,
+              cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+              display:"flex", alignItems:"center", gap:4,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor=T.ink; e.currentTarget.style.color=T.ink; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.muted; }}
+            title="Switch to a different user">
+              ⇄ USER
+            </button>
+          )}
+          <button onClick={onSwitchWorkspace} style={{
+            padding:"5px 12px", background:"transparent", border:`1px solid ${T.border}`,
+            borderRadius:6, color:T.muted, fontSize:11, fontWeight:700,
+            cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+            display:"flex", alignItems:"center", gap:4,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor=T.ink; e.currentTarget.style.color=T.ink; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.muted; }}
+          title="Switch workspace (Marketing / Sales & GM)">
+            ⇄ WORKSPACE
+          </button>
           <button onClick={exportState} title="Download all data as a JSON file you can email or save" style={{
             padding:"7px 12px", background:"transparent", border:`1px solid ${T.border}`,
             borderRadius:6, color:T.text, fontSize:11, fontWeight:700,
@@ -13837,9 +13862,9 @@ function WorkspaceRouter() {
   if (workspace === 'sales') {
     return window.SalesApp
       ? <window.SalesApp onSwitchWorkspace={switchWorkspace} />
-      : <App />;
+      : <App onSwitchWorkspace={switchWorkspace} />;
   }
-  return <App />;
+  return <App onSwitchWorkspace={switchWorkspace} />;
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
