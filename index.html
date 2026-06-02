@@ -15392,17 +15392,17 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
 (() => {
   'use strict';
 
-  // ─── Constants ───────────────────────────────────────────────────────────────
+  // ─── 1. CONSTANTS & HELPERS ───────────────────────────────────────────────
 
   const SALES_CATS = [
-    { key: 'call',     label: '📞 Call',           color: '#3B82F6' },
-    { key: 'quote',    label: '📋 Quote',           color: '#8B5CF6' },
-    { key: 'followup', label: '🔄 Follow-Up',       color: '#F59E0B' },
-    { key: 'visit',    label: '🏗 Site Visit',      color: '#10B981' },
-    { key: 'pricing',  label: '💰 Pricing',         color: '#EC4899' },
-    { key: 'query',    label: '❓ Customer Query',  color: '#6366F1' },
-    { key: 'meeting',  label: '📅 Meeting',         color: '#0EA5E9' },
-    { key: 'admin',    label: '⚙ Admin',            color: '#9AA0AE' },
+    { key: 'call',    label: 'Call',           color: '#3B82F6' },
+    { key: 'quote',   label: 'Quote',          color: '#8B5CF6' },
+    { key: 'followup',label: 'Follow-Up',      color: '#F59E0B' },
+    { key: 'visit',   label: 'Site Visit',     color: '#10B981' },
+    { key: 'pricing', label: 'Pricing',        color: '#EC4899' },
+    { key: 'query',   label: 'Customer Query', color: '#6366F1' },
+    { key: 'meeting', label: 'Meeting',        color: '#0EA5E9' },
+    { key: 'admin',   label: 'Admin',          color: '#9AA0AE' },
   ];
 
   const SALES_URGENCY = [
@@ -15413,625 +15413,1014 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
   ];
 
   const SALES_USERS = [
-    { key: 'bronson',  name: 'Bronson',  role: 'GM · Sales & Operations',      color: '#1E40AF' },
-    { key: 'victoria', name: 'Victoria', role: 'EA · Delegated Tasks & Admin',  color: '#7C3AED' },
+    { key: 'bronson',  label: 'Bronson',  color: '#3B82F6', role: 'GM · Sales & Operations' },
+    { key: 'victoria', label: 'Victoria', color: '#DB2777', role: 'EA · Delegated Tasks'     },
   ];
 
-  const catByKey  = (k) => SALES_CATS.find(c => c.key === k) || SALES_CATS[0];
-  const urgByKey  = (k) => SALES_URGENCY.find(u => u.key === k) || SALES_URGENCY[2];
-  const userByKey = (k) => SALES_USERS.find(u => u.key === k) || SALES_USERS[0];
-  const suid      = () => Math.random().toString(36).slice(2, 10);
+  const SALES_LS_KEY   = 'prontoHQ.sales.state.v1';
+  const SALES_USER_KEY = 'prontoHQ.sales.user';
 
-  const sdkOf = (d) => isoDate(d);
+  function scatByKey(k)  { return SALES_CATS.find(c => c.key === k)    || SALES_CATS[7]; }
+  function surgByKey(k)  { return SALES_URGENCY.find(u => u.key === k) || SALES_URGENCY[2]; }
+  function suserByKey(k) { return SALES_USERS.find(u => u.key === k)   || SALES_USERS[0]; }
 
-  const sweekDates = (d) => {
-    const day = d.getDay();
-    const mon = new Date(d);
-    mon.setDate(d.getDate() - ((day + 6) % 7));
-    return Array.from({ length: 5 }, (_, i) => {
-      const x = new Date(mon);
-      x.setDate(mon.getDate() + i);
+  function suid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function sdkOf(dateStr) {
+    // "YYYY-MM-DD" → Date midnight local
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function sfmtDateStr(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function sweekDates(anchor) {
+    // Mon–Sun week containing anchor
+    const d = new Date(anchor);
+    const day = d.getDay(); // 0=Sun
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((day + 6) % 7));
+    return Array.from({ length: 7 }, (_, i) => {
+      const x = new Date(monday);
+      x.setDate(monday.getDate() + i);
       return x;
     });
-  };
+  }
 
-  const smonthDates = (d) => {
-    const y = d.getFullYear(), m = d.getMonth();
+  function smonthDates(anchor) {
+    const y = anchor.getFullYear();
+    const m = anchor.getMonth();
     const first = new Date(y, m, 1);
     const last  = new Date(y, m + 1, 0);
-    const startDow = (first.getDay() + 6) % 7;
-    const cells = [];
-    for (let i = 0; i < startDow; i++) cells.push(null);
-    for (let i = 1; i <= last.getDate(); i++) cells.push(new Date(y, m, i));
-    while (cells.length % 7 !== 0) cells.push(null);
-    return cells;
-  };
+    const dates = [];
+    // pad start to Monday
+    const startPad = (first.getDay() + 6) % 7;
+    for (let i = startPad; i > 0; i--) {
+      const x = new Date(first);
+      x.setDate(first.getDate() - i);
+      dates.push({ date: x, inMonth: false });
+    }
+    for (let d = 1; d <= last.getDate(); d++) {
+      dates.push({ date: new Date(y, m, d), inMonth: true });
+    }
+    // pad end to Sunday
+    const endPad = (7 - ((dates.length) % 7)) % 7;
+    for (let i = 1; i <= endPad; i++) {
+      const x = new Date(last);
+      x.setDate(last.getDate() + i);
+      dates.push({ date: x, inMonth: false });
+    }
+    return dates;
+  }
 
-  const S_DAY_NAMES   = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-  const S_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const URGENCY_ORDER = { urgent: 0, high: 1, normal: 2, low: 3 };
 
-  const sfmtDateStr = (d) => {
-    if (!d) return '';
-    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    return `${days[d.getDay()]}, ${d.getDate()} ${S_MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
-  };
+  function sortByUrgency(tasks) {
+    return [...tasks].sort((a, b) =>
+      (URGENCY_ORDER[a.urgency] ?? 2) - (URGENCY_ORDER[b.urgency] ?? 2)
+    );
+  }
 
-  const sdaysSince = (dateStr) => {
-    if (!dateStr) return 999;
-    const diff = Date.now() - new Date(dateStr).getTime();
-    return Math.floor(diff / 86400000);
-  };
+  const DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MONTH_NAMES = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
 
-  // ─── WorkspaceSelector ───────────────────────────────────────────────────────
+  // ─── 2. WorkspaceSelector ─────────────────────────────────────────────────
 
-  const WorkspaceSelector = ({ onSelect }) => {
-    const [hovered, setHovered] = useSs(null);
-
+  function WorkspaceSelector({ onSelect }) {
     const cards = [
-      { key: 'marketing', icon: '📢', title: 'Marketing', members: 'Oloka & Vanja', color: '#0EA5E9', bg: 'rgba(14,165,233,0.08)' },
-      { key: 'sales',     icon: '💼', title: 'Sales & GM', members: 'Bronson & Victoria', color: '#1E40AF', bg: 'rgba(30,64,175,0.08)' },
+      { key: 'marketing', icon: '📢', label: 'Marketing',    sub: 'Social & Campaigns', color: '#0EA5E9', bg: '#F0F9FF' },
+      { key: 'sales',     icon: '💼', label: 'Sales & GM',   sub: 'Pipeline & Accounts', color: '#1E3A5F', bg: '#EFF6FF' },
     ];
-
     return (
-      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
-        <div style={{ textAlign: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 28, fontWeight: 800, color: T.heading, letterSpacing: '-0.5px' }}>Pronto Hire</div>
-          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Select your workspace</div>
+      <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column',
+                    alignItems:'center', justifyContent:'center',
+                    background: T.bg, gap: 24, padding: 32 }}>
+        <div style={{ textAlign:'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 3,
+                        color: T.muted, marginBottom: 6 }}>PRONTO HIRE HQ</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: T.heading }}>Choose Workspace</div>
         </div>
-        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <div style={{ display:'flex', gap: 20, flexWrap:'wrap', justifyContent:'center' }}>
           {cards.map(c => (
-            <div key={c.key} onClick={() => onSelect(c.key)} onMouseEnter={() => setHovered(c.key)} onMouseLeave={() => setHovered(null)}
-              style={{ width: 220, padding: '32px 28px', borderRadius: 16, background: hovered === c.key ? c.bg : T.cardBg, border: `2px solid ${hovered === c.key ? c.color : T.border}`, cursor: 'pointer', transition: 'all 0.18s ease', boxShadow: hovered === c.key ? `0 4px 24px ${c.color}30` : '0 1px 6px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>{c.icon}</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: T.heading, marginBottom: 6 }}>{c.title}</div>
-              <div style={{ fontSize: 13, color: T.muted }}>{c.members}</div>
-            </div>
+            <button key={c.key} onClick={() => onSelect(c.key)}
+              style={{ width: 200, padding: '32px 24px', background: c.bg,
+                       border: `2px solid ${c.color}30`, borderRadius: 16, cursor:'pointer',
+                       display:'flex', flexDirection:'column', alignItems:'center', gap: 10,
+                       transition:'box-shadow 0.15s', boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}
+              onMouseEnter={e => e.currentTarget.style.boxShadow = `0 4px 20px ${c.color}40`}
+              onMouseLeave={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)'}>
+              <span style={{ fontSize: 40 }}>{c.icon}</span>
+              <div style={{ fontWeight: 700, fontSize: 16, color: c.color }}>{c.label}</div>
+              <div style={{ fontSize: 12, color: T.muted }}>{c.sub}</div>
+            </button>
           ))}
         </div>
       </div>
     );
-  };
+  }
 
-  // ─── SalesUserPicker ─────────────────────────────────────────────────────────
+  // ─── 3. SalesUserPicker ───────────────────────────────────────────────────
 
-  const SalesUserPicker = ({ onSelect, onSwitchWorkspace }) => {
-    const [hovered, setHovered] = useSs(null);
+  function SalesUserPicker({ onSelect, onSwitchWorkspace }) {
+    return (
+      <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column',
+                    alignItems:'center', justifyContent:'center',
+                    background: T.bg, gap: 24, padding: 32 }}>
+        <button onClick={onSwitchWorkspace}
+          style={{ position:'absolute', top: 20, left: 20, background:'none',
+                   border:`1px solid ${T.border}`, borderRadius: 8, padding:'6px 14px',
+                   cursor:'pointer', color: T.muted, fontSize: 13 }}>
+          ← Back
+        </button>
+        <div style={{ textAlign:'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 3,
+                        color: T.muted, marginBottom: 6 }}>SALES & GM</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: T.heading }}>Who are you?</div>
+        </div>
+        <div style={{ display:'flex', gap: 20, flexWrap:'wrap', justifyContent:'center' }}>
+          {SALES_USERS.map(u => (
+            <button key={u.key} onClick={() => onSelect(u.key)}
+              style={{ width: 200, padding: '32px 24px', background: T.cardBg,
+                       border: `2px solid ${u.color}40`, borderRadius: 16, cursor:'pointer',
+                       display:'flex', flexDirection:'column', alignItems:'center', gap: 10,
+                       boxShadow:'0 2px 8px rgba(0,0,0,0.07)', transition:'box-shadow 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.boxShadow = `0 4px 20px ${u.color}40`}
+              onMouseLeave={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)'}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%',
+                            background: u.color, color:'#fff', fontWeight: 800,
+                            fontSize: 22, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {u.label[0]}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: u.color }}>{u.label}</div>
+              <div style={{ fontSize: 11, color: T.muted, textAlign:'center' }}>{u.role}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── 4. SalesSyncButton ───────────────────────────────────────────────────
+
+  function SalesSyncButton({ getState, applyState, syncRef, salesUser, userColor }) {
+    const [status, setSt] = useSs('offline'); // offline | connecting | live | error
+    const [lastSync, setLastSync] = useSs(null);
+    const dbRef      = useRs(null);
+    const writeTimer = useRs(null);
+    const lastWrite  = useRs(0);
+    const unsubSelf  = useRs(null);
+    const unsubOther = useRs(null);
+
+    const myPath    = `prontoHQ/sales/state/${salesUser}`;
+    const otherKey  = salesUser === 'bronson' ? 'victoria' : 'bronson';
+    const otherPath = `prontoHQ/sales/state/${otherKey}`;
+
+    useEs(() => {
+      let alive = true;
+      setSt('connecting');
+      const conf = loadFbConf();
+      if (!conf) { setSt('offline'); return; }
+      const db = tryInitFb(conf);
+      if (!db) { setSt('offline'); return; }
+      try {
+        dbRef.current = db;
+
+        // Listen to OTHER user's path
+        const otherRef = db.ref(otherPath);
+        const handler = otherRef.on('value', snap => {
+          if (!alive) return;
+          const remote = snap.val();
+          if (!remote) return;
+          if (Date.now() - lastWrite.current < 2000) return; // suppress echo
+          applyState(remote, otherKey);
+          setLastSync(new Date());
+          setSt('live');
+        }, () => { if (alive) setSt('error'); });
+        unsubOther.current = () => otherRef.off('value', handler);
+
+        // Expose write fn via syncRef
+        syncRef.current = {
+          push: (state) => {
+            if (writeTimer.current) clearTimeout(writeTimer.current);
+            writeTimer.current = setTimeout(() => {
+              lastWrite.current = Date.now();
+              db.ref(myPath).set({ ...state, _ts: Date.now() })
+                .then(() => { setLastSync(new Date()); setSt('live'); })
+                .catch(() => setSt('error'));
+            }, 1500);
+          }
+        };
+        setSt('live');
+      } catch {
+        setSt('offline');
+      }
+      return () => {
+        alive = false;
+        if (unsubOther.current) unsubOther.current();
+        if (writeTimer.current) clearTimeout(writeTimer.current);
+      };
+    }, [salesUser]);
+
+    const dot  = status === 'live' ? '#22C55E' : status === 'connecting' ? '#F59E0B' : '#9AA0AE';
+    const text = status === 'live'
+      ? `🟢 Live${lastSync ? ' · ' + lastSync.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : ''}`
+      : status === 'connecting' ? '⏳ Connecting'
+      : status === 'error' ? '⚠️ Error' : '⚫ Offline';
 
     return (
-      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
-        <button onClick={onSwitchWorkspace} style={{ position: 'absolute', top: 20, left: 20, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 14px', cursor: 'pointer', color: T.muted, fontSize: 13 }}>← Back</button>
-        <div style={{ textAlign: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: T.heading }}>💼 Sales & GM</div>
-          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Who are you?</div>
-        </div>
-        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {SALES_USERS.map(u => (
-            <div key={u.key} onClick={() => onSelect(u.key)} onMouseEnter={() => setHovered(u.key)} onMouseLeave={() => setHovered(null)}
-              style={{ width: 200, padding: '28px 24px', borderRadius: 16, background: hovered === u.key ? `${u.color}14` : T.cardBg, border: `2px solid ${hovered === u.key ? u.color : T.border}`, cursor: 'pointer', transition: 'all 0.18s ease', textAlign: 'center', boxShadow: hovered === u.key ? `0 4px 20px ${u.color}28` : '0 1px 4px rgba(0,0,0,0.05)' }}>
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: u.color, color: '#fff', fontSize: 22, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>{u.name[0]}</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: T.heading, marginBottom: 4 }}>{u.name}</div>
-              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.4 }}>{u.role}</div>
-            </div>
-          ))}
-        </div>
+      <div style={{ display:'flex', alignItems:'center', gap: 6,
+                    background: T.surface, border:`1px solid ${T.border}`,
+                    borderRadius: 20, padding:'4px 10px', fontSize: 11, color: T.muted,
+                    whiteSpace:'nowrap', userSelect:'none' }}>
+        <span style={{ width: 7, height: 7, borderRadius:'50%', background: dot,
+                        display:'inline-block', flexShrink: 0 }} />
+        <span>{text}</span>
       </div>
     );
-  };
+  }
 
-  // ─── TaskForm ─────────────────────────────────────────────────────────────────
+  // ─── 5. SalesTaskForm ─────────────────────────────────────────────────────
 
-  const SalesTaskForm = ({ isBronson, onSave, onCancel, userColor }) => {
+  function SalesTaskForm({ isBronson, onSave, onCancel, userColor, prefillOwner }) {
     const [text,      setText]      = useSs('');
     const [cat,       setCat]       = useSs('call');
     const [urgency,   setUrgency]   = useSs('normal');
     const [account,   setAccount]   = useSs('');
-    const [priv,      setPriv]      = useSs(false);
+    const [isPrivate, setPrivate]   = useSs(false);
     const [delegated, setDelegated] = useSs(false);
+    const [owner,     setOwner]     = useSs(prefillOwner || (isBronson ? 'bronson' : 'victoria'));
+    const [startMin,  setStartMin]  = useSs('');
 
-    const save = () => {
+    function handleSave() {
       if (!text.trim()) return;
-      onSave({ id: suid(), text: text.trim(), cat, urgency, account, private: priv, delegated, done: false, createdAt: Date.now(), updatedAt: Date.now(), owner: isBronson ? 'bronson' : 'victoria' });
-      setText(''); setCat('call'); setUrgency('normal'); setAccount(''); setPriv(false); setDelegated(false);
+      onSave({
+        id: suid(), text: text.trim(), cat, urgency, account: account.trim(),
+        isPrivate: isBronson ? isPrivate : false,
+        delegated, owner, done: false,
+        startMin: startMin !== '' ? Number(startMin) : null,
+        createdAt: Date.now(), updatedAt: Date.now(),
+      });
+    }
+
+    const inp = {
+      background: T.surface, border:`1px solid ${T.border}`, borderRadius: 8,
+      padding:'7px 10px', fontSize: 13, color: T.ink, outline:'none', width:'100%', boxSizing:'border-box'
     };
 
     return (
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginTop: 8 }}>
-        <input autoFocus value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onCancel(); }} placeholder="Task description…" style={{ width: '100%', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', color: T.ink, fontSize: 14, boxSizing: 'border-box', outline: 'none' }} />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+      <div style={{ background: T.cardBg, border:`1px solid ${T.border}`,
+                    borderRadius: 12, padding: 16, display:'flex', flexDirection:'column', gap: 10 }}>
+        <input value={text} onChange={e => setText(e.target.value)}
+          placeholder="Task description…" style={inp}
+          onKeyDown={e => e.key === 'Enter' && handleSave()} />
+        {/* Category */}
+        <div style={{ display:'flex', flexWrap:'wrap', gap: 5 }}>
           {SALES_CATS.map(c => (
-            <button key={c.key} onClick={() => setCat(c.key)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: `1px solid ${cat === c.key ? c.color : T.border}`, background: cat === c.key ? `${c.color}22` : 'transparent', color: cat === c.key ? c.color : T.muted, cursor: 'pointer', transition: 'all 0.15s' }}>{c.label}</button>
+            <button key={c.key} onClick={() => setCat(c.key)}
+              style={{ padding:'3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                       cursor:'pointer', border:`1.5px solid ${c.color}`,
+                       background: cat === c.key ? c.color : 'transparent',
+                       color: cat === c.key ? '#fff' : c.color }}>
+              {c.label}
+            </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        {/* Urgency */}
+        <div style={{ display:'flex', gap: 5 }}>
           {SALES_URGENCY.map(u => (
-            <button key={u.key} onClick={() => setUrgency(u.key)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: `1px solid ${urgency === u.key ? u.color : T.border}`, background: urgency === u.key ? `${u.color}22` : 'transparent', color: urgency === u.key ? u.color : T.muted, cursor: 'pointer', transition: 'all 0.15s' }}>{u.label}</button>
+            <button key={u.key} onClick={() => setUrgency(u.key)}
+              style={{ padding:'3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                       cursor:'pointer', border:`1.5px solid ${u.color}`,
+                       background: urgency === u.key ? u.color : 'transparent',
+                       color: urgency === u.key ? '#fff' : u.color }}>
+              {u.label}
+            </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input value={account} onChange={e => setAccount(e.target.value)} placeholder="Account / company…" style={{ flex: 1, minWidth: 120, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', color: T.ink, fontSize: 13, outline: 'none' }} />
-          {isBronson && (
-            <label style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-              <input type="checkbox" checked={priv} onChange={e => setPriv(e.target.checked)} /> 🔒 Private
+        <input value={account} onChange={e => setAccount(e.target.value)}
+          placeholder="Account / company name…" style={inp} />
+        {isBronson && (
+          <div style={{ display:'flex', gap: 12, alignItems:'center' }}>
+            <label style={{ display:'flex', gap: 5, alignItems:'center', fontSize: 12, color: T.muted, cursor:'pointer' }}>
+              <input type="checkbox" checked={isPrivate} onChange={e => setPrivate(e.target.checked)} />
+              🔒 Private
             </label>
-          )}
-          <label style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-            <input type="checkbox" checked={delegated} onChange={e => setDelegated(e.target.checked)} /> Delegated
-          </label>
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} style={{ padding: '6px 16px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-          <button onClick={save} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Save</button>
+            <label style={{ display:'flex', gap: 5, alignItems:'center', fontSize: 12, color: T.muted, cursor:'pointer' }}>
+              <input type="checkbox" checked={delegated} onChange={e => setDelegated(e.target.checked)} />
+              Delegated to Victoria
+            </label>
+          </div>
+        )}
+        {!isBronson && (
+          <div style={{ fontSize: 12, color: T.muted }}>
+            Owner: <strong style={{ color: userColor }}>Victoria</strong>
+          </div>
+        )}
+        <div style={{ display:'flex', gap: 8 }}>
+          <button onClick={handleSave}
+            style={{ flex: 1, padding:'7px 0', borderRadius: 8, background: userColor,
+                     color:'#fff', fontWeight: 700, fontSize: 13, border:'none', cursor:'pointer' }}>
+            Save Task
+          </button>
+          <button onClick={onCancel}
+            style={{ padding:'7px 16px', borderRadius: 8, background: T.surface,
+                     border:`1px solid ${T.border}`, color: T.muted, fontSize: 13, cursor:'pointer' }}>
+            Cancel
+          </button>
         </div>
       </div>
     );
-  };
+  }
 
-  // ─── TaskCard ─────────────────────────────────────────────────────────────────
+  // ─── 6. SalesTaskCard ─────────────────────────────────────────────────────
 
-  const SalesTaskCard = ({ task, onToggle, onDelete, compact }) => {
-    const cat = catByKey(task.cat);
-    const urg = urgByKey(task.urgency);
+  function SalesTaskCard({ task, onToggle, onDelete, compact, isBronson }) {
+    const cat = scatByKey(task.cat);
+    const urg = surgByKey(task.urgency);
     return (
-      <div style={{ display: 'flex', alignItems: compact ? 'center' : 'flex-start', gap: 8, padding: compact ? '6px 0' : '10px 12px', borderRadius: 10, background: compact ? 'transparent' : T.surface, border: compact ? 'none' : `1px solid ${T.border}`, marginBottom: compact ? 0 : 6, opacity: task.done ? 0.5 : 1 }}>
-        <div onClick={onToggle} style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#10B981' : T.border}`, background: task.done ? '#10B981' : 'transparent', cursor: 'pointer', flexShrink: 0, marginTop: compact ? 0 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
-          {task.done && <span style={{ color: '#fff', fontSize: 11 }}>✓</span>}
-        </div>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: urg.color, flexShrink: 0, marginTop: compact ? 5 : 6 }} />
+      <div style={{ background: T.cardBg, border:`1px solid ${task.done ? T.border : T.border}`,
+                    borderRadius: 10, padding: compact ? '7px 10px' : '9px 12px',
+                    display:'flex', alignItems:'flex-start', gap: 8,
+                    opacity: task.done ? 0.6 : 1, transition:'opacity 0.15s' }}>
+        {/* Checkbox */}
+        <input type="checkbox" checked={!!task.done}
+          onChange={() => onToggle(task.id)}
+          style={{ marginTop: 2, cursor:'pointer', accentColor: urg.color, flexShrink: 0 }} />
+        {/* Urgency dot */}
+        <span style={{ width: 8, height: 8, borderRadius:'50%', background: urg.color,
+                        marginTop: 5, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 12, background: `${cat.color}20`, color: cat.color, fontWeight: 600, whiteSpace: 'nowrap' }}>{cat.label}</span>
-            {task.private && <span style={{ fontSize: 11 }}>🔒</span>}
-            {task.delegated && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 12, background: '#8B5CF620', color: '#8B5CF6', fontWeight: 600 }}>Delegated</span>}
-          </div>
-          <div style={{ fontSize: 14, color: T.ink, marginTop: 3, textDecoration: task.done ? 'line-through' : 'none', wordBreak: 'break-word' }}>{task.text}</div>
-          {task.account && <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>🏢 {task.account}</div>}
-        </div>
-        {onDelete && <button onClick={onDelete} style={{ background: 'none', border: 'none', color: T.faint, cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0 }}>×</button>}
-      </div>
-    );
-  };
-
-  // ─── SalesTodayView ──────────────────────────────────────────────────────────
-
-  const SalesTodayView = ({ salesUser, isBronson, dk, tasksByDate, dayFlags, setDayFlags, addTask, updateTask, deleteTask, visibleTasks, userColor }) => {
-    const [quickText, setQuickText] = useSs('');
-    const [showForm,  setShowForm]  = useSs(false);
-
-    const df      = dayFlags[dk] || {};
-    const dayType = df.dayType || null;
-    const allTasks = tasksByDate[dk] || [];
-    const tasks    = visibleTasks(allTasks);
-    const done     = tasks.filter(t => t.done).length;
-
-    const setDayType = (type) => setDayFlags(prev => ({ ...prev, [dk]: { ...prev[dk], dayType: type === dayType ? null : type } }));
-
-    const quickAdd = () => {
-      if (!quickText.trim()) return;
-      const defaultCat = dayType === 'road' ? 'call' : 'query';
-      addTask(dk, { id: suid(), text: quickText.trim(), cat: defaultCat, urgency: 'normal', account: '', private: false, delegated: false, done: false, createdAt: Date.now(), updatedAt: Date.now(), owner: salesUser });
-      setQuickText('');
-    };
-
-    return (
-      <div style={{ padding: '0 0 40px' }}>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-          <button onClick={() => setDayType('road')} style={{ padding: '8px 18px', borderRadius: 10, border: `2px solid ${dayType === 'road' ? '#3B82F6' : T.border}`, background: dayType === 'road' ? '#3B82F614' : 'transparent', color: dayType === 'road' ? '#3B82F6' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🚗 Road Day</button>
-          <button onClick={() => setDayType('office')} style={{ padding: '8px 18px', borderRadius: 10, border: `2px solid ${dayType === 'office' ? '#6366F1' : T.border}`, background: dayType === 'office' ? '#6366F114' : 'transparent', color: dayType === 'office' ? '#6366F1' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🏢 Office Day</button>
-        </div>
-
-        {isBronson && dayType === 'road' && (
-          <div style={{ background: '#3B82F610', border: '1px solid #3B82F630', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#3B82F6' }}>
-            💡 <strong>Road Day Focus:</strong> calls, site visits, handwritten notes → log in app later
-          </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, color: T.muted }}>{tasks.length} task{tasks.length !== 1 ? 's' : ''} · {done} done</div>
-          <button onClick={() => setShowForm(s => !s)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8, border: `1px solid ${userColor}`, background: 'transparent', color: userColor, cursor: 'pointer', fontWeight: 600 }}>+ Add</button>
-        </div>
-
-        {showForm && <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(dk, t); setShowForm(false); }} />}
-
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <input value={quickText} onChange={e => setQuickText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') quickAdd(); }} placeholder="Quick-add task and press Enter…" style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: '9px 14px', color: T.ink, fontSize: 14, outline: 'none' }} />
-        </div>
-
-        {tasks.length === 0 && !showForm ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: T.faint, fontSize: 14 }}>Nothing scheduled for today 🎉</div>
-        ) : (
-          <div>
-            {[...tasks].sort((a, b) => { const order = { urgent: 0, high: 1, normal: 2, low: 3 }; return (order[a.urgency] || 2) - (order[b.urgency] || 2); }).map(t => (
-              <SalesTaskCard key={t.id} task={t} onToggle={() => updateTask(dk, t.id, { done: !t.done })} onDelete={() => deleteTask(dk, t.id)} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // ─── SalesTaskView ────────────────────────────────────────────────────────────
-
-  const SalesTaskView = ({ salesUser, isBronson, selDate, setSelDate, dk, tasksByDate, addTask, updateTask, deleteTask, visibleTasks, userColor }) => {
-    const [subView,  setSubView]  = useSs('day');
-    const [showForm, setShowForm] = useSs(false);
-    const [formDk,   setFormDk]   = useSs(dk);
-
-    const openForm = (targetDk) => { setFormDk(targetDk); setShowForm(true); };
-
-    const SubBtn = ({ v, label }) => (
-      <button onClick={() => setSubView(v)} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: subView === v ? userColor : T.surface, color: subView === v ? '#fff' : T.muted, cursor: 'pointer', fontWeight: subView === v ? 700 : 400, fontSize: 13, transition: 'all 0.15s' }}>{label}</button>
-    );
-
-    const renderDay = () => {
-      const tasks = visibleTasks(tasksByDate[dk] || []);
-      const grouped = { urgent: [], high: [], normal: [], low: [] };
-      tasks.forEach(t => { (grouped[t.urgency] || grouped.normal).push(t); });
-      return (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <button onClick={() => openForm(dk)} style={{ fontSize: 13, padding: '7px 16px', borderRadius: 9, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontWeight: 600 }}>+ Add Task</button>
-          </div>
-          {showForm && formDk === dk && <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(dk, t); setShowForm(false); }} />}
-          {SALES_URGENCY.map(urg => {
-            const ts = grouped[urg.key] || [];
-            if (!ts.length) return null;
-            return (
-              <div key={urg.key} style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: urg.color, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>{urg.label}</div>
-                {ts.map(t => <SalesTaskCard key={t.id} task={t} onToggle={() => updateTask(dk, t.id, { done: !t.done })} onDelete={() => deleteTask(dk, t.id)} />)}
-              </div>
-            );
-          })}
-          {tasks.length === 0 && !showForm && <div style={{ textAlign: 'center', padding: '40px 0', color: T.faint, fontSize: 14 }}>No tasks for this day</div>}
-        </div>
-      );
-    };
-
-    const renderWeek = () => {
-      const dates = sweekDates(selDate);
-      return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
-          {dates.map((d, i) => {
-            const ddk = sdkOf(d);
-            const ts  = visibleTasks(tasksByDate[ddk] || []);
-            const isSel = ddk === dk;
-            return (
-              <div key={ddk} onClick={() => setSelDate(d)} style={{ borderRadius: 12, border: `2px solid ${isSel ? userColor : T.border}`, background: isSel ? `${userColor}08` : T.cardBg, padding: 12, cursor: 'pointer', transition: 'all 0.15s', minHeight: 120 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: isSel ? userColor : T.heading }}>{S_DAY_NAMES[i]} {d.getDate()}</div>
-                  <button onClick={e => { e.stopPropagation(); openForm(ddk); }} style={{ width: 22, height: 22, borderRadius: '50%', border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                </div>
-                <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>{ts.length} task{ts.length !== 1 ? 's' : ''}</div>
-                {ts.slice(0, 4).map(t => <div key={t.id} style={{ fontSize: 11, color: T.ink, padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderLeft: `2px solid ${catByKey(t.cat).color}`, paddingLeft: 5, marginBottom: 2 }}>{t.text}</div>)}
-                {ts.length > 4 && <div style={{ fontSize: 11, color: T.muted }}>+{ts.length - 4} more</div>}
-              </div>
-            );
-          })}
-          {showForm && (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(formDk, t); setShowForm(false); }} />
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    const [sidePanelDk, setSidePanelDk] = useSs(dk);
-    const renderMonth = () => {
-      const cells     = smonthDates(selDate);
-      const sideTasks = visibleTasks(tasksByDate[sidePanelDk] || []);
-      const sideDate  = sidePanelDk ? new Date(sidePanelDk) : selDate;
-      return (
-        <div style={{ display: 'flex', gap: 20 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
-              {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: T.muted, padding: '4px 0' }}>{d}</div>)}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-              {cells.map((d, i) => {
-                if (!d) return <div key={`e${i}`} />;
-                const cddk = sdkOf(d);
-                const ts   = visibleTasks(tasksByDate[cddk] || []);
-                const isSel = cddk === sidePanelDk;
-                return (
-                  <div key={cddk} onClick={() => { setSidePanelDk(cddk); setSelDate(d); }} style={{ borderRadius: 8, border: `2px solid ${isSel ? userColor : T.border}`, background: isSel ? `${userColor}10` : T.cardBg, padding: '6px 4px', cursor: 'pointer', minHeight: 60, transition: 'all 0.15s' }}>
-                    <div style={{ fontSize: 12, fontWeight: isSel ? 700 : 400, color: isSel ? userColor : T.ink, textAlign: 'center', marginBottom: 4 }}>{d.getDate()}</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center' }}>
-                      {ts.slice(0, 6).map(t => <div key={t.id} style={{ width: 7, height: 7, borderRadius: '50%', background: urgByKey(t.urgency).color }} />)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div style={{ width: 260, flexShrink: 0, background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, height: 'fit-content' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.heading, marginBottom: 10 }}>{sfmtDateStr(sideDate)}</div>
-            <button onClick={() => openForm(sidePanelDk)} style={{ width: '100%', padding: '7px', borderRadius: 8, border: `1px dashed ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 13, marginBottom: 10 }}>+ Add Task</button>
-            {showForm && formDk === sidePanelDk && <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(sidePanelDk, t); setShowForm(false); }} />}
-            {sideTasks.length === 0 ? <div style={{ textAlign: 'center', color: T.faint, fontSize: 13, padding: '20px 0' }}>No tasks</div>
-              : sideTasks.map(t => <SalesTaskCard key={t.id} task={t} onToggle={() => updateTask(sidePanelDk, t.id, { done: !t.done })} onDelete={() => deleteTask(sidePanelDk, t.id)} compact />)}
-          </div>
-        </div>
-      );
-    };
-
-    return (
-      <div>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 20, background: T.surface, borderRadius: 10, padding: 4, width: 'fit-content' }}>
-          <SubBtn v="day" label="DAY" />
-          <SubBtn v="week" label="WEEK" />
-          <SubBtn v="month" label="MONTH" />
-        </div>
-        {subView === 'day'   && renderDay()}
-        {subView === 'week'  && renderWeek()}
-        {subView === 'month' && renderMonth()}
-      </div>
-    );
-  };
-
-  // ─── SalesScheduleView ────────────────────────────────────────────────────────
-
-  const SalesScheduleView = ({ salesUser, isBronson, selDate, dk, tasksByDate, schedule, setSchedule, dayFlags, setDayFlags, visibleTasks, userColor }) => {
-    const START_HOUR = 7, END_HOUR = 18, PX_PER_HOUR = 60;
-    const TOTAL_PX   = (END_HOUR - START_HOUR) * PX_PER_HOUR;
-
-    const [popup,    setPopup]    = useSs(null);
-    const [popLabel, setPopLabel] = useSs('');
-    const [popDur,   setPopDur]   = useSs(60);
-    const [popCat,   setPopCat]   = useSs('call');
-    const timelineRef = useRs(null);
-
-    const df      = dayFlags[dk] || {};
-    const dayType = df.dayType || null;
-    const setDayType = (t) => setDayFlags(prev => ({ ...prev, [dk]: { ...prev[dk], dayType: t === dayType ? null : t } }));
-
-    const blocks    = (schedule[dk] && schedule[dk][salesUser]) || [];
-    const setBlocks = (fn) => setSchedule(prev => {
-      const cur  = (prev[dk] && prev[dk][salesUser]) || [];
-      const next = typeof fn === 'function' ? fn(cur) : fn;
-      return { ...prev, [dk]: { ...(prev[dk] || {}), [salesUser]: next } };
-    });
-
-    const tasks         = visibleTasks(tasksByDate[dk] || []);
-    const scheduledIds  = new Set(blocks.map(b => b.taskId).filter(Boolean));
-    const unscheduled   = tasks.filter(t => !scheduledIds.has(t.id) && !t.done);
-
-    const minToY  = (m) => ((m - START_HOUR * 60) / 60) * PX_PER_HOUR;
-    const yToMin  = (y) => Math.round((y / PX_PER_HOUR) * 60 + START_HOUR * 60);
-    const sfmtSpan = (start, dur) => `${fmtTime(start)} – ${fmtTime(start + dur)}`;
-
-    const nowD      = today();
-    const isToday2  = sdkOf(nowD) === dk;
-    const nowMin    = nowD.getHours() * 60 + nowD.getMinutes();
-    const nowY      = isToday2 ? minToY(nowMin) : -1;
-
-    const handleTimelineClick = (e) => {
-      if (!timelineRef.current) return;
-      const rect = timelineRef.current.getBoundingClientRect();
-      const y    = e.clientY - rect.top;
-      const min  = Math.round(yToMin(y) / 15) * 15;
-      setPopup(min); setPopLabel(''); setPopDur(60); setPopCat('call');
-    };
-
-    const saveBlock = () => {
-      if (!popLabel.trim()) return;
-      const cat = catByKey(popCat);
-      setBlocks(bs => [...bs, { id: suid(), label: popLabel.trim(), startMin: popup, durationMin: popDur, category: popCat, color: cat.color }]);
-      setPopup(null);
-    };
-
-    const removeBlock       = (id) => setBlocks(bs => bs.filter(b => b.id !== id));
-    const addTaskToSchedule = (task) => {
-      const lastEnd = blocks.reduce((max, b) => Math.max(max, b.startMin + b.durationMin), START_HOUR * 60);
-      const start   = Math.min(lastEnd, (END_HOUR - 1) * 60);
-      const cat     = catByKey(task.cat);
-      setBlocks(bs => [...bs, { id: suid(), taskId: task.id, label: task.text, startMin: start, durationMin: 30, category: task.cat, color: cat.color }]);
-    };
-
-    const outlookEvents = (window._outlookExternalEvents || []).filter(ev => ev.date === dk);
-
-    return (
-      <div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <button onClick={() => setDayType('road')} style={{ padding: '7px 16px', borderRadius: 10, border: `2px solid ${dayType === 'road' ? '#3B82F6' : T.border}`, background: dayType === 'road' ? '#3B82F614' : 'transparent', color: dayType === 'road' ? '#3B82F6' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🚗 Road Day</button>
-          <button onClick={() => setDayType('office')} style={{ padding: '7px 16px', borderRadius: 10, border: `2px solid ${dayType === 'office' ? '#6366F1' : T.border}`, background: dayType === 'office' ? '#6366F114' : 'transparent', color: dayType === 'office' ? '#6366F1' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🏢 Office Day</button>
-        </div>
-
-        <div style={{ display: 'flex', gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <div ref={timelineRef} onClick={handleTimelineClick} style={{ position: 'relative', height: TOTAL_PX, background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden', cursor: 'crosshair' }}>
-              {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => {
-                const h = START_HOUR + i;
-                const y = i * PX_PER_HOUR;
-                return (
-                  <div key={h} style={{ position: 'absolute', top: y, left: 0, right: 0, borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'flex-start', pointerEvents: 'none' }}>
-                    <div style={{ width: 44, fontSize: 10, color: T.faint, padding: '2px 6px', flexShrink: 0 }}>{fmtTime(h * 60)}</div>
-                  </div>
-                );
-              })}
-
-              {outlookEvents.map((ev, idx) => {
-                const y = minToY(ev.startMin);
-                const h = (ev.durationMin / 60) * PX_PER_HOUR;
-                return (
-                  <div key={idx} style={{ position: 'absolute', top: y, left: 48, right: 4, height: Math.max(h, 20), background: '#0EA5E920', border: '1px solid #0EA5E950', borderRadius: 6, padding: '2px 6px', fontSize: 11, color: '#0EA5E9', pointerEvents: 'none', overflow: 'hidden' }}>
-                    📅 {ev.label}
-                  </div>
-                );
-              })}
-
-              {blocks.map(b => {
-                const y = minToY(b.startMin);
-                const h = Math.max((b.durationMin / 60) * PX_PER_HOUR, 22);
-                return (
-                  <div key={b.id} onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: y, left: 48, right: 4, height: h, background: `${b.color}20`, border: `1px solid ${b.color}60`, borderLeft: `3px solid ${b.color}`, borderRadius: 6, padding: '3px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', overflow: 'hidden', cursor: 'grab' }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: T.muted }}>{sfmtSpan(b.startMin, b.durationMin)}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{b.label}</div>
-                    </div>
-                    <button onClick={() => removeBlock(b.id)} style={{ background: 'none', border: 'none', color: T.faint, cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>
-                  </div>
-                );
-              })}
-
-              {nowY >= 0 && nowY <= TOTAL_PX && (
-                <div style={{ position: 'absolute', top: nowY, left: 44, right: 0, height: 2, background: '#EF4444', pointerEvents: 'none', zIndex: 10 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444', position: 'absolute', left: -4, top: -3 }} />
-                </div>
-              )}
-
-              {popup !== null && (
-                <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: Math.min(minToY(popup), TOTAL_PX - 180), left: 52, width: 220, background: T.surface, border: `1px solid ${T.borderStrong}`, borderRadius: 10, padding: 12, zIndex: 20, boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-                  <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>{fmtTime(popup)}</div>
-                  <input autoFocus value={popLabel} onChange={e => setPopLabel(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveBlock(); if (e.key === 'Escape') setPopup(null); }} placeholder="Block label…" style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', color: T.ink, fontSize: 13, outline: 'none', marginBottom: 8 }} />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>Duration:</span>
-                    <input type="range" min={15} max={240} step={15} value={popDur} onChange={e => setPopDur(+e.target.value)} style={{ flex: 1 }} />
-                    <span style={{ fontSize: 12, color: T.ink, whiteSpace: 'nowrap' }}>{popDur}m</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button onClick={() => setPopup(null)} style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
-                    <button onClick={saveBlock} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Add</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div style={{ width: 200, flexShrink: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Unscheduled</div>
-            {unscheduled.length === 0 ? (
-              <div style={{ fontSize: 12, color: T.faint, textAlign: 'center', padding: '20px 0' }}>All tasks scheduled</div>
-            ) : (
-              unscheduled.map(t => {
-                const cat = catByKey(t.cat);
-                return (
-                  <div key={t.id} style={{ background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 3, height: 30, borderRadius: 2, background: cat.color, flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.text}</div>
-                      <div style={{ fontSize: 11, color: T.muted }}>{cat.label}</div>
-                    </div>
-                    <button onClick={() => addTaskToSchedule(t)} style={{ width: 22, height: 22, borderRadius: '50%', border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
-                  </div>
-                );
-              })
+          <div style={{ display:'flex', alignItems:'center', gap: 5, flexWrap:'wrap' }}>
+            <span style={{ fontSize: compact ? 11 : 12, fontWeight: 600,
+                           background: cat.color + '20', color: cat.color,
+                           padding:'1px 7px', borderRadius: 20 }}>
+              {cat.label}
+            </span>
+            {task.delegated && (
+              <span style={{ fontSize: 10, background:'#F59E0B20', color:'#F59E0B',
+                             padding:'1px 6px', borderRadius: 20, fontWeight: 600 }}>
+                Delegated
+              </span>
+            )}
+            {task.isPrivate && isBronson && (
+              <span style={{ fontSize: 10, color: T.muted }}>🔒</span>
             )}
           </div>
+          <div style={{ fontSize: compact ? 12 : 13, color: T.ink, marginTop: 2,
+                        textDecoration: task.done ? 'line-through' : 'none',
+                        wordBreak:'break-word' }}>
+            {task.text}
+          </div>
+          {task.account && (
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+              🏢 {task.account}
+            </div>
+          )}
+        </div>
+        {onDelete && (
+          <button onClick={() => onDelete(task.id)}
+            style={{ background:'none', border:'none', cursor:'pointer',
+                     color: T.faint, fontSize: 15, padding:'0 2px', flexShrink: 0,
+                     lineHeight: 1 }}
+            title="Delete task">×</button>
+        )}
+      </div>
+    );
+  }
+
+  // ─── 7. SalesTodayView ────────────────────────────────────────────────────
+
+  function SalesTodayView({ selDate, tasksByDate, setTasksByDate, deletedTasks, setDeletedTasks,
+                             dayFlags, setDayFlags, isBronson, salesUser, userColor, visibleTasks }) {
+    const dk = isoDate(selDate);
+    const allToday = tasksByDate[dk] || [];
+    const [showFormFor, setShowFormFor] = useSs(null); // 'bronson' | 'victoria'
+    const todayStr = isoDate(today());
+
+    function addTask(ownerKey, taskData) {
+      const t = { ...taskData, owner: ownerKey };
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: [...(prev[dk] || []), t]
+      }));
+      setShowFormFor(null);
+    }
+
+    function toggleTask(id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).map(t =>
+          t.id === id ? { ...t, done: !t.done, updatedAt: Date.now() } : t
+        )
+      }));
+    }
+
+    function deleteTask(id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).filter(t => t.id !== id)
+      }));
+      setDeletedTasks(prev => ({ ...prev, [id]: Date.now() }));
+    }
+
+    function toggleDayType(type) {
+      setDayFlags(prev => ({
+        ...prev,
+        [dk]: prev[dk] === type ? null : type
+      }));
+    }
+
+    const bronsonTasks  = sortByUrgency(allToday.filter(t => t.owner === 'bronson'));
+    const victoriaTasks = sortByUrgency(allToday.filter(t => {
+      if (t.owner !== 'victoria') return false;
+      return true;
+    }));
+
+    const visB = isBronson ? bronsonTasks : bronsonTasks.filter(t => !t.isPrivate || t.delegated);
+    const visV = victoriaTasks;
+
+    const totalTasks = allToday.length;
+    const completed  = allToday.filter(t => t.done).length;
+    const urgent     = allToday.filter(t => t.urgency === 'urgent').length;
+    const todDk      = isoDate(today());
+    const overdue    = Object.entries(tasksByDate)
+      .filter(([d]) => d < todDk)
+      .flatMap(([, ts]) => ts)
+      .filter(t => !t.done && (isBronson || !t.isPrivate || t.delegated)).length;
+
+    const flagNow = dayFlags[dk];
+
+    const statCards = [
+      { label:'Total Tasks', val: totalTasks, color:'#3B82F6', bg:'#EFF6FF' },
+      { label:'Completed',   val: completed,  color:'#10B981', bg:'#F0FDF4' },
+      { label:'Urgent',      val: urgent,     color:'#EF4444', bg:'#FEF2F2' },
+      { label:'Overdue',     val: overdue,    color:'#F97316', bg:'#FFF7ED' },
+    ];
+
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap: 16 }}>
+        {/* Day type toggles */}
+        <div style={{ display:'flex', gap: 8, alignItems:'center' }}>
+          <span style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>Day type:</span>
+          {[{ k:'road', l:'🚗 Road Day' }, { k:'office', l:'🏢 Office Day' }].map(({ k, l }) => (
+            <button key={k} onClick={() => toggleDayType(k)}
+              style={{ padding:'5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                       cursor:'pointer', border:`1.5px solid ${userColor}`,
+                       background: flagNow === k ? userColor : 'transparent',
+                       color: flagNow === k ? '#fff' : userColor }}>
+              {l}
+            </button>
+          ))}
+        </div>
+        {/* Stats row */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap: 10 }}>
+          {statCards.map(s => (
+            <div key={s.label}
+              style={{ background: s.bg, border:`1px solid ${s.color}30`,
+                       borderRadius: 12, padding:'14px 16px', textAlign:'center' }}>
+              <div style={{ fontSize: 30, fontWeight: 800, color: s.color }}>{s.val}</div>
+              <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, marginTop: 2 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {/* Two-column layout */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 14 }}>
+          {[
+            { ukey:'bronson', label:'Bronson', color:'#3B82F6', tasks: visB },
+            { ukey:'victoria', label:'Victoria', color:'#DB2777', tasks: visV },
+          ].map(col => {
+            const canAdd = isBronson || col.ukey === 'victoria';
+            return (
+              <div key={col.ukey}
+                style={{ background: T.cardBg, border:`1px solid ${T.border}`,
+                         borderRadius: 12, overflow:'hidden' }}>
+                {/* Column header */}
+                <div style={{ background: col.color, padding:'10px 14px',
+                              display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
+                    <div style={{ width: 30, height: 30, borderRadius:'50%',
+                                  background:'rgba(255,255,255,0.25)', color:'#fff',
+                                  fontWeight: 800, fontSize: 13, display:'flex',
+                                  alignItems:'center', justifyContent:'center' }}>
+                      {col.label[0]}
+                    </div>
+                    <span style={{ color:'#fff', fontWeight: 700, fontSize: 14 }}>{col.label}</span>
+                    <span style={{ background:'rgba(255,255,255,0.25)', color:'#fff',
+                                   fontSize: 11, padding:'1px 7px', borderRadius: 20 }}>
+                      {col.tasks.length}
+                    </span>
+                  </div>
+                  {canAdd && showFormFor !== col.ukey && (
+                    <button onClick={() => setShowFormFor(col.ukey)}
+                      style={{ background:'rgba(255,255,255,0.25)', border:'none', borderRadius: 6,
+                               color:'#fff', fontWeight: 700, fontSize: 16, width: 26, height: 26,
+                               cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      +
+                    </button>
+                  )}
+                </div>
+                <div style={{ padding: 10, display:'flex', flexDirection:'column', gap: 6, minHeight: 80 }}>
+                  {showFormFor === col.ukey && (
+                    <SalesTaskForm isBronson={isBronson} userColor={col.color}
+                      prefillOwner={col.ukey}
+                      onSave={t => addTask(col.ukey, t)}
+                      onCancel={() => setShowFormFor(null)} />
+                  )}
+                  {col.tasks.length === 0 && showFormFor !== col.ukey && (
+                    <div style={{ fontSize: 12, color: T.faint, textAlign:'center', padding:'16px 0' }}>
+                      No tasks today
+                    </div>
+                  )}
+                  {col.tasks.map(t => (
+                    <SalesTaskCard key={t.id} task={t} compact
+                      isBronson={isBronson}
+                      onToggle={toggleTask}
+                      onDelete={isBronson || t.owner === salesUser ? deleteTask : null} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
-  };
+  }
 
-  // ─── SalesAccountsView ────────────────────────────────────────────────────────
+  // ─── 8. SalesTaskView ─────────────────────────────────────────────────────
 
-  const SalesAccountsView = ({ accounts, setAccounts, tasksByDate, userColor }) => {
-    const [showForm,    setShowForm]    = useSs(false);
-    const [expandedId,  setExpandedId]  = useSs(null);
-    const [newName,     setNewName]     = useSs('');
-    const [newContact,  setNewContact]  = useSs('');
-    const [newContacts, setNewContacts] = useSs([]);
-    const [newNotes,    setNewNotes]    = useSs('');
-    const [editNotes,   setEditNotes]   = useSs({});
+  function SalesTaskView({ selDate, setSelDate, tasksByDate, setTasksByDate,
+                           deletedTasks, setDeletedTasks, isBronson, salesUser,
+                           userColor, visibleTasks }) {
+    const [sub, setSub] = useSs('day');
+    const [showForm, setShowForm] = useSs(false);
 
-    const allTasks = Object.values(tasksByDate).flat();
+    const dk = isoDate(selDate);
 
-    const lastTouched = (name) => {
-      const relevant = allTasks.filter(t => t.account && t.account.toLowerCase() === name.toLowerCase());
-      if (!relevant.length) return null;
-      const latest = relevant.reduce((max, t) => Math.max(max, t.updatedAt || t.createdAt || 0), 0);
-      return isoDate(new Date(latest));
-    };
+    function addTask(taskData) {
+      const t = { ...taskData, owner: salesUser };
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: [...(prev[dk] || []), t]
+      }));
+      setShowForm(false);
+    }
 
-    const followUpStatus = (name) => {
-      const lt   = lastTouched(name);
-      const days = sdaysSince(lt);
-      if (days > 14) return { label: 'Overdue',  color: '#EF4444' };
-      if (days > 7)  return { label: 'Due soon', color: '#F97316' };
-      return { label: 'Recent', color: '#10B981' };
-    };
+    function toggleTask(id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).map(t =>
+          t.id === id ? { ...t, done: !t.done, updatedAt: Date.now() } : t
+        )
+      }));
+    }
 
-    const addAccount = () => {
-      if (!newName.trim()) return;
-      setAccounts(prev => [...prev, { id: suid(), name: newName.trim(), contacts: newContacts, notes: newNotes, createdAt: Date.now() }]);
-      setNewName(''); setNewContact(''); setNewContacts([]); setNewNotes(''); setShowForm(false);
-    };
+    function deleteTask(id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).filter(t => t.id !== id)
+      }));
+      setDeletedTasks(prev => ({ ...prev, [id]: Date.now() }));
+    }
 
-    const addContact = () => {
-      if (!newContact.trim()) return;
-      setNewContacts(prev => [...prev, newContact.trim()]);
-      setNewContact('');
+    // Day view
+    function DayView() {
+      const rawTasks = tasksByDate[dk] || [];
+      const tasks = isBronson
+        ? rawTasks
+        : rawTasks.filter(t => !t.isPrivate || t.delegated || t.owner === salesUser);
+
+      const groups = [
+        { key:'urgent', tasks: tasks.filter(t => t.urgency === 'urgent') },
+        { key:'high',   tasks: tasks.filter(t => t.urgency === 'high') },
+        { key:'normal', tasks: tasks.filter(t => t.urgency === 'normal') },
+        { key:'low',    tasks: tasks.filter(t => t.urgency === 'low') },
+      ].filter(g => g.tasks.length > 0);
+
+      return (
+        <div style={{ display:'flex', flexDirection:'column', gap: 14 }}>
+          {showForm && (
+            <SalesTaskForm isBronson={isBronson} userColor={userColor}
+              onSave={addTask} onCancel={() => setShowForm(false)} />
+          )}
+          {groups.length === 0 && !showForm && (
+            <div style={{ textAlign:'center', color: T.faint, padding:'40px 0', fontSize: 14 }}>
+              No tasks for this day
+            </div>
+          )}
+          {groups.map(g => {
+            const u = surgByKey(g.key);
+            return (
+              <div key={g.key}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: u.color,
+                              marginBottom: 6, display:'flex', alignItems:'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius:'50%', background: u.color, display:'inline-block' }} />
+                  {u.label.toUpperCase()} ({g.tasks.length})
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap: 6 }}>
+                  {g.tasks.map(t => (
+                    <SalesTaskCard key={t.id} task={t} isBronson={isBronson}
+                      onToggle={toggleTask}
+                      onDelete={isBronson || t.owner === salesUser ? deleteTask : null} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Week view
+    function WeekView() {
+      const weekDates = sweekDates(selDate);
+      return (
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap: 8 }}>
+          {weekDates.map(d => {
+            const ddk = isoDate(d);
+            const ts = (tasksByDate[ddk] || []).filter(t =>
+              isBronson ? true : (!t.isPrivate || t.delegated || t.owner === salesUser)
+            );
+            const isToday = ddk === isoDate(today());
+            return (
+              <div key={ddk} onClick={() => setSelDate(d)}
+                style={{ background: T.cardBg, border:`1.5px solid ${isToday ? userColor : T.border}`,
+                         borderRadius: 10, padding: '8px 6px', cursor:'pointer', minHeight: 80 }}>
+                <div style={{ fontSize: 10, color: isToday ? userColor : T.muted,
+                              fontWeight: 700, textAlign:'center' }}>
+                  {DAY_NAMES[d.getDay()]}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: isToday ? userColor : T.ink,
+                              textAlign:'center' }}>
+                  {d.getDate()}
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap: 3, marginTop: 4 }}>
+                  {ts.slice(0, 3).map(t => {
+                    const cat = scatByKey(t.cat);
+                    return (
+                      <div key={t.id}
+                        style={{ fontSize: 9, background: cat.color + '20', color: cat.color,
+                                 padding:'1px 4px', borderRadius: 4, overflow:'hidden',
+                                 textOverflow:'ellipsis', whiteSpace:'nowrap', fontWeight: 600 }}>
+                        {t.text}
+                      </div>
+                    );
+                  })}
+                  {ts.length > 3 && (
+                    <div style={{ fontSize: 9, color: T.muted, textAlign:'center' }}>+{ts.length - 3}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Month view
+    function MonthView() {
+      const cells = smonthDates(selDate);
+      return (
+        <div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap: 1, marginBottom: 4 }}>
+            {['M','T','W','T','F','S','S'].map((d, i) => (
+              <div key={i} style={{ textAlign:'center', fontSize: 10, color: T.muted, fontWeight: 700, padding:'4px 0' }}>{d}</div>
+            ))}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap: 4 }}>
+            {cells.map(({ date, inMonth }, i) => {
+              const ddk = isoDate(date);
+              const ts = (tasksByDate[ddk] || []).filter(t =>
+                isBronson ? true : (!t.isPrivate || t.delegated || t.owner === salesUser)
+              );
+              const isToday = ddk === isoDate(today());
+              return (
+                <div key={i} onClick={() => setSelDate(date)}
+                  style={{ background: isToday ? userColor + '15' : T.cardBg,
+                           border:`1px solid ${isToday ? userColor : T.border}`,
+                           borderRadius: 8, padding:'4px 5px', minHeight: 52, cursor:'pointer',
+                           opacity: inMonth ? 1 : 0.4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: isToday ? userColor : T.muted }}>
+                    {date.getDate()}
+                  </div>
+                  {ts.length > 0 && (
+                    <div style={{ fontSize: 9, background: userColor + '20', color: userColor,
+                                  padding:'1px 4px', borderRadius: 4, marginTop: 2,
+                                  textAlign:'center', fontWeight: 700 }}>
+                      {ts.length}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap: 14 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div style={{ display:'flex', gap: 6 }}>
+            {['day','week','month'].map(s => (
+              <button key={s} onClick={() => setSub(s)}
+                style={{ padding:'5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                         cursor:'pointer', border:`1.5px solid ${userColor}`,
+                         background: sub === s ? userColor : 'transparent',
+                         color: sub === s ? '#fff' : userColor }}>
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
+          {!showForm && (
+            <button onClick={() => setShowForm(true)}
+              style={{ padding:'5px 14px', borderRadius: 8, background: userColor,
+                       color:'#fff', fontWeight: 700, fontSize: 12, border:'none', cursor:'pointer' }}>
+              + Add Task
+            </button>
+          )}
+        </div>
+        {sub === 'day'   && <DayView />}
+        {sub === 'week'  && <WeekView />}
+        {sub === 'month' && <MonthView />}
+      </div>
+    );
+  }
+
+  // ─── 9. SalesScheduleView ─────────────────────────────────────────────────
+
+  function SalesScheduleView({ selDate, tasksByDate, setTasksByDate,
+                               deletedTasks, setDeletedTasks,
+                               dayFlags, setDayFlags,
+                               isBronson, salesUser, userColor }) {
+    const dk = isoDate(selDate);
+    const HOUR_START = 7;
+    const HOUR_END   = 18;
+    const HOURS      = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => i + HOUR_START);
+    const PX_PER_MIN = 1.2;
+    const [showFormAt, setShowFormAt] = useSs(null); // minute offset
+    const [nowMin, setNowMin] = useSs(() => {
+      const n = new Date();
+      return n.getHours() * 60 + n.getMinutes();
+    });
+
+    useEs(() => {
+      const id = setInterval(() => {
+        const n = new Date();
+        setNowMin(n.getHours() * 60 + n.getMinutes());
+      }, 60000);
+      return () => clearInterval(id);
+    }, []);
+
+    const allTasks = tasksByDate[dk] || [];
+    const scheduled   = allTasks.filter(t => t.startMin != null);
+    const unscheduled = allTasks.filter(t => t.startMin == null)
+      .filter(t => isBronson ? true : (!t.isPrivate || t.delegated || t.owner === salesUser));
+
+    function addTask(taskData) {
+      const t = { ...taskData, owner: salesUser, startMin: showFormAt };
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: [...(prev[dk] || []), t]
+      }));
+      setShowFormAt(null);
+    }
+
+    function deleteTask(id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).filter(t => t.id !== id)
+      }));
+      setDeletedTasks(prev => ({ ...prev, [id]: Date.now() }));
+    }
+
+    function toggleTask(id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).map(t =>
+          t.id === id ? { ...t, done: !t.done, updatedAt: Date.now() } : t
+        )
+      }));
+    }
+
+    const flagNow = dayFlags[dk];
+
+    return (
+      <div style={{ display:'flex', gap: 16 }}>
+        {/* Timeline */}
+        <div style={{ flex: 1 }}>
+          <div style={{ display:'flex', gap: 8, marginBottom: 10 }}>
+            {[{ k:'road', l:'🚗 Road Day' }, { k:'office', l:'🏢 Office Day' }].map(({ k, l }) => (
+              <button key={k} onClick={() => setDayFlags(prev => ({
+                ...prev, [dk]: prev[dk] === k ? null : k
+              }))}
+                style={{ padding:'4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                         cursor:'pointer', border:`1.5px solid ${userColor}`,
+                         background: flagNow === k ? userColor : 'transparent',
+                         color: flagNow === k ? '#fff' : userColor }}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <div style={{ position:'relative', background: T.cardBg,
+                        border:`1px solid ${T.border}`, borderRadius: 12,
+                        overflow:'hidden' }}>
+            {HOURS.map(h => {
+              const minOffset = h * 60;
+              return (
+                <div key={h}
+                  style={{ height: 60 * PX_PER_MIN, borderBottom:`1px solid ${T.border}`,
+                           display:'flex', alignItems:'flex-start', position:'relative' }}
+                  onClick={() => setShowFormAt(minOffset)}>
+                  <div style={{ width: 50, fontSize: 10, color: T.muted, padding:'3px 8px',
+                                fontWeight: 600, flexShrink: 0 }}>
+                    {fmtTime(minOffset)}
+                  </div>
+                  <div style={{ flex: 1, height:'100%', cursor:'pointer' }} />
+                </div>
+              );
+            })}
+            {/* Scheduled tasks */}
+            {scheduled.map(t => {
+              const top = (t.startMin - HOUR_START * 60) * PX_PER_MIN;
+              if (top < 0) return null;
+              const cat = scatByKey(t.cat);
+              return (
+                <div key={t.id}
+                  style={{ position:'absolute', left: 58, right: 8, top,
+                           background: cat.color + '20', border:`1.5px solid ${cat.color}`,
+                           borderRadius: 6, padding:'2px 6px', fontSize: 11, color: cat.color,
+                           fontWeight: 600, zIndex: 2, cursor:'default' }}>
+                  <span>{fmtTime(t.startMin)}</span>
+                  <span style={{ marginLeft: 6, color: T.ink }}>{t.text}</span>
+                </div>
+              );
+            })}
+            {/* Current time line */}
+            {(() => {
+              const top = (nowMin - HOUR_START * 60) * PX_PER_MIN;
+              if (top < 0 || top > (HOUR_END - HOUR_START) * 60 * PX_PER_MIN) return null;
+              return (
+                <div style={{ position:'absolute', left: 0, right: 0, top,
+                              height: 2, background:'#EF4444', zIndex: 3 }}>
+                  <div style={{ width: 8, height: 8, borderRadius:'50%', background:'#EF4444',
+                                position:'absolute', left: 46, top:-3 }} />
+                </div>
+              );
+            })()}
+          </div>
+          {showFormAt != null && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>
+                Adding task at {fmtTime(showFormAt)}
+              </div>
+              <SalesTaskForm isBronson={isBronson} userColor={userColor}
+                onSave={addTask} onCancel={() => setShowFormAt(null)} />
+            </div>
+          )}
+        </div>
+        {/* Unscheduled sidebar */}
+        <div style={{ width: 220 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.muted,
+                        marginBottom: 8, textTransform:'uppercase', letterSpacing: 1 }}>
+            Unscheduled
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap: 6 }}>
+            {unscheduled.length === 0 && (
+              <div style={{ fontSize: 12, color: T.faint, textAlign:'center', padding:'16px 0' }}>
+                All tasks scheduled
+              </div>
+            )}
+            {unscheduled.map(t => (
+              <SalesTaskCard key={t.id} task={t} compact isBronson={isBronson}
+                onToggle={toggleTask}
+                onDelete={isBronson || t.owner === salesUser ? deleteTask : null} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── 10. SalesAccountsView ────────────────────────────────────────────────
+
+  function SalesAccountsView({ accounts, setAccounts, tasksByDate, isBronson, userColor }) {
+    const [newAcc, setNewAcc] = useSs('');
+    const [editId, setEditId] = useSs(null);
+    const [editNote, setEditNote] = useSs('');
+
+    function addAccount() {
+      if (!newAcc.trim()) return;
+      setAccounts(prev => [...prev, {
+        id: suid(), name: newAcc.trim(), note:'', status:'active',
+        followUpDate: null, createdAt: Date.now()
+      }]);
+      setNewAcc('');
+    }
+
+    function deleteAccount(id) {
+      setAccounts(prev => prev.filter(a => a.id !== id));
+    }
+
+    function saveNote(id) {
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, note: editNote } : a));
+      setEditId(null);
+    }
+
+    function setStatus(id, status) {
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+    }
+
+    // Count tasks per account
+    function taskCount(name) {
+      return Object.values(tasksByDate).flat().filter(t => t.account === name).length;
+    }
+
+    const STATUS_COLORS = { active:'#10B981', pending:'#F59E0B', inactive:'#9AA0AE' };
+
+    const inp = {
+      background: T.surface, border:`1px solid ${T.border}`, borderRadius: 8,
+      padding:'7px 10px', fontSize: 13, color: T.ink, outline:'none', flex: 1
     };
 
     return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: T.heading, letterSpacing: '-0.3px' }}>ACCOUNTS</div>
-          <button onClick={() => setShowForm(s => !s)} style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>+ Add Account</button>
+      <div style={{ display:'flex', flexDirection:'column', gap: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, textTransform:'uppercase' }}>
+          Accounts & Follow-Ups
         </div>
-
-        {showForm && (
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Account / company name…" style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', color: T.ink, fontSize: 14, outline: 'none', marginBottom: 10 }} />
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <input value={newContact} onChange={e => setNewContact(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addContact(); }} placeholder="Add contact name…" style={{ flex: 1, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 10px', color: T.ink, fontSize: 13, outline: 'none' }} />
-              <button onClick={addContact} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: T.surface2, color: T.ink, cursor: 'pointer', fontSize: 13 }}>Add</button>
-            </div>
-            {newContacts.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>{newContacts.map((c, i) => <span key={i} style={{ fontSize: 12, padding: '2px 10px', borderRadius: 12, background: `${userColor}20`, color: userColor }}>{c}</span>)}</div>}
-            <textarea value={newNotes} onChange={e => setNewNotes(e.target.value)} placeholder="Notes…" rows={2} style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', color: T.ink, fontSize: 13, outline: 'none', resize: 'vertical', marginBottom: 10 }} />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowForm(false)} style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-              <button onClick={addAccount} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Save</button>
-            </div>
+        <div style={{ display:'flex', gap: 8 }}>
+          <input value={newAcc} onChange={e => setNewAcc(e.target.value)}
+            placeholder="Add account / company…" style={inp}
+            onKeyDown={e => e.key === 'Enter' && addAccount()} />
+          <button onClick={addAccount}
+            style={{ padding:'7px 16px', borderRadius: 8, background: userColor,
+                     color:'#fff', fontWeight: 700, fontSize: 13, border:'none', cursor:'pointer' }}>
+            Add
+          </button>
+        </div>
+        {accounts.length === 0 && (
+          <div style={{ textAlign:'center', color: T.faint, padding:'40px 0', fontSize: 14 }}>
+            No accounts yet. Add one above.
           </div>
         )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {accounts.length === 0 && !showForm && <div style={{ textAlign: 'center', padding: '40px 0', color: T.faint, fontSize: 14 }}>No accounts yet. Add one above.</div>}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {accounts.map(acc => {
-            const isExpanded = expandedId === acc.id;
-            const status     = followUpStatus(acc.name);
-            const lt         = lastTouched(acc.name);
-            const accTasks   = allTasks.filter(t => t.account && t.account.toLowerCase() === acc.name.toLowerCase()).slice(0, 5);
+            const tc = taskCount(acc.name);
+            const sc = STATUS_COLORS[acc.status] || '#9AA0AE';
             return (
-              <div key={acc.id} style={{ background: T.cardBg, border: `1px solid ${isExpanded ? userColor : T.border}`, borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.15s' }}>
-                <div onClick={() => setExpandedId(isExpanded ? null : acc.id)} style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: T.heading }}>{acc.name}</div>
-                    <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{acc.contacts.length} contact{acc.contacts.length !== 1 ? 's' : ''} · {lt ? `Last: ${lt}` : 'Never contacted'}</div>
-                  </div>
-                  <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, background: `${status.color}20`, color: status.color, fontWeight: 600 }}>{status.label}</span>
-                  <span style={{ color: T.faint, fontSize: 14 }}>{isExpanded ? '▲' : '▼'}</span>
+              <div key={acc.id}
+                style={{ background: T.cardBg, border:`1px solid ${T.border}`,
+                         borderRadius: 12, padding: 14, display:'flex', flexDirection:'column', gap: 8 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: T.ink }}>{acc.name}</div>
+                  <button onClick={() => deleteAccount(acc.id)}
+                    style={{ background:'none', border:'none', cursor:'pointer',
+                             color: T.faint, fontSize: 16 }}>×</button>
                 </div>
-                {isExpanded && (
-                  <div style={{ borderTop: `1px solid ${T.border}`, padding: '14px 16px' }}>
-                    {acc.contacts.length > 0 && (
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Contacts</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{acc.contacts.map((c, i) => <span key={i} style={{ fontSize: 13, padding: '3px 10px', borderRadius: 12, background: T.surface, color: T.ink }}>{c}</span>)}</div>
-                      </div>
-                    )}
-                    {accTasks.length > 0 && (
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Recent Tasks</div>
-                        {accTasks.map(t => <div key={t.id} style={{ fontSize: 13, color: T.ink, padding: '3px 0', borderBottom: `1px solid ${T.border}` }}>{catByKey(t.cat).label} — {t.text}</div>)}
-                      </div>
-                    )}
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Notes</div>
-                      <textarea
-                        value={editNotes[acc.id] !== undefined ? editNotes[acc.id] : (acc.notes || '')}
-                        onChange={e => setEditNotes(prev => ({ ...prev, [acc.id]: e.target.value }))}
-                        onBlur={() => {
-                          if (editNotes[acc.id] !== undefined) {
-                            setAccounts(prev => prev.map(a => a.id === acc.id ? { ...a, notes: editNotes[acc.id] } : a));
-                            setEditNotes(prev => { const n = { ...prev }; delete n[acc.id]; return n; });
-                          }
-                        }}
-                        rows={3} placeholder="Add notes…"
-                        style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', color: T.ink, fontSize: 13, outline: 'none', resize: 'vertical' }}
-                      />
+                <div style={{ display:'flex', gap: 6, alignItems:'center' }}>
+                  {Object.keys(STATUS_COLORS).map(s => (
+                    <button key={s} onClick={() => setStatus(acc.id, s)}
+                      style={{ padding:'2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 600,
+                               cursor:'pointer', border:`1.5px solid ${STATUS_COLORS[s]}`,
+                               background: acc.status === s ? STATUS_COLORS[s] : 'transparent',
+                               color: acc.status === s ? '#fff' : STATUS_COLORS[s],
+                               textTransform:'capitalize' }}>
+                      {s}
+                    </button>
+                  ))}
+                  <span style={{ marginLeft:'auto', fontSize: 11, color: T.muted }}>
+                    {tc} task{tc !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {editId === acc.id ? (
+                  <div style={{ display:'flex', flexDirection:'column', gap: 6 }}>
+                    <textarea value={editNote} onChange={e => setEditNote(e.target.value)}
+                      style={{ ...inp, flex:'none', resize:'vertical', minHeight: 60, fontFamily:'inherit' }} />
+                    <div style={{ display:'flex', gap: 6 }}>
+                      <button onClick={() => saveNote(acc.id)}
+                        style={{ padding:'4px 12px', borderRadius: 6, background: userColor,
+                                 color:'#fff', fontWeight: 700, fontSize: 12, border:'none', cursor:'pointer' }}>
+                        Save
+                      </button>
+                      <button onClick={() => setEditId(null)}
+                        style={{ padding:'4px 10px', borderRadius: 6, background: T.surface,
+                                 border:`1px solid ${T.border}`, color: T.muted, fontSize: 12, cursor:'pointer' }}>
+                        Cancel
+                      </button>
                     </div>
+                  </div>
+                ) : (
+                  <div onClick={() => { setEditId(acc.id); setEditNote(acc.note); }}
+                    style={{ fontSize: 12, color: acc.note ? T.ink : T.faint,
+                             cursor:'pointer', padding:'4px 0', minHeight: 20 }}>
+                    {acc.note || 'Add notes…'}
                   </div>
                 )}
               </div>
@@ -16040,245 +16429,437 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
         </div>
       </div>
     );
-  };
+  }
 
-  // ─── SalesWeeklyView ─────────────────────────────────────────────────────────
+  // ─── 11. SalesWeeklyView ──────────────────────────────────────────────────
 
-  const SalesWeeklyView = ({ selDate, setSelDate, tasksByDate, schedule, dayFlags, setDayFlags, visibleTasks, userColor }) => {
-    const dates = sweekDates(selDate);
+  function SalesWeeklyView({ selDate, setSelDate, tasksByDate, setTasksByDate,
+                             deletedTasks, setDeletedTasks,
+                             dayFlags, setDayFlags,
+                             isBronson, salesUser, userColor }) {
+    const weekDates = sweekDates(selDate).slice(0, 5); // Mon-Fri
 
-    const toggleDayType = (d, current) => {
-      const ddk  = sdkOf(d);
-      const next = current === 'road' ? 'office' : current === 'office' ? null : 'road';
-      setDayFlags(prev => ({ ...prev, [ddk]: { ...(prev[ddk] || {}), dayType: next } }));
-    };
-
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: T.heading }}>Week of {dates[0].getDate()} {S_MONTH_NAMES[dates[0].getMonth()]}</div>
-          <button style={{ padding: '7px 16px', borderRadius: 9, border: `1px solid ${userColor}`, background: `${userColor}14`, color: userColor, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>🔒 Lock in Week</button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 20 }}>
-          {dates.map((d, i) => {
-            const ddk    = sdkOf(d);
-            const df     = dayFlags[ddk] || {};
-            const dt     = df.dayType;
-            const tasks  = visibleTasks(tasksByDate[ddk] || []);
-            const isToday2 = sdkOf(today()) === ddk;
-            return (
-              <div key={ddk} style={{ borderRadius: 12, border: `2px solid ${isToday2 ? userColor : T.border}`, background: T.cardBg, padding: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: isToday2 ? userColor : T.heading }}>{S_DAY_NAMES[i]} {d.getDate()}</div>
-                  <button onClick={() => toggleDayType(d, dt)} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 8, border: `1px solid ${dt === 'road' ? '#3B82F6' : dt === 'office' ? '#6366F1' : T.border}`, background: 'transparent', color: dt === 'road' ? '#3B82F6' : dt === 'office' ? '#6366F1' : T.faint, cursor: 'pointer' }}>
-                    {dt === 'road' ? '🚗' : dt === 'office' ? '🏢' : '—'}
-                  </button>
-                </div>
-                <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{tasks.length} task{tasks.length !== 1 ? 's' : ''}</div>
-                {tasks.slice(0, 5).map(t => {
-                  const cat = catByKey(t.cat);
-                  return <div key={t.id} style={{ fontSize: 11, color: T.ink, padding: '2px 0 2px 6px', borderLeft: `2px solid ${cat.color}`, marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.text}</div>;
-                })}
-                {tasks.length > 5 && <div style={{ fontSize: 11, color: T.muted }}>+{tasks.length - 5} more</div>}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  // ─── SalesMonthlyView ────────────────────────────────────────────────────────
-
-  const SalesMonthlyView = ({ selDate, tasksByDate, dayFlags, userColor }) => {
-    const cells      = smonthDates(selDate);
-    const allCells   = cells.filter(Boolean);
-    const roadDays   = allCells.filter(d => (dayFlags[sdkOf(d)] || {}).dayType === 'road').length;
-    const officeDays = allCells.filter(d => (dayFlags[sdkOf(d)] || {}).dayType === 'office').length;
-    const totalTasks = allCells.reduce((sum, d) => sum + (tasksByDate[sdkOf(d)] || []).length, 0);
-
-    return (
-      <div>
-        <div style={{ fontSize: 17, fontWeight: 800, color: T.heading, marginBottom: 14 }}>
-          {S_MONTH_NAMES[selDate.getMonth()]} {selDate.getFullYear()}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
-          {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: T.muted, padding: '4px 0' }}>{d}</div>)}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 16 }}>
-          {cells.map((d, i) => {
-            if (!d) return <div key={`e${i}`} />;
-            const cddk   = sdkOf(d);
-            const dt     = (dayFlags[cddk] || {}).dayType;
-            const ts     = tasksByDate[cddk] || [];
-            const isToday2 = sdkOf(today()) === cddk;
-            return (
-              <div key={cddk} style={{ borderRadius: 8, border: `1px solid ${isToday2 ? userColor : T.border}`, background: T.cardBg, padding: '6px 4px', minHeight: 56, textAlign: 'center' }}>
-                <div style={{ fontSize: 12, fontWeight: isToday2 ? 700 : 400, color: isToday2 ? userColor : T.ink }}>{d.getDate()}</div>
-                <div style={{ fontSize: 14, marginTop: 2 }}>{dt === 'road' ? '🚗' : dt === 'office' ? '🏢' : ''}</div>
-                {ts.length > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginTop: 2 }}>{ts.length}</div>}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display: 'flex', gap: 20, padding: '12px 16px', background: T.surface, borderRadius: 12, border: `1px solid ${T.border}` }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#3B82F6' }}>{roadDays}</div>
-            <div style={{ fontSize: 12, color: T.muted }}>Road days</div>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#6366F1' }}>{officeDays}</div>
-            <div style={{ fontSize: 12, color: T.muted }}>Office days</div>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.heading }}>{totalTasks}</div>
-            <div style={{ fontSize: 12, color: T.muted }}>Tasks this month</div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ─── SalesApp ────────────────────────────────────────────────────────────────
-
-  const S_LS_KEY  = 'prontoHQ.sales.state.v1';
-  const S_LS_USER = 'prontoHQ.sales.user';
-
-  const sloadState = () => {
-    try { const raw = localStorage.getItem(S_LS_KEY); return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
-  };
-
-  const SalesApp = ({ onSwitchWorkspace }) => {
-    const saved = sloadState() || {};
-
-    const [salesUser,    setSalesUser]    = useSs(() => { try { return localStorage.getItem(S_LS_USER) || null; } catch(_) { return null; } });
-    const [tab,          setTab]          = useSs('today');
-    const [selDate,      setSelDate]      = useSs(today);
-    const [tasksByDate,  setTasksByDate]  = useSs(() => saved.tasksByDate  || {});
-    const [schedule,     setSchedule]     = useSs(() => saved.schedule     || {});
-    const [dayFlags,     setDayFlags]     = useSs(() => saved.dayFlags     || {});
-    const [accounts,     setAccounts]     = useSs(() => saved.accounts     || []);
-    const [deletedTasks, setDeletedTasks] = useSs(() => saved.deletedTasks || []);
-
-    const dk        = sdkOf(selDate);
-    const isBronson = salesUser === 'bronson';
-    const userObj   = userByKey(salesUser || 'bronson');
-    const userColor = userObj.color;
-
-    useEs(() => {
-      try { localStorage.setItem(S_LS_KEY, JSON.stringify({ tasksByDate, schedule, dayFlags, accounts, deletedTasks })); } catch(e) {}
-    }, [tasksByDate, schedule, dayFlags, accounts, deletedTasks]);
-
-    useEs(() => {
-      if (salesUser) { try { localStorage.setItem(S_LS_USER, salesUser); } catch(_) {} }
-    }, [salesUser]);
-
-    const addTask = useCBs((targetDk, task) => {
-      setTasksByDate(prev => ({ ...prev, [targetDk]: [...(prev[targetDk] || []), { ...task, updatedAt: Date.now() }] }));
-    }, []);
-
-    const updateTask = useCBs((targetDk, id, patch) => {
-      setTasksByDate(prev => ({ ...prev, [targetDk]: (prev[targetDk] || []).map(t => t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t) }));
-    }, []);
-
-    const deleteTask = useCBs((targetDk, id) => {
-      setTasksByDate(prev => {
-        const task = (prev[targetDk] || []).find(t => t.id === id);
-        if (task) setDeletedTasks(d => [...d, { ...task, deletedAt: Date.now() }]);
-        return { ...prev, [targetDk]: (prev[targetDk] || []).filter(t => t.id !== id) };
-      });
-    }, []);
-
-    const moveTask = useCBs((fromDk, toDk, id) => {
-      setTasksByDate(prev => {
-        const task = (prev[fromDk] || []).find(t => t.id === id);
-        if (!task) return prev;
-        return { ...prev, [fromDk]: (prev[fromDk] || []).filter(t => t.id !== id), [toDk]: [...(prev[toDk] || []), { ...task, updatedAt: Date.now() }] };
-      });
-    }, []);
-
-    const visibleTasks = useCBs((arr) => {
-      if (isBronson) return arr;
-      return arr.filter(t => !t.private && (t.delegated || t.owner === 'victoria'));
-    }, [isBronson]);
-
-    if (!salesUser) {
-      return <SalesUserPicker onSelect={(key) => { setSalesUser(key); setTab('today'); }} onSwitchWorkspace={onSwitchWorkspace} />;
+    function toggleDay(d, type) {
+      const dk = isoDate(d);
+      setDayFlags(prev => ({ ...prev, [dk]: prev[dk] === type ? null : type }));
     }
 
-    const bronsonTabs = [
-      { key: 'today',    label: "Today's View" },
-      { key: 'tasks',    label: 'Tasks' },
-      { key: 'schedule', label: 'Schedule' },
-      { key: 'accounts', label: 'Accounts' },
-      { key: 'weekly',   label: 'Weekly' },
-      { key: 'monthly',  label: 'Monthly' },
-    ];
-    const victoriaTabs = [
-      { key: 'today',    label: "Today's View" },
-      { key: 'tasks',    label: 'Tasks' },
-      { key: 'schedule', label: 'Schedule' },
-    ];
-    const tabs = isBronson ? bronsonTabs : victoriaTabs;
+    function toggleTask(dk, id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).map(t =>
+          t.id === id ? { ...t, done: !t.done, updatedAt: Date.now() } : t
+        )
+      }));
+    }
 
-    const prevDay = () => { const d = new Date(selDate); d.setDate(d.getDate() - 1); setSelDate(d); };
-    const nextDay = () => { const d = new Date(selDate); d.setDate(d.getDate() + 1); setSelDate(d); };
-
-    const sharedProps = { salesUser, isBronson, selDate, setSelDate, dk, tasksByDate, schedule, setSchedule, dayFlags, setDayFlags, addTask, updateTask, deleteTask, moveTask, visibleTasks, userColor, accounts, setAccounts };
+    function deleteTask(dk, id) {
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).filter(t => t.id !== id)
+      }));
+      setDeletedTasks(prev => ({ ...prev, [id]: Date.now() }));
+    }
 
     return (
-      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ background: T.cardBg, borderBottom: `1px solid ${T.border}`, padding: '0 24px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, height: 56 }}>
-            <div style={{ fontSize: 17, fontWeight: 900, color: T.heading, letterSpacing: '-0.5px', flexShrink: 0 }}>Pronto Hire</div>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 2, color: '#fff', background: T.navy || '#1E3A5F', padding: '3px 10px', borderRadius: 6, flexShrink: 0 }}>SALES & GM</div>
-            <div style={{ flex: 1 }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button onClick={prevDay} style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
-              <span style={{ fontSize: 13, color: T.ink, fontWeight: 600, minWidth: 160, textAlign: 'center', whiteSpace: 'nowrap' }}>{sfmtDateStr(selDate)}</span>
-              <button onClick={nextDay} style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
-              <button onClick={() => setSelDate(today())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer' }}>Today</button>
-            </div>
-            <div style={{ flex: 1 }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', background: userColor, color: '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{userObj.name[0]}</div>
-            </div>
-            <button onClick={() => setSalesUser(null)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', whiteSpace: 'nowrap' }}>Switch user</button>
-            <button onClick={onSwitchWorkspace} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', whiteSpace: 'nowrap' }}>Switch workspace</button>
-          </div>
+      <div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap: 10 }}>
+          {weekDates.map(d => {
+            const dk    = isoDate(d);
+            const flag  = dayFlags[dk];
+            const isToday = dk === isoDate(today());
+            const tasks = (tasksByDate[dk] || []).filter(t =>
+              isBronson ? true : (!t.isPrivate || t.delegated || t.owner === salesUser)
+            );
+            const sorted = sortByUrgency(tasks);
+            return (
+              <div key={dk}
+                style={{ background: T.cardBg, border:`1.5px solid ${isToday ? userColor : T.border}`,
+                         borderRadius: 12, overflow:'hidden' }}>
+                {/* Day header */}
+                <div style={{ background: isToday ? userColor : T.surface,
+                              padding:'8px 10px', display:'flex', alignItems:'center',
+                              justifyContent:'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700,
+                                  color: isToday ? '#fff' : T.muted }}>
+                      {DAY_NAMES[d.getDay()]}
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 800,
+                                  color: isToday ? '#fff' : T.ink }}>
+                      {d.getDate()}
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap: 3 }}>
+                    {[{ k:'road', l:'🚗' }, { k:'office', l:'🏢' }].map(({ k, l }) => (
+                      <button key={k} onClick={() => toggleDay(d, k)}
+                        style={{ padding:'1px 5px', borderRadius: 4, fontSize: 10,
+                                 cursor:'pointer', border:`1px solid ${isToday ? 'rgba(255,255,255,0.5)' : userColor}`,
+                                 background: flag === k ? (isToday ? 'rgba(255,255,255,0.3)' : userColor) : 'transparent',
+                                 color: isToday ? '#fff' : (flag === k ? '#fff' : userColor) }}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ padding: 8, display:'flex', flexDirection:'column', gap: 5, minHeight: 80 }}>
+                  {sorted.length === 0 && (
+                    <div style={{ fontSize: 11, color: T.faint, textAlign:'center', padding:'12px 0' }}>
+                      No tasks
+                    </div>
+                  )}
+                  {sorted.map(t => (
+                    <SalesTaskCard key={t.id} task={t} compact isBronson={isBronson}
+                      onToggle={id => toggleTask(dk, id)}
+                      onDelete={isBronson || t.owner === salesUser ? id => deleteTask(dk, id) : null} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
-          <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
-            {tabs.map(t => (
-              <button key={t.key} onClick={() => setTab(t.key)} style={{
-                padding: '10px 16px', border: 'none',
-                borderBottom: tab === t.key ? `2px solid ${userColor}` : '2px solid transparent',
-                background: 'transparent',
-                color: tab === t.key ? userColor : T.muted,
-                cursor: 'pointer', fontWeight: tab === t.key ? 700 : 400,
-                fontSize: 13, whiteSpace: 'nowrap', transition: 'all 0.15s',
-              }}>{t.label}</button>
+  // ─── 12. SalesMonthlyView ─────────────────────────────────────────────────
+
+  function SalesMonthlyView({ selDate, setSelDate, tasksByDate, isBronson, salesUser, userColor }) {
+    const cells = smonthDates(selDate);
+    const y = selDate.getFullYear();
+    const m = selDate.getMonth();
+
+    // Month stats
+    const monthTasks = Object.entries(tasksByDate)
+      .filter(([dk]) => {
+        const d = sdkOf(dk);
+        return d.getFullYear() === y && d.getMonth() === m;
+      })
+      .flatMap(([, ts]) => ts)
+      .filter(t => isBronson ? true : (!t.isPrivate || t.delegated || t.owner === salesUser));
+
+    const mStats = [
+      { label:'Total',     val: monthTasks.length,                     color:'#3B82F6' },
+      { label:'Done',      val: monthTasks.filter(t => t.done).length, color:'#10B981' },
+      { label:'Urgent',    val: monthTasks.filter(t => t.urgency === 'urgent').length, color:'#EF4444' },
+      { label:'Accounts',  val: [...new Set(monthTasks.map(t => t.account).filter(Boolean))].length, color:'#8B5CF6' },
+    ];
+
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap: 14 }}>
+        {/* Stats */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap: 10 }}>
+          {mStats.map(s => (
+            <div key={s.label}
+              style={{ background: T.cardBg, border:`1px solid ${s.color}30`,
+                       borderRadius: 12, padding:'10px 14px', textAlign:'center' }}>
+              <div style={{ fontSize: 26, fontWeight: 800, color: s.color }}>{s.val}</div>
+              <div style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {/* Calendar */}
+        <div style={{ background: T.cardBg, border:`1px solid ${T.border}`, borderRadius: 12, padding: 14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap: 2, marginBottom: 6 }}>
+            {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
+              <div key={d} style={{ textAlign:'center', fontSize: 11, fontWeight: 700,
+                                    color: T.muted, padding:'3px 0' }}>{d}</div>
+            ))}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap: 4 }}>
+            {cells.map(({ date, inMonth }, i) => {
+              const dk = isoDate(date);
+              const ts = (tasksByDate[dk] || []).filter(t =>
+                isBronson ? true : (!t.isPrivate || t.delegated || t.owner === salesUser)
+              );
+              const isToday = dk === isoDate(today());
+              const done = ts.filter(t => t.done).length;
+              return (
+                <div key={i} onClick={() => setSelDate(date)}
+                  style={{ background: isToday ? userColor + '15' : T.surface,
+                           border:`1.5px solid ${isToday ? userColor : T.border}`,
+                           borderRadius: 8, padding:'5px 6px', minHeight: 60, cursor:'pointer',
+                           opacity: inMonth ? 1 : 0.35 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: isToday ? userColor : T.ink }}>
+                    {date.getDate()}
+                  </div>
+                  {ts.length > 0 && (
+                    <div style={{ marginTop: 3, display:'flex', flexDirection:'column', gap: 2 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: userColor }}>
+                        {ts.length} task{ts.length !== 1 ? 's' : ''}
+                      </div>
+                      {done > 0 && (
+                        <div style={{ fontSize: 9, color:'#10B981' }}>{done} done</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── 13. SalesApp ─────────────────────────────────────────────────────────
+
+  function SalesApp({ onSwitchWorkspace }) {
+    const [salesUser, setSalesUser] = useSs(() => {
+      try { return localStorage.getItem(SALES_USER_KEY) || null; } catch { return null; }
+    });
+
+    const [tab, setTab]             = useSs('today');
+    const [selDate, setSelDate]     = useSs(() => today());
+    const [tasksByDate, setTasksByDate] = useSs(() => {
+      try {
+        const raw = localStorage.getItem(SALES_LS_KEY);
+        if (raw) return JSON.parse(raw).tasksByDate || {};
+      } catch {}
+      return {};
+    });
+    const [schedule, setSchedule]   = useSs(() => {
+      try {
+        const raw = localStorage.getItem(SALES_LS_KEY);
+        if (raw) return JSON.parse(raw).schedule || {};
+      } catch {}
+      return {};
+    });
+    const [dayFlags, setDayFlags]   = useSs(() => {
+      try {
+        const raw = localStorage.getItem(SALES_LS_KEY);
+        if (raw) return JSON.parse(raw).dayFlags || {};
+      } catch {}
+      return {};
+    });
+    const [accounts, setAccounts]   = useSs(() => {
+      try {
+        const raw = localStorage.getItem(SALES_LS_KEY);
+        if (raw) return JSON.parse(raw).accounts || [];
+      } catch {}
+      return [];
+    });
+    const [deletedTasks, setDeletedTasks] = useSs(() => {
+      try {
+        const raw = localStorage.getItem(SALES_LS_KEY);
+        if (raw) return JSON.parse(raw).deletedTasks || {};
+      } catch {}
+      return {};
+    });
+
+    const syncRef  = useRs({});
+    const isBronson = salesUser === 'bronson';
+    const userInfo  = suserByKey(salesUser || 'bronson');
+    const userColor = userInfo.color;
+
+    // Persist to localStorage
+    useEs(() => {
+      if (!salesUser) return;
+      try {
+        const state = { tasksByDate, schedule, dayFlags, accounts, deletedTasks };
+        localStorage.setItem(SALES_LS_KEY, JSON.stringify(state));
+        if (syncRef.current && syncRef.current.push) {
+          syncRef.current.push(state);
+        }
+      } catch {}
+    }, [tasksByDate, schedule, dayFlags, accounts, deletedTasks, salesUser]);
+
+    // Date navigation helpers
+    function changeDate(delta) {
+      const d = new Date(selDate);
+      d.setDate(d.getDate() + delta);
+      setSelDate(d);
+    }
+
+    // getState / applyState for sync
+    function getState() {
+      return { tasksByDate, schedule, dayFlags, accounts, deletedTasks };
+    }
+
+    function applyState(remote, fromUser) {
+      // Merge tasksByDate by task id, keep highest updatedAt, respect deletedTasks
+      setTasksByDate(prev => {
+        const merged = { ...prev };
+        if (!remote.tasksByDate) return prev;
+        Object.entries(remote.tasksByDate).forEach(([dk, remoteTasks]) => {
+          const localTasks = merged[dk] || [];
+          const byId = {};
+          localTasks.forEach(t => { byId[t.id] = t; });
+          remoteTasks.forEach(rt => {
+            if (deletedTasks[rt.id]) return;
+            if (!byId[rt.id] || (rt.updatedAt || 0) > (byId[rt.id].updatedAt || 0)) {
+              byId[rt.id] = rt;
+            }
+          });
+          merged[dk] = Object.values(byId);
+        });
+        return merged;
+      });
+      if (remote.accounts) setAccounts(prev => {
+        const byId = {};
+        prev.forEach(a => { byId[a.id] = a; });
+        remote.accounts.forEach(a => {
+          if (!byId[a.id] || (a.createdAt || 0) > (byId[a.id]?.createdAt || 0)) {
+            byId[a.id] = a;
+          }
+        });
+        return Object.values(byId);
+      });
+      if (remote.dayFlags) setDayFlags(prev => ({ ...remote.dayFlags, ...prev }));
+      if (remote.deletedTasks) setDeletedTasks(prev => ({ ...remote.deletedTasks, ...prev }));
+    }
+
+    // Visible tasks filter
+    function visibleTasks(tasks) {
+      if (isBronson) return tasks;
+      return tasks.filter(t => !t.isPrivate || t.delegated || t.owner === salesUser);
+    }
+
+    // User picker screen
+    if (!salesUser) {
+      return (
+        <SalesUserPicker
+          onSelect={u => {
+            setSalesUser(u);
+            try { localStorage.setItem(SALES_USER_KEY, u); } catch {}
+          }}
+          onSwitchWorkspace={onSwitchWorkspace}
+        />
+      );
+    }
+
+    // Tabs available
+    const TABS_BRONSON  = ['today','tasks','schedule','accounts','weekly','monthly'];
+    const TABS_VICTORIA = ['today','tasks','schedule'];
+    const TABS = isBronson ? TABS_BRONSON : TABS_VICTORIA;
+
+    const TAB_LABELS = {
+      today:    "Today's View",
+      tasks:    'Tasks',
+      schedule: 'Schedule',
+      accounts: 'Accounts',
+      weekly:   'Weekly',
+      monthly:  'Monthly',
+    };
+
+    const sharedProps = {
+      selDate, setSelDate,
+      tasksByDate, setTasksByDate,
+      schedule, setSchedule,
+      dayFlags, setDayFlags,
+      deletedTasks, setDeletedTasks,
+      isBronson, salesUser, userColor,
+      visibleTasks,
+    };
+
+    const dk = isoDate(selDate);
+    const displayDate = selDate.toLocaleDateString('en-AU', {
+      weekday:'short', day:'numeric', month:'short', year:'numeric'
+    });
+
+    return (
+      <div style={{ minHeight:'100vh', background: T.bg, display:'flex', flexDirection:'column' }}>
+        {/* ── Header ── */}
+        <div style={{ background: T.cardBg, borderBottom:`1px solid ${T.border}`,
+                      padding:'0 20px', position:'sticky', top: 0, zIndex: 100 }}>
+          <div style={{ display:'flex', alignItems:'center', gap: 10,
+                        height: 56, maxWidth: 1400, margin:'0 auto' }}>
+            {/* Brand */}
+            <div style={{ fontWeight: 900, fontSize: 16, color: T.heading, letterSpacing: 1 }}>
+              PRONTO HIRE
+            </div>
+            <span style={{ background: T.navy || '#1E3A5F', color:'#fff', fontSize: 10,
+                           fontWeight: 700, padding:'2px 8px', borderRadius: 20, letterSpacing: 0.5 }}>
+              SALES &amp; GM
+            </span>
+            <div style={{ flex: 1 }} />
+            {/* Date nav */}
+            <button onClick={() => changeDate(-1)}
+              style={{ background:'none', border:`1px solid ${T.border}`, borderRadius: 6,
+                       width: 28, height: 28, cursor:'pointer', color: T.muted, fontSize: 14 }}>
+              ‹
+            </button>
+            <span style={{ fontSize: 13, color: T.ink, fontWeight: 600, whiteSpace:'nowrap' }}>
+              {displayDate}
+            </span>
+            <button onClick={() => changeDate(1)}
+              style={{ background:'none', border:`1px solid ${T.border}`, borderRadius: 6,
+                       width: 28, height: 28, cursor:'pointer', color: T.muted, fontSize: 14 }}>
+              ›
+            </button>
+            {/* User avatar */}
+            <div style={{ width: 32, height: 32, borderRadius:'50%', background: userColor,
+                          color:'#fff', fontWeight: 800, fontSize: 14, display:'flex',
+                          alignItems:'center', justifyContent:'center' }}>
+              {userInfo.label[0]}
+            </div>
+            <button onClick={() => {
+                setSalesUser(null);
+                try { localStorage.removeItem(SALES_USER_KEY); } catch {}
+              }}
+              style={{ padding:'4px 10px', borderRadius: 6, background:'none',
+                       border:`1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor:'pointer' }}>
+              Switch User
+            </button>
+            <button onClick={onSwitchWorkspace}
+              style={{ padding:'4px 10px', borderRadius: 6, background:'none',
+                       border:`1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor:'pointer' }}>
+              Workspaces
+            </button>
+            <SalesSyncButton
+              getState={getState}
+              applyState={applyState}
+              syncRef={syncRef}
+              salesUser={salesUser}
+              userColor={userColor}
+            />
+          </div>
+        </div>
+
+        {/* ── Tab bar ── */}
+        <div style={{ background: T.cardBg, borderBottom:`1px solid ${T.border}`,
+                      padding:'0 20px' }}>
+          <div style={{ display:'flex', gap: 2, maxWidth: 1400, margin:'0 auto' }}>
+            {TABS.map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                style={{ padding:'10px 16px', background:'none', border:'none',
+                         cursor:'pointer', fontSize: 13, fontWeight: tab === t ? 700 : 400,
+                         color: tab === t ? userColor : T.muted,
+                         borderBottom: tab === t ? `2.5px solid ${userColor}` : '2.5px solid transparent',
+                         transition:'color 0.15s' }}>
+                {TAB_LABELS[t]}
+              </button>
             ))}
           </div>
         </div>
 
-        <div style={{ flex: 1, maxWidth: 960, width: '100%', margin: '0 auto', padding: '24px 20px', boxSizing: 'border-box' }}>
-          {tab === 'today'    && <SalesTodayView    {...sharedProps} />}
-          {tab === 'tasks'    && <SalesTaskView     {...sharedProps} />}
+        {/* ── Content ── */}
+        <div style={{ flex: 1, padding: 20, maxWidth: 1400, margin:'0 auto', width:'100%', boxSizing:'border-box' }}>
+          {tab === 'today'    && (
+            <SalesTodayView {...sharedProps}
+              accounts={accounts} setAccounts={setAccounts} />
+          )}
+          {tab === 'tasks'    && <SalesTaskView {...sharedProps} />}
           {tab === 'schedule' && <SalesScheduleView {...sharedProps} />}
-          {tab === 'accounts' && isBronson && <SalesAccountsView accounts={accounts} setAccounts={setAccounts} tasksByDate={tasksByDate} userColor={userColor} />}
-          {tab === 'weekly'   && isBronson && <SalesWeeklyView   selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} schedule={schedule} dayFlags={dayFlags} setDayFlags={setDayFlags} visibleTasks={visibleTasks} userColor={userColor} />}
-          {tab === 'monthly'  && isBronson && <SalesMonthlyView  selDate={selDate} tasksByDate={tasksByDate} dayFlags={dayFlags} userColor={userColor} />}
+          {tab === 'accounts' && (
+            <SalesAccountsView
+              accounts={accounts} setAccounts={setAccounts}
+              tasksByDate={tasksByDate} isBronson={isBronson} userColor={userColor} />
+          )}
+          {tab === 'weekly'   && isBronson && <SalesWeeklyView {...sharedProps} />}
+          {tab === 'monthly'  && isBronson && <SalesMonthlyView {...sharedProps} />}
         </div>
       </div>
     );
-  };
+  }
 
-  // ─── Exports ─────────────────────────────────────────────────────────────────
+  // ─── 14. EXPORTS ──────────────────────────────────────────────────────────
+
   window.WorkspaceSelector = WorkspaceSelector;
-  window.SalesApp          = SalesApp;
+  window.SalesApp = SalesApp;
 
 })();
+
 </script>
 
 </body>
