@@ -101,6 +101,8 @@
   <!-- Firebase Realtime Database (compat SDK — no build step needed) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <!-- MSAL.js — Microsoft identity / Outlook Calendar auth -->
+  <script src="https://alcdn.msauth.net/browser/3.0.10/js/msal-browser.min.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -6135,7 +6137,17 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   background: showFilters ? T.navy+"15" : T.surface, border:`1px solid ${showFilters ? T.navy : T.border}`,
                   borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:11, fontWeight:700,
                   color: showFilters ? T.navy : T.ink,
-                }}>⊞ Filters</button>
+                }}>&#x229E; Filters</button>
+
+                {/* Outlook Calendar Sync */}
+                {schedView === "day" && window.OutlookSyncButton && (
+                  <window.OutlookSyncButton
+                    dk={dk}
+                    daySchedule={daySchedule}
+                    taskNamesById={tasksByIdRef}
+                    todayUser={todayUser}
+                  />
+                )}
 
                 {/* Plan New Day */}
                 <button onClick={() => setPlanDayModal(true)} style={{
@@ -7077,6 +7089,25 @@ function TimeColumn({
               onDragStart={() => {}}
               onDragEnd={() => {}}
             />
+          );
+        })}
+
+        {/* ── Outlook external events (read-only overlay) ── */}
+        {(window._outlookExternalEvents || []).map(ev => {
+          if (ev.startMin < SCHED_START*60 || ev.startMin > SCHED_END*60) return null;
+          const top = minToY(ev.startMin - SCHED_START*60);
+          const height = Math.max(18, ev.durationMin * PX_PER_MIN);
+          return (
+            <div key={ev.id} title={ev.title + "\n(Outlook — external event)"} style={{
+              position:"absolute", left:"60%", right:2, top, height,
+              background:"#0078D410", border:`1px solid #0078D455`,
+              borderLeft:`2px solid #0078D4`, borderRadius:3,
+              padding:"2px 4px", pointerEvents:"none", zIndex:2, overflow:"hidden",
+            }}>
+              <p style={{ fontSize:8.5, fontWeight:700, color:"#0078D4", lineHeight:1.25, margin:0 }}>
+                &#x1F4C5; {ev.title}
+              </p>
+            </div>
           );
         })}
       </div>
@@ -14963,6 +14994,366 @@ function EmailPipelineView({ emailItems, setEmailItems, emailComments, setEmailC
 }
 
 window.EmailPipelineView = EmailPipelineView;
+})();
+</script>
+
+<!-- ── Outlook Calendar Sync ── -->
+<script>
+// OutlookSync singleton — plain JS, no React dependency
+window.OutlookSync = (() => {
+  'use strict';
+  let _msal = null, _initialized = false;
+  const SCOPES = ['Calendars.ReadWrite', 'User.Read'];
+  const GRAPH  = 'https://graph.microsoft.com/v1.0';
+  const CAT    = 'Pronto HQ';
+
+  function cfg() {
+    return {
+      clientId: localStorage.getItem('pronto_outlook_clientId') || '',
+      tenantId: localStorage.getItem('pronto_outlook_tenantId') || 'common',
+    };
+  }
+
+  function buildMsal() {
+    const { clientId, tenantId } = cfg();
+    if (!clientId || !window.msal) return null;
+    return new window.msal.PublicClientApplication({
+      auth: {
+        clientId,
+        authority: `https://login.microsoftonline.com/${tenantId}`,
+        redirectUri: window.location.origin + '/',
+        navigateToLoginRequestUrl: false,
+      },
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
+    });
+  }
+
+  async function getMsal() {
+    if (!_msal) _msal = buildMsal();
+    if (!_msal) return null;
+    if (!_initialized) { await _msal.initialize(); _initialized = true; }
+    return _msal;
+  }
+
+  async function getToken() {
+    const inst = await getMsal();
+    if (!inst) throw new Error('Outlook not configured — enter Client ID in settings');
+    const accs = inst.getAllAccounts();
+    if (!accs.length) throw new Error('Not signed in to Outlook');
+    try {
+      const r = await inst.acquireTokenSilent({ scopes: SCOPES, account: accs[0] });
+      return r.accessToken;
+    } catch {
+      const r = await inst.acquireTokenPopup({ scopes: SCOPES });
+      return r.accessToken;
+    }
+  }
+
+  async function graph(method, path, body) {
+    const token = await getToken();
+    const r = await fetch(GRAPH + path, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: body != null ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) {
+      let msg = `Graph API error ${r.status}`;
+      try { msg = (await r.json()).error?.message || msg; } catch {}
+      throw new Error(msg);
+    }
+    return r.status === 204 ? null : r.json();
+  }
+
+  function blockToEvent(block, dk, taskName) {
+    const pad = n => String(n).padStart(2, '0');
+    const sm = block.startMin || 0, em = sm + (block.durationMin || 30);
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Pacific/Auckland';
+    const subject = taskName || block.breakLabel || block.qeTitle || 'Pronto Task';
+    return {
+      subject,
+      start: { dateTime: `${dk}T${pad(Math.floor(sm/60))}:${pad(sm%60)}:00`, timeZone: tz },
+      end:   { dateTime: `${dk}T${pad(Math.floor(em/60))}:${pad(em%60)}:00`, timeZone: tz },
+      categories: [CAT],
+      body: { contentType: 'text', content: 'Scheduled via Pronto HQ' },
+    };
+  }
+
+  return {
+    configure(clientId, tenantId) {
+      localStorage.setItem('pronto_outlook_clientId', (clientId || '').trim());
+      localStorage.setItem('pronto_outlook_tenantId', (tenantId || 'common').trim());
+      _msal = null; _initialized = false;
+    },
+    getConfig: cfg,
+    isConfigured() { return !!(cfg().clientId && window.msal); },
+
+    async isSignedIn() {
+      const inst = await getMsal().catch(() => null);
+      return !!(inst && inst.getAllAccounts().length > 0);
+    },
+
+    async getDisplayName() {
+      const inst = await getMsal().catch(() => null);
+      if (!inst) return null;
+      const accs = inst.getAllAccounts();
+      return accs[0]?.name || accs[0]?.username || null;
+    },
+
+    async signIn() {
+      const inst = await getMsal();
+      if (!inst) throw new Error('Configure Client ID first');
+      const r = await inst.loginPopup({ scopes: SCOPES });
+      return r.account.name || r.account.username;
+    },
+
+    async signOut() {
+      const inst = await getMsal().catch(() => null);
+      if (!inst) return;
+      const accs = inst.getAllAccounts();
+      if (accs.length) await inst.logoutPopup({ account: accs[0] }).catch(() => {});
+    },
+
+    // Push an owner's blocks for a day to Outlook (replaces all Pronto-tagged events for that day)
+    async pushSchedule(blocks, dk, taskNamesById) {
+      // 1. Delete existing Pronto-tagged events for this day
+      const existing = await graph('GET',
+        `/me/calendarView?startDateTime=${dk}T00:00:00&endDateTime=${dk}T23:59:59` +
+        `&$top=200&$select=id,categories`
+      );
+      const toDelete = (existing?.value || []).filter(e => (e.categories || []).includes(CAT));
+      await Promise.all(toDelete.map(e => graph('DELETE', `/me/calendar/events/${e.id}`)));
+      // 2. Create new events for each block
+      await Promise.all(blocks.map(block => {
+        const name = (taskNamesById || {})[block.taskId] || null;
+        return graph('POST', '/me/calendar/events', blockToEvent(block, dk, name));
+      }));
+    },
+
+    // Fetch all Outlook events for a day (returns array of { id, title, startMin, durationMin, fromPronto })
+    async fetchDayEvents(dk) {
+      const r = await graph('GET',
+        `/me/calendarView?startDateTime=${dk}T00:00:00&endDateTime=${dk}T23:59:59` +
+        `&$top=200&$select=id,subject,start,end,categories&$orderby=start/dateTime`
+      );
+      return (r?.value || []).map(ev => {
+        const parseMin = dtStr => {
+          const m = dtStr.match(/T(\d{2}):(\d{2})/);
+          return m ? parseInt(m[1]) * 60 + parseInt(m[2]) : 0;
+        };
+        const sm = parseMin(ev.start.dateTime);
+        const em = parseMin(ev.end.dateTime);
+        return {
+          id: ev.id,
+          title: ev.subject || '(No title)',
+          startMin: sm,
+          durationMin: Math.max(15, em - sm),
+          fromPronto: (ev.categories || []).includes(CAT),
+        };
+      });
+    },
+  };
+})();
+</script>
+
+<script type="text/babel">
+// ── Outlook Sync UI components ──
+(() => {
+const useSol = React.useState, useRol = React.useRef, useEol = React.useEffect;
+
+function OutlookSettingsModal({ onClose, onSaved }) {
+  const [clientId, setClientId] = useSol(window.OutlookSync.getConfig().clientId || '');
+  const [tenantId, setTenantId] = useSol(() => {
+    const t = window.OutlookSync.getConfig().tenantId;
+    return t === 'common' ? '' : (t || '');
+  });
+
+  const save = () => {
+    if (!clientId.trim()) return;
+    window.OutlookSync.configure(clientId.trim(), tenantId.trim() || 'common');
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:3000, background:"rgba(15,27,58,0.55)", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:12, width:"100%", maxWidth:500, padding:28, boxShadow:"0 24px 60px rgba(15,27,58,0.35)", border:`1px solid ${T.border}` }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontSize:22 }}>&#x1F4C5;</span>
+            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:15, color:T.heading, letterSpacing:"0.02em", margin:0 }}>Outlook Calendar Setup</p>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:20, padding:0, lineHeight:1 }}>&#x00D7;</button>
+        </div>
+
+        <div style={{ padding:"10px 14px", background:"#0078D408", border:`1px solid #0078D433`, borderRadius:8, marginBottom:18 }}>
+          <p style={{ fontSize:11, color:"#0078D4", fontWeight:700, marginBottom:4 }}>&#x1F6E1; What your IT admin needs to do:</p>
+          <ol style={{ paddingLeft:16, margin:0, fontSize:11, color:T.ink, lineHeight:1.8 }}>
+            <li>portal.azure.com &#x2192; App registrations &#x2192; New registration</li>
+            <li>Name: <strong>Pronto HQ</strong></li>
+            <li>Redirect URI type: <strong>Single-page application</strong> &#x2192; <code style={{ background:T.surface2, padding:"1px 5px", borderRadius:3, fontSize:10 }}>{window.location.origin + '/'}</code></li>
+            <li>API permissions: <strong>Microsoft Graph</strong> &#x2192; Calendars.ReadWrite + User.Read &#x2192; Grant admin consent</li>
+            <li>Send you the <strong>Application (client) ID</strong> and <strong>Directory (tenant) ID</strong></li>
+          </ol>
+        </div>
+
+        <label style={{ display:"block", fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.12em", marginBottom:5 }}>APPLICATION (CLIENT) ID *</label>
+        <input value={clientId} onChange={e => setClientId(e.target.value)}
+          onKeyDown={e => { if(e.key==="Enter") save(); if(e.key==="Escape") onClose(); }}
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          style={{ width:"100%", padding:"9px 12px", border:`1px solid ${clientId ? T.border : T.borderStrong}`, borderRadius:6, fontSize:12, fontFamily:"monospace", color:T.ink, outline:"none", marginBottom:14, boxSizing:"border-box", background:T.bg }}
+        />
+        <label style={{ display:"block", fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.12em", marginBottom:5 }}>DIRECTORY (TENANT) ID <span style={{ fontWeight:400, fontSize:9, color:T.faint }}>optional if personal Microsoft account</span></label>
+        <input value={tenantId} onChange={e => setTenantId(e.target.value)}
+          onKeyDown={e => { if(e.key==="Enter") save(); if(e.key==="Escape") onClose(); }}
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (or leave blank)"
+          style={{ width:"100%", padding:"9px 12px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:12, fontFamily:"monospace", color:T.ink, outline:"none", marginBottom:22, boxSizing:"border-box", background:T.bg }}
+        />
+        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+          <button onClick={onClose} style={{ padding:"9px 18px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+          <button onClick={save} disabled={!clientId.trim()} style={{
+            padding:"9px 22px", background: clientId.trim() ? "#0078D4" : T.surface2,
+            color: clientId.trim() ? "#fff" : T.muted,
+            border:"none", borderRadius:6, fontSize:12, fontWeight:800,
+            cursor: clientId.trim() ? "pointer" : "not-allowed", fontFamily:"inherit",
+          }}>Save &amp; Connect</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OutlookSyncButton({ dk, daySchedule, taskNamesById, todayUser }) {
+  const [signedIn, setSignedIn]     = useSol(false);
+  const [displayName, setDisplayName] = useSol(null);
+  const [syncing, setSyncing]       = useSol(false);
+  const [lastSync, setLastSync]     = useSol(null);
+  const [syncErr, setSyncErr]       = useSol(null);
+  const [showSettings, setShowSettings] = useSol(false);
+  const [configured, setConfigured] = useSol(() => window.OutlookSync.isConfigured());
+  const [outlookEvents, setOutlookEvents] = useSol([]);
+  const timerRef = useRol(null);
+
+  // On mount (and when configured changes) check sign-in state
+  useEol(() => {
+    if (!configured) return;
+    window.OutlookSync.isSignedIn().then(v => {
+      setSignedIn(v);
+      if (v) window.OutlookSync.getDisplayName().then(n => setDisplayName(n));
+    }).catch(() => {});
+  }, [configured]);
+
+  // Pull Outlook events whenever signed in and date changes
+  useEol(() => {
+    if (!signedIn || !dk) return;
+    window.OutlookSync.fetchDayEvents(dk).then(evs => {
+      setOutlookEvents(evs.filter(e => !e.fromPronto));
+    }).catch(() => {});
+  }, [signedIn, dk]);
+
+  // Expose pulled events globally so schedule timeline can show them
+  useEol(() => {
+    window._outlookExternalEvents = outlookEvents;
+    window.dispatchEvent(new Event('outlookEventsUpdated'));
+  }, [outlookEvents]);
+
+  // Auto-sync when schedule changes (debounced 4s after last change)
+  useEol(() => {
+    if (!signedIn) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => doSync(), 4000);
+    return () => clearTimeout(timerRef.current);
+  }, [daySchedule, signedIn, dk]);
+
+  const doSync = async () => {
+    if (syncing) return;
+    setSyncing(true); setSyncErr(null);
+    try {
+      const owner = (todayUser === "oloka" || todayUser === "vanja") ? todayUser : "oloka";
+      const blocks = (daySchedule || {})[owner] || [];
+      await window.OutlookSync.pushSchedule(blocks, dk, taskNamesById || {});
+      setLastSync(new Date());
+      // Refresh outlook events after push
+      const evs = await window.OutlookSync.fetchDayEvents(dk);
+      setOutlookEvents(evs.filter(e => !e.fromPronto));
+    } catch(e) {
+      setSyncErr(e.message);
+      console.error('Outlook sync:', e);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const signIn = async () => {
+    try {
+      const name = await window.OutlookSync.signIn();
+      setSignedIn(true); setDisplayName(name); setSyncErr(null);
+    } catch(e) { setSyncErr(e.message); }
+  };
+
+  const signOut = async () => {
+    await window.OutlookSync.signOut().catch(() => {});
+    setSignedIn(false); setDisplayName(null); setOutlookEvents([]);
+    window._outlookExternalEvents = [];
+    window.dispatchEvent(new Event('outlookEventsUpdated'));
+  };
+
+  // ── Not configured yet ──
+  if (!configured) return (
+    <React.Fragment>
+      <button onClick={() => setShowSettings(true)} style={{
+        display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
+        background:T.surface, border:`1px solid ${T.border}`,
+        borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:11, fontWeight:700, color:T.muted,
+      }}>&#x1F4C5; Outlook</button>
+      {showSettings && <OutlookSettingsModal onClose={() => setShowSettings(false)} onSaved={() => setConfigured(true)} />}
+    </React.Fragment>
+  );
+
+  // ── Configured but not signed in ──
+  if (!signedIn) return (
+    <React.Fragment>
+      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <button onClick={signIn} style={{
+          display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
+          background:"#0078D4", border:"none", borderRadius:8, cursor:"pointer",
+          fontFamily:"inherit", fontSize:11, fontWeight:800, color:"#fff",
+        }}>&#x1F4C5; Sign in to Outlook</button>
+        <button onClick={() => setShowSettings(true)} title="Settings" style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:14, padding:"4px 6px" }}>&#x2699;</button>
+      </div>
+      {syncErr && <span style={{ fontSize:10, color:T.urgent, maxWidth:180 }}>{syncErr}</span>}
+      {showSettings && <OutlookSettingsModal onClose={() => setShowSettings(false)} onSaved={() => setConfigured(true)} />}
+    </React.Fragment>
+  );
+
+  // ── Signed in ──
+  const timeStr = lastSync ? lastSync.toLocaleTimeString('en-NZ',{hour:'2-digit',minute:'2-digit'}) : null;
+  return (
+    <React.Fragment>
+      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 12px", background:"#0078D408", border:`1px solid #0078D433`, borderRadius:8 }}>
+        <span style={{ fontSize:16 }}>&#x1F4C5;</span>
+        <div style={{ lineHeight:1.3 }}>
+          <p style={{ fontSize:9.5, fontWeight:800, color:"#0078D4", letterSpacing:"0.07em", margin:0 }}>OUTLOOK</p>
+          <p style={{ fontSize:9, color:T.muted, margin:0 }}>
+            {displayName ? displayName.split(' ')[0] : 'Connected'}
+            {timeStr ? ` · ${timeStr}` : ''}
+            {outlookEvents.length > 0 ? ` · ${outlookEvents.length} ext` : ''}
+          </p>
+        </div>
+        <button onClick={doSync} disabled={syncing} title="Push schedule to Outlook now" style={{
+          padding:"3px 9px", background:"#0078D4", color:"#fff", border:"none",
+          borderRadius:4, fontSize:9.5, fontWeight:800, cursor:syncing?"wait":"pointer",
+          fontFamily:"inherit",
+        }}>{syncing ? '&#x2026;' : '&#x2191; Sync'}</button>
+        <button onClick={signOut} title="Disconnect Outlook" style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:14, padding:"2px 4px", lineHeight:1 }}>&#x00D7;</button>
+        <button onClick={() => setShowSettings(true)} title="Settings" style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:12, padding:"2px 4px" }}>&#x2699;</button>
+      </div>
+      {syncErr && <span style={{ fontSize:10, color:T.urgent }}>{syncErr}</span>}
+      {showSettings && <OutlookSettingsModal onClose={() => setShowSettings(false)} onSaved={() => {}} />}
+    </React.Fragment>
+  );
+}
+
+window.OutlookSyncButton = OutlookSyncButton;
 })();
 </script>
 
