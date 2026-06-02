@@ -102,7 +102,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <!-- MSAL.js — Microsoft identity / Outlook Calendar auth -->
-  <script src="https://alcdn.msauth.net/browser/3.0.10/js/msal-browser.min.js"></script>
+  <script src="https://unpkg.com/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -15016,7 +15016,8 @@ window.OutlookSync = (() => {
 
   function buildMsal() {
     const { clientId, tenantId } = cfg();
-    if (!clientId || !window.msal) return null;
+    if (!clientId) return null;
+    if (!window.msal) throw new Error('Microsoft auth library failed to load — check your internet connection and refresh the page');
     return new window.msal.PublicClientApplication({
       auth: {
         clientId,
@@ -15085,7 +15086,7 @@ window.OutlookSync = (() => {
       _msal = null; _initialized = false;
     },
     getConfig: cfg,
-    isConfigured() { return !!(cfg().clientId && window.msal); },
+    isConfigured() { return !!cfg().clientId; },
 
     async isSignedIn() {
       const inst = await getMsal().catch(() => null);
