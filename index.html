@@ -13815,8 +13815,35 @@ function PasswordGate({ children }) {
   );
 }
 
+function WorkspaceRouter() {
+  const [workspace, setWorkspace] = useS(() => {
+    try { return localStorage.getItem('prontoHQ.workspace') || null; } catch(_) { return null; }
+  });
+
+  const selectWorkspace = (ws) => {
+    try { localStorage.setItem('prontoHQ.workspace', ws); } catch(_) {}
+    setWorkspace(ws);
+  };
+  const switchWorkspace = () => {
+    try { localStorage.removeItem('prontoHQ.workspace'); } catch(_) {}
+    setWorkspace(null);
+  };
+
+  if (!workspace) {
+    return window.WorkspaceSelector
+      ? <window.WorkspaceSelector onSelect={selectWorkspace} />
+      : <App />;
+  }
+  if (workspace === 'sales') {
+    return window.SalesApp
+      ? <window.SalesApp onSwitchWorkspace={switchWorkspace} />
+      : <App />;
+  }
+  return <App />;
+}
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<PasswordGate><App /></PasswordGate>);
+root.render(<PasswordGate><WorkspaceRouter /></PasswordGate>);
 
 </script>
 
@@ -15355,6 +15382,902 @@ function OutlookSyncButton({ dk, daySchedule, taskNamesById, todayUser }) {
 }
 
 window.OutlookSyncButton = OutlookSyncButton;
+})();
+</script>
+
+<script type="text/babel">
+// ── Sales & GM Workspace ──
+const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } = React;
+
+(() => {
+  'use strict';
+
+  // ─── Constants ───────────────────────────────────────────────────────────────
+
+  const SALES_CATS = [
+    { key: 'call',     label: '📞 Call',           color: '#3B82F6' },
+    { key: 'quote',    label: '📋 Quote',           color: '#8B5CF6' },
+    { key: 'followup', label: '🔄 Follow-Up',       color: '#F59E0B' },
+    { key: 'visit',    label: '🏗 Site Visit',      color: '#10B981' },
+    { key: 'pricing',  label: '💰 Pricing',         color: '#EC4899' },
+    { key: 'query',    label: '❓ Customer Query',  color: '#6366F1' },
+    { key: 'meeting',  label: '📅 Meeting',         color: '#0EA5E9' },
+    { key: 'admin',    label: '⚙ Admin',            color: '#9AA0AE' },
+  ];
+
+  const SALES_URGENCY = [
+    { key: 'urgent', label: 'Urgent', color: '#EF4444' },
+    { key: 'high',   label: 'High',   color: '#F97316' },
+    { key: 'normal', label: 'Normal', color: '#3B82F6' },
+    { key: 'low',    label: 'Low',    color: '#9AA0AE' },
+  ];
+
+  const SALES_USERS = [
+    { key: 'bronson',  name: 'Bronson',  role: 'GM · Sales & Operations',      color: '#1E40AF' },
+    { key: 'victoria', name: 'Victoria', role: 'EA · Delegated Tasks & Admin',  color: '#7C3AED' },
+  ];
+
+  const catByKey  = (k) => SALES_CATS.find(c => c.key === k) || SALES_CATS[0];
+  const urgByKey  = (k) => SALES_URGENCY.find(u => u.key === k) || SALES_URGENCY[2];
+  const userByKey = (k) => SALES_USERS.find(u => u.key === k) || SALES_USERS[0];
+  const suid      = () => Math.random().toString(36).slice(2, 10);
+
+  const sdkOf = (d) => isoDate(d);
+
+  const sweekDates = (d) => {
+    const day = d.getDay();
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - ((day + 6) % 7));
+    return Array.from({ length: 5 }, (_, i) => {
+      const x = new Date(mon);
+      x.setDate(mon.getDate() + i);
+      return x;
+    });
+  };
+
+  const smonthDates = (d) => {
+    const y = d.getFullYear(), m = d.getMonth();
+    const first = new Date(y, m, 1);
+    const last  = new Date(y, m + 1, 0);
+    const startDow = (first.getDay() + 6) % 7;
+    const cells = [];
+    for (let i = 0; i < startDow; i++) cells.push(null);
+    for (let i = 1; i <= last.getDate(); i++) cells.push(new Date(y, m, i));
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  };
+
+  const S_DAY_NAMES   = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const S_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  const sfmtDateStr = (d) => {
+    if (!d) return '';
+    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    return `${days[d.getDay()]}, ${d.getDate()} ${S_MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const sdaysSince = (dateStr) => {
+    if (!dateStr) return 999;
+    const diff = Date.now() - new Date(dateStr).getTime();
+    return Math.floor(diff / 86400000);
+  };
+
+  // ─── WorkspaceSelector ───────────────────────────────────────────────────────
+
+  const WorkspaceSelector = ({ onSelect }) => {
+    const [hovered, setHovered] = useSs(null);
+
+    const cards = [
+      { key: 'marketing', icon: '📢', title: 'Marketing', members: 'Oloka & Vanja', color: '#0EA5E9', bg: 'rgba(14,165,233,0.08)' },
+      { key: 'sales',     icon: '💼', title: 'Sales & GM', members: 'Bronson & Victoria', color: '#1E40AF', bg: 'rgba(30,64,175,0.08)' },
+    ];
+
+    return (
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: T.heading, letterSpacing: '-0.5px' }}>Pronto Hire</div>
+          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Select your workspace</div>
+        </div>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {cards.map(c => (
+            <div key={c.key} onClick={() => onSelect(c.key)} onMouseEnter={() => setHovered(c.key)} onMouseLeave={() => setHovered(null)}
+              style={{ width: 220, padding: '32px 28px', borderRadius: 16, background: hovered === c.key ? c.bg : T.cardBg, border: `2px solid ${hovered === c.key ? c.color : T.border}`, cursor: 'pointer', transition: 'all 0.18s ease', boxShadow: hovered === c.key ? `0 4px 24px ${c.color}30` : '0 1px 6px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>{c.icon}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: T.heading, marginBottom: 6 }}>{c.title}</div>
+              <div style={{ fontSize: 13, color: T.muted }}>{c.members}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ─── SalesUserPicker ─────────────────────────────────────────────────────────
+
+  const SalesUserPicker = ({ onSelect, onSwitchWorkspace }) => {
+    const [hovered, setHovered] = useSs(null);
+
+    return (
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
+        <button onClick={onSwitchWorkspace} style={{ position: 'absolute', top: 20, left: 20, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 14px', cursor: 'pointer', color: T.muted, fontSize: 13 }}>← Back</button>
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.heading }}>💼 Sales & GM</div>
+          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Who are you?</div>
+        </div>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {SALES_USERS.map(u => (
+            <div key={u.key} onClick={() => onSelect(u.key)} onMouseEnter={() => setHovered(u.key)} onMouseLeave={() => setHovered(null)}
+              style={{ width: 200, padding: '28px 24px', borderRadius: 16, background: hovered === u.key ? `${u.color}14` : T.cardBg, border: `2px solid ${hovered === u.key ? u.color : T.border}`, cursor: 'pointer', transition: 'all 0.18s ease', textAlign: 'center', boxShadow: hovered === u.key ? `0 4px 20px ${u.color}28` : '0 1px 4px rgba(0,0,0,0.05)' }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: u.color, color: '#fff', fontSize: 22, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>{u.name[0]}</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: T.heading, marginBottom: 4 }}>{u.name}</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.4 }}>{u.role}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ─── TaskForm ─────────────────────────────────────────────────────────────────
+
+  const SalesTaskForm = ({ isBronson, onSave, onCancel, userColor }) => {
+    const [text,      setText]      = useSs('');
+    const [cat,       setCat]       = useSs('call');
+    const [urgency,   setUrgency]   = useSs('normal');
+    const [account,   setAccount]   = useSs('');
+    const [priv,      setPriv]      = useSs(false);
+    const [delegated, setDelegated] = useSs(false);
+
+    const save = () => {
+      if (!text.trim()) return;
+      onSave({ id: suid(), text: text.trim(), cat, urgency, account, private: priv, delegated, done: false, createdAt: Date.now(), updatedAt: Date.now(), owner: isBronson ? 'bronson' : 'victoria' });
+      setText(''); setCat('call'); setUrgency('normal'); setAccount(''); setPriv(false); setDelegated(false);
+    };
+
+    return (
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginTop: 8 }}>
+        <input autoFocus value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onCancel(); }} placeholder="Task description…" style={{ width: '100%', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', color: T.ink, fontSize: 14, boxSizing: 'border-box', outline: 'none' }} />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+          {SALES_CATS.map(c => (
+            <button key={c.key} onClick={() => setCat(c.key)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: `1px solid ${cat === c.key ? c.color : T.border}`, background: cat === c.key ? `${c.color}22` : 'transparent', color: cat === c.key ? c.color : T.muted, cursor: 'pointer', transition: 'all 0.15s' }}>{c.label}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          {SALES_URGENCY.map(u => (
+            <button key={u.key} onClick={() => setUrgency(u.key)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: `1px solid ${urgency === u.key ? u.color : T.border}`, background: urgency === u.key ? `${u.color}22` : 'transparent', color: urgency === u.key ? u.color : T.muted, cursor: 'pointer', transition: 'all 0.15s' }}>{u.label}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input value={account} onChange={e => setAccount(e.target.value)} placeholder="Account / company…" style={{ flex: 1, minWidth: 120, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', color: T.ink, fontSize: 13, outline: 'none' }} />
+          {isBronson && (
+            <label style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+              <input type="checkbox" checked={priv} onChange={e => setPriv(e.target.checked)} /> 🔒 Private
+            </label>
+          )}
+          <label style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={delegated} onChange={e => setDelegated(e.target.checked)} /> Delegated
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} style={{ padding: '6px 16px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+          <button onClick={save} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Save</button>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── TaskCard ─────────────────────────────────────────────────────────────────
+
+  const SalesTaskCard = ({ task, onToggle, onDelete, compact }) => {
+    const cat = catByKey(task.cat);
+    const urg = urgByKey(task.urgency);
+    return (
+      <div style={{ display: 'flex', alignItems: compact ? 'center' : 'flex-start', gap: 8, padding: compact ? '6px 0' : '10px 12px', borderRadius: 10, background: compact ? 'transparent' : T.surface, border: compact ? 'none' : `1px solid ${T.border}`, marginBottom: compact ? 0 : 6, opacity: task.done ? 0.5 : 1 }}>
+        <div onClick={onToggle} style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#10B981' : T.border}`, background: task.done ? '#10B981' : 'transparent', cursor: 'pointer', flexShrink: 0, marginTop: compact ? 0 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+          {task.done && <span style={{ color: '#fff', fontSize: 11 }}>✓</span>}
+        </div>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: urg.color, flexShrink: 0, marginTop: compact ? 5 : 6 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 12, background: `${cat.color}20`, color: cat.color, fontWeight: 600, whiteSpace: 'nowrap' }}>{cat.label}</span>
+            {task.private && <span style={{ fontSize: 11 }}>🔒</span>}
+            {task.delegated && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 12, background: '#8B5CF620', color: '#8B5CF6', fontWeight: 600 }}>Delegated</span>}
+          </div>
+          <div style={{ fontSize: 14, color: T.ink, marginTop: 3, textDecoration: task.done ? 'line-through' : 'none', wordBreak: 'break-word' }}>{task.text}</div>
+          {task.account && <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>🏢 {task.account}</div>}
+        </div>
+        {onDelete && <button onClick={onDelete} style={{ background: 'none', border: 'none', color: T.faint, cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0 }}>×</button>}
+      </div>
+    );
+  };
+
+  // ─── SalesTodayView ──────────────────────────────────────────────────────────
+
+  const SalesTodayView = ({ salesUser, isBronson, dk, tasksByDate, dayFlags, setDayFlags, addTask, updateTask, deleteTask, visibleTasks, userColor }) => {
+    const [quickText, setQuickText] = useSs('');
+    const [showForm,  setShowForm]  = useSs(false);
+
+    const df      = dayFlags[dk] || {};
+    const dayType = df.dayType || null;
+    const allTasks = tasksByDate[dk] || [];
+    const tasks    = visibleTasks(allTasks);
+    const done     = tasks.filter(t => t.done).length;
+
+    const setDayType = (type) => setDayFlags(prev => ({ ...prev, [dk]: { ...prev[dk], dayType: type === dayType ? null : type } }));
+
+    const quickAdd = () => {
+      if (!quickText.trim()) return;
+      const defaultCat = dayType === 'road' ? 'call' : 'query';
+      addTask(dk, { id: suid(), text: quickText.trim(), cat: defaultCat, urgency: 'normal', account: '', private: false, delegated: false, done: false, createdAt: Date.now(), updatedAt: Date.now(), owner: salesUser });
+      setQuickText('');
+    };
+
+    return (
+      <div style={{ padding: '0 0 40px' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          <button onClick={() => setDayType('road')} style={{ padding: '8px 18px', borderRadius: 10, border: `2px solid ${dayType === 'road' ? '#3B82F6' : T.border}`, background: dayType === 'road' ? '#3B82F614' : 'transparent', color: dayType === 'road' ? '#3B82F6' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🚗 Road Day</button>
+          <button onClick={() => setDayType('office')} style={{ padding: '8px 18px', borderRadius: 10, border: `2px solid ${dayType === 'office' ? '#6366F1' : T.border}`, background: dayType === 'office' ? '#6366F114' : 'transparent', color: dayType === 'office' ? '#6366F1' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🏢 Office Day</button>
+        </div>
+
+        {isBronson && dayType === 'road' && (
+          <div style={{ background: '#3B82F610', border: '1px solid #3B82F630', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#3B82F6' }}>
+            💡 <strong>Road Day Focus:</strong> calls, site visits, handwritten notes → log in app later
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 13, color: T.muted }}>{tasks.length} task{tasks.length !== 1 ? 's' : ''} · {done} done</div>
+          <button onClick={() => setShowForm(s => !s)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8, border: `1px solid ${userColor}`, background: 'transparent', color: userColor, cursor: 'pointer', fontWeight: 600 }}>+ Add</button>
+        </div>
+
+        {showForm && <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(dk, t); setShowForm(false); }} />}
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <input value={quickText} onChange={e => setQuickText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') quickAdd(); }} placeholder="Quick-add task and press Enter…" style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: '9px 14px', color: T.ink, fontSize: 14, outline: 'none' }} />
+        </div>
+
+        {tasks.length === 0 && !showForm ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: T.faint, fontSize: 14 }}>Nothing scheduled for today 🎉</div>
+        ) : (
+          <div>
+            {[...tasks].sort((a, b) => { const order = { urgent: 0, high: 1, normal: 2, low: 3 }; return (order[a.urgency] || 2) - (order[b.urgency] || 2); }).map(t => (
+              <SalesTaskCard key={t.id} task={t} onToggle={() => updateTask(dk, t.id, { done: !t.done })} onDelete={() => deleteTask(dk, t.id)} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─── SalesTaskView ────────────────────────────────────────────────────────────
+
+  const SalesTaskView = ({ salesUser, isBronson, selDate, setSelDate, dk, tasksByDate, addTask, updateTask, deleteTask, visibleTasks, userColor }) => {
+    const [subView,  setSubView]  = useSs('day');
+    const [showForm, setShowForm] = useSs(false);
+    const [formDk,   setFormDk]   = useSs(dk);
+
+    const openForm = (targetDk) => { setFormDk(targetDk); setShowForm(true); };
+
+    const SubBtn = ({ v, label }) => (
+      <button onClick={() => setSubView(v)} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: subView === v ? userColor : T.surface, color: subView === v ? '#fff' : T.muted, cursor: 'pointer', fontWeight: subView === v ? 700 : 400, fontSize: 13, transition: 'all 0.15s' }}>{label}</button>
+    );
+
+    const renderDay = () => {
+      const tasks = visibleTasks(tasksByDate[dk] || []);
+      const grouped = { urgent: [], high: [], normal: [], low: [] };
+      tasks.forEach(t => { (grouped[t.urgency] || grouped.normal).push(t); });
+      return (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <button onClick={() => openForm(dk)} style={{ fontSize: 13, padding: '7px 16px', borderRadius: 9, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontWeight: 600 }}>+ Add Task</button>
+          </div>
+          {showForm && formDk === dk && <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(dk, t); setShowForm(false); }} />}
+          {SALES_URGENCY.map(urg => {
+            const ts = grouped[urg.key] || [];
+            if (!ts.length) return null;
+            return (
+              <div key={urg.key} style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: urg.color, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>{urg.label}</div>
+                {ts.map(t => <SalesTaskCard key={t.id} task={t} onToggle={() => updateTask(dk, t.id, { done: !t.done })} onDelete={() => deleteTask(dk, t.id)} />)}
+              </div>
+            );
+          })}
+          {tasks.length === 0 && !showForm && <div style={{ textAlign: 'center', padding: '40px 0', color: T.faint, fontSize: 14 }}>No tasks for this day</div>}
+        </div>
+      );
+    };
+
+    const renderWeek = () => {
+      const dates = sweekDates(selDate);
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+          {dates.map((d, i) => {
+            const ddk = sdkOf(d);
+            const ts  = visibleTasks(tasksByDate[ddk] || []);
+            const isSel = ddk === dk;
+            return (
+              <div key={ddk} onClick={() => setSelDate(d)} style={{ borderRadius: 12, border: `2px solid ${isSel ? userColor : T.border}`, background: isSel ? `${userColor}08` : T.cardBg, padding: 12, cursor: 'pointer', transition: 'all 0.15s', minHeight: 120 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: isSel ? userColor : T.heading }}>{S_DAY_NAMES[i]} {d.getDate()}</div>
+                  <button onClick={e => { e.stopPropagation(); openForm(ddk); }} style={{ width: 22, height: 22, borderRadius: '50%', border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                </div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>{ts.length} task{ts.length !== 1 ? 's' : ''}</div>
+                {ts.slice(0, 4).map(t => <div key={t.id} style={{ fontSize: 11, color: T.ink, padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderLeft: `2px solid ${catByKey(t.cat).color}`, paddingLeft: 5, marginBottom: 2 }}>{t.text}</div>)}
+                {ts.length > 4 && <div style={{ fontSize: 11, color: T.muted }}>+{ts.length - 4} more</div>}
+              </div>
+            );
+          })}
+          {showForm && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(formDk, t); setShowForm(false); }} />
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const [sidePanelDk, setSidePanelDk] = useSs(dk);
+    const renderMonth = () => {
+      const cells     = smonthDates(selDate);
+      const sideTasks = visibleTasks(tasksByDate[sidePanelDk] || []);
+      const sideDate  = sidePanelDk ? new Date(sidePanelDk) : selDate;
+      return (
+        <div style={{ display: 'flex', gap: 20 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
+              {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: T.muted, padding: '4px 0' }}>{d}</div>)}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+              {cells.map((d, i) => {
+                if (!d) return <div key={`e${i}`} />;
+                const cddk = sdkOf(d);
+                const ts   = visibleTasks(tasksByDate[cddk] || []);
+                const isSel = cddk === sidePanelDk;
+                return (
+                  <div key={cddk} onClick={() => { setSidePanelDk(cddk); setSelDate(d); }} style={{ borderRadius: 8, border: `2px solid ${isSel ? userColor : T.border}`, background: isSel ? `${userColor}10` : T.cardBg, padding: '6px 4px', cursor: 'pointer', minHeight: 60, transition: 'all 0.15s' }}>
+                    <div style={{ fontSize: 12, fontWeight: isSel ? 700 : 400, color: isSel ? userColor : T.ink, textAlign: 'center', marginBottom: 4 }}>{d.getDate()}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center' }}>
+                      {ts.slice(0, 6).map(t => <div key={t.id} style={{ width: 7, height: 7, borderRadius: '50%', background: urgByKey(t.urgency).color }} />)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ width: 260, flexShrink: 0, background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, height: 'fit-content' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.heading, marginBottom: 10 }}>{sfmtDateStr(sideDate)}</div>
+            <button onClick={() => openForm(sidePanelDk)} style={{ width: '100%', padding: '7px', borderRadius: 8, border: `1px dashed ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 13, marginBottom: 10 }}>+ Add Task</button>
+            {showForm && formDk === sidePanelDk && <SalesTaskForm isBronson={isBronson} userColor={userColor} onCancel={() => setShowForm(false)} onSave={t => { addTask(sidePanelDk, t); setShowForm(false); }} />}
+            {sideTasks.length === 0 ? <div style={{ textAlign: 'center', color: T.faint, fontSize: 13, padding: '20px 0' }}>No tasks</div>
+              : sideTasks.map(t => <SalesTaskCard key={t.id} task={t} onToggle={() => updateTask(sidePanelDk, t.id, { done: !t.done })} onDelete={() => deleteTask(sidePanelDk, t.id)} compact />)}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 20, background: T.surface, borderRadius: 10, padding: 4, width: 'fit-content' }}>
+          <SubBtn v="day" label="DAY" />
+          <SubBtn v="week" label="WEEK" />
+          <SubBtn v="month" label="MONTH" />
+        </div>
+        {subView === 'day'   && renderDay()}
+        {subView === 'week'  && renderWeek()}
+        {subView === 'month' && renderMonth()}
+      </div>
+    );
+  };
+
+  // ─── SalesScheduleView ────────────────────────────────────────────────────────
+
+  const SalesScheduleView = ({ salesUser, isBronson, selDate, dk, tasksByDate, schedule, setSchedule, dayFlags, setDayFlags, visibleTasks, userColor }) => {
+    const START_HOUR = 7, END_HOUR = 18, PX_PER_HOUR = 60;
+    const TOTAL_PX   = (END_HOUR - START_HOUR) * PX_PER_HOUR;
+
+    const [popup,    setPopup]    = useSs(null);
+    const [popLabel, setPopLabel] = useSs('');
+    const [popDur,   setPopDur]   = useSs(60);
+    const [popCat,   setPopCat]   = useSs('call');
+    const timelineRef = useRs(null);
+
+    const df      = dayFlags[dk] || {};
+    const dayType = df.dayType || null;
+    const setDayType = (t) => setDayFlags(prev => ({ ...prev, [dk]: { ...prev[dk], dayType: t === dayType ? null : t } }));
+
+    const blocks    = (schedule[dk] && schedule[dk][salesUser]) || [];
+    const setBlocks = (fn) => setSchedule(prev => {
+      const cur  = (prev[dk] && prev[dk][salesUser]) || [];
+      const next = typeof fn === 'function' ? fn(cur) : fn;
+      return { ...prev, [dk]: { ...(prev[dk] || {}), [salesUser]: next } };
+    });
+
+    const tasks         = visibleTasks(tasksByDate[dk] || []);
+    const scheduledIds  = new Set(blocks.map(b => b.taskId).filter(Boolean));
+    const unscheduled   = tasks.filter(t => !scheduledIds.has(t.id) && !t.done);
+
+    const minToY  = (m) => ((m - START_HOUR * 60) / 60) * PX_PER_HOUR;
+    const yToMin  = (y) => Math.round((y / PX_PER_HOUR) * 60 + START_HOUR * 60);
+    const sfmtSpan = (start, dur) => `${fmtTime(start)} – ${fmtTime(start + dur)}`;
+
+    const nowD      = today();
+    const isToday2  = sdkOf(nowD) === dk;
+    const nowMin    = nowD.getHours() * 60 + nowD.getMinutes();
+    const nowY      = isToday2 ? minToY(nowMin) : -1;
+
+    const handleTimelineClick = (e) => {
+      if (!timelineRef.current) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const y    = e.clientY - rect.top;
+      const min  = Math.round(yToMin(y) / 15) * 15;
+      setPopup(min); setPopLabel(''); setPopDur(60); setPopCat('call');
+    };
+
+    const saveBlock = () => {
+      if (!popLabel.trim()) return;
+      const cat = catByKey(popCat);
+      setBlocks(bs => [...bs, { id: suid(), label: popLabel.trim(), startMin: popup, durationMin: popDur, category: popCat, color: cat.color }]);
+      setPopup(null);
+    };
+
+    const removeBlock       = (id) => setBlocks(bs => bs.filter(b => b.id !== id));
+    const addTaskToSchedule = (task) => {
+      const lastEnd = blocks.reduce((max, b) => Math.max(max, b.startMin + b.durationMin), START_HOUR * 60);
+      const start   = Math.min(lastEnd, (END_HOUR - 1) * 60);
+      const cat     = catByKey(task.cat);
+      setBlocks(bs => [...bs, { id: suid(), taskId: task.id, label: task.text, startMin: start, durationMin: 30, category: task.cat, color: cat.color }]);
+    };
+
+    const outlookEvents = (window._outlookExternalEvents || []).filter(ev => ev.date === dk);
+
+    return (
+      <div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <button onClick={() => setDayType('road')} style={{ padding: '7px 16px', borderRadius: 10, border: `2px solid ${dayType === 'road' ? '#3B82F6' : T.border}`, background: dayType === 'road' ? '#3B82F614' : 'transparent', color: dayType === 'road' ? '#3B82F6' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🚗 Road Day</button>
+          <button onClick={() => setDayType('office')} style={{ padding: '7px 16px', borderRadius: 10, border: `2px solid ${dayType === 'office' ? '#6366F1' : T.border}`, background: dayType === 'office' ? '#6366F114' : 'transparent', color: dayType === 'office' ? '#6366F1' : T.muted, cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s' }}>🏢 Office Day</button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div ref={timelineRef} onClick={handleTimelineClick} style={{ position: 'relative', height: TOTAL_PX, background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden', cursor: 'crosshair' }}>
+              {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => {
+                const h = START_HOUR + i;
+                const y = i * PX_PER_HOUR;
+                return (
+                  <div key={h} style={{ position: 'absolute', top: y, left: 0, right: 0, borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'flex-start', pointerEvents: 'none' }}>
+                    <div style={{ width: 44, fontSize: 10, color: T.faint, padding: '2px 6px', flexShrink: 0 }}>{fmtTime(h * 60)}</div>
+                  </div>
+                );
+              })}
+
+              {outlookEvents.map((ev, idx) => {
+                const y = minToY(ev.startMin);
+                const h = (ev.durationMin / 60) * PX_PER_HOUR;
+                return (
+                  <div key={idx} style={{ position: 'absolute', top: y, left: 48, right: 4, height: Math.max(h, 20), background: '#0EA5E920', border: '1px solid #0EA5E950', borderRadius: 6, padding: '2px 6px', fontSize: 11, color: '#0EA5E9', pointerEvents: 'none', overflow: 'hidden' }}>
+                    📅 {ev.label}
+                  </div>
+                );
+              })}
+
+              {blocks.map(b => {
+                const y = minToY(b.startMin);
+                const h = Math.max((b.durationMin / 60) * PX_PER_HOUR, 22);
+                return (
+                  <div key={b.id} onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: y, left: 48, right: 4, height: h, background: `${b.color}20`, border: `1px solid ${b.color}60`, borderLeft: `3px solid ${b.color}`, borderRadius: 6, padding: '3px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', overflow: 'hidden', cursor: 'grab' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: T.muted }}>{sfmtSpan(b.startMin, b.durationMin)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{b.label}</div>
+                    </div>
+                    <button onClick={() => removeBlock(b.id)} style={{ background: 'none', border: 'none', color: T.faint, cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>
+                  </div>
+                );
+              })}
+
+              {nowY >= 0 && nowY <= TOTAL_PX && (
+                <div style={{ position: 'absolute', top: nowY, left: 44, right: 0, height: 2, background: '#EF4444', pointerEvents: 'none', zIndex: 10 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444', position: 'absolute', left: -4, top: -3 }} />
+                </div>
+              )}
+
+              {popup !== null && (
+                <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: Math.min(minToY(popup), TOTAL_PX - 180), left: 52, width: 220, background: T.surface, border: `1px solid ${T.borderStrong}`, borderRadius: 10, padding: 12, zIndex: 20, boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
+                  <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>{fmtTime(popup)}</div>
+                  <input autoFocus value={popLabel} onChange={e => setPopLabel(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveBlock(); if (e.key === 'Escape') setPopup(null); }} placeholder="Block label…" style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', color: T.ink, fontSize: 13, outline: 'none', marginBottom: 8 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>Duration:</span>
+                    <input type="range" min={15} max={240} step={15} value={popDur} onChange={e => setPopDur(+e.target.value)} style={{ flex: 1 }} />
+                    <span style={{ fontSize: 12, color: T.ink, whiteSpace: 'nowrap' }}>{popDur}m</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setPopup(null)} style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
+                    <button onClick={saveBlock} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Add</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ width: 200, flexShrink: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Unscheduled</div>
+            {unscheduled.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.faint, textAlign: 'center', padding: '20px 0' }}>All tasks scheduled</div>
+            ) : (
+              unscheduled.map(t => {
+                const cat = catByKey(t.cat);
+                return (
+                  <div key={t.id} style={{ background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 3, height: 30, borderRadius: 2, background: cat.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.text}</div>
+                      <div style={{ fontSize: 11, color: T.muted }}>{cat.label}</div>
+                    </div>
+                    <button onClick={() => addTaskToSchedule(t)} style={{ width: 22, height: 22, borderRadius: '50%', border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── SalesAccountsView ────────────────────────────────────────────────────────
+
+  const SalesAccountsView = ({ accounts, setAccounts, tasksByDate, userColor }) => {
+    const [showForm,    setShowForm]    = useSs(false);
+    const [expandedId,  setExpandedId]  = useSs(null);
+    const [newName,     setNewName]     = useSs('');
+    const [newContact,  setNewContact]  = useSs('');
+    const [newContacts, setNewContacts] = useSs([]);
+    const [newNotes,    setNewNotes]    = useSs('');
+    const [editNotes,   setEditNotes]   = useSs({});
+
+    const allTasks = Object.values(tasksByDate).flat();
+
+    const lastTouched = (name) => {
+      const relevant = allTasks.filter(t => t.account && t.account.toLowerCase() === name.toLowerCase());
+      if (!relevant.length) return null;
+      const latest = relevant.reduce((max, t) => Math.max(max, t.updatedAt || t.createdAt || 0), 0);
+      return isoDate(new Date(latest));
+    };
+
+    const followUpStatus = (name) => {
+      const lt   = lastTouched(name);
+      const days = sdaysSince(lt);
+      if (days > 14) return { label: 'Overdue',  color: '#EF4444' };
+      if (days > 7)  return { label: 'Due soon', color: '#F97316' };
+      return { label: 'Recent', color: '#10B981' };
+    };
+
+    const addAccount = () => {
+      if (!newName.trim()) return;
+      setAccounts(prev => [...prev, { id: suid(), name: newName.trim(), contacts: newContacts, notes: newNotes, createdAt: Date.now() }]);
+      setNewName(''); setNewContact(''); setNewContacts([]); setNewNotes(''); setShowForm(false);
+    };
+
+    const addContact = () => {
+      if (!newContact.trim()) return;
+      setNewContacts(prev => [...prev, newContact.trim()]);
+      setNewContact('');
+    };
+
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: T.heading, letterSpacing: '-0.3px' }}>ACCOUNTS</div>
+          <button onClick={() => setShowForm(s => !s)} style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>+ Add Account</button>
+        </div>
+
+        {showForm && (
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Account / company name…" style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', color: T.ink, fontSize: 14, outline: 'none', marginBottom: 10 }} />
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input value={newContact} onChange={e => setNewContact(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addContact(); }} placeholder="Add contact name…" style={{ flex: 1, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 10px', color: T.ink, fontSize: 13, outline: 'none' }} />
+              <button onClick={addContact} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: T.surface2, color: T.ink, cursor: 'pointer', fontSize: 13 }}>Add</button>
+            </div>
+            {newContacts.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>{newContacts.map((c, i) => <span key={i} style={{ fontSize: 12, padding: '2px 10px', borderRadius: 12, background: `${userColor}20`, color: userColor }}>{c}</span>)}</div>}
+            <textarea value={newNotes} onChange={e => setNewNotes(e.target.value)} placeholder="Notes…" rows={2} style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', color: T.ink, fontSize: 13, outline: 'none', resize: 'vertical', marginBottom: 10 }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowForm(false)} style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+              <button onClick={addAccount} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: userColor, color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {accounts.length === 0 && !showForm && <div style={{ textAlign: 'center', padding: '40px 0', color: T.faint, fontSize: 14 }}>No accounts yet. Add one above.</div>}
+          {accounts.map(acc => {
+            const isExpanded = expandedId === acc.id;
+            const status     = followUpStatus(acc.name);
+            const lt         = lastTouched(acc.name);
+            const accTasks   = allTasks.filter(t => t.account && t.account.toLowerCase() === acc.name.toLowerCase()).slice(0, 5);
+            return (
+              <div key={acc.id} style={{ background: T.cardBg, border: `1px solid ${isExpanded ? userColor : T.border}`, borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.15s' }}>
+                <div onClick={() => setExpandedId(isExpanded ? null : acc.id)} style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.heading }}>{acc.name}</div>
+                    <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{acc.contacts.length} contact{acc.contacts.length !== 1 ? 's' : ''} · {lt ? `Last: ${lt}` : 'Never contacted'}</div>
+                  </div>
+                  <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, background: `${status.color}20`, color: status.color, fontWeight: 600 }}>{status.label}</span>
+                  <span style={{ color: T.faint, fontSize: 14 }}>{isExpanded ? '▲' : '▼'}</span>
+                </div>
+                {isExpanded && (
+                  <div style={{ borderTop: `1px solid ${T.border}`, padding: '14px 16px' }}>
+                    {acc.contacts.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Contacts</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{acc.contacts.map((c, i) => <span key={i} style={{ fontSize: 13, padding: '3px 10px', borderRadius: 12, background: T.surface, color: T.ink }}>{c}</span>)}</div>
+                      </div>
+                    )}
+                    {accTasks.length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Recent Tasks</div>
+                        {accTasks.map(t => <div key={t.id} style={{ fontSize: 13, color: T.ink, padding: '3px 0', borderBottom: `1px solid ${T.border}` }}>{catByKey(t.cat).label} — {t.text}</div>)}
+                      </div>
+                    )}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Notes</div>
+                      <textarea
+                        value={editNotes[acc.id] !== undefined ? editNotes[acc.id] : (acc.notes || '')}
+                        onChange={e => setEditNotes(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                        onBlur={() => {
+                          if (editNotes[acc.id] !== undefined) {
+                            setAccounts(prev => prev.map(a => a.id === acc.id ? { ...a, notes: editNotes[acc.id] } : a));
+                            setEditNotes(prev => { const n = { ...prev }; delete n[acc.id]; return n; });
+                          }
+                        }}
+                        rows={3} placeholder="Add notes…"
+                        style={{ width: '100%', boxSizing: 'border-box', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', color: T.ink, fontSize: 13, outline: 'none', resize: 'vertical' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // ─── SalesWeeklyView ─────────────────────────────────────────────────────────
+
+  const SalesWeeklyView = ({ selDate, setSelDate, tasksByDate, schedule, dayFlags, setDayFlags, visibleTasks, userColor }) => {
+    const dates = sweekDates(selDate);
+
+    const toggleDayType = (d, current) => {
+      const ddk  = sdkOf(d);
+      const next = current === 'road' ? 'office' : current === 'office' ? null : 'road';
+      setDayFlags(prev => ({ ...prev, [ddk]: { ...(prev[ddk] || {}), dayType: next } }));
+    };
+
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.heading }}>Week of {dates[0].getDate()} {S_MONTH_NAMES[dates[0].getMonth()]}</div>
+          <button style={{ padding: '7px 16px', borderRadius: 9, border: `1px solid ${userColor}`, background: `${userColor}14`, color: userColor, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>🔒 Lock in Week</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 20 }}>
+          {dates.map((d, i) => {
+            const ddk    = sdkOf(d);
+            const df     = dayFlags[ddk] || {};
+            const dt     = df.dayType;
+            const tasks  = visibleTasks(tasksByDate[ddk] || []);
+            const isToday2 = sdkOf(today()) === ddk;
+            return (
+              <div key={ddk} style={{ borderRadius: 12, border: `2px solid ${isToday2 ? userColor : T.border}`, background: T.cardBg, padding: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: isToday2 ? userColor : T.heading }}>{S_DAY_NAMES[i]} {d.getDate()}</div>
+                  <button onClick={() => toggleDayType(d, dt)} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 8, border: `1px solid ${dt === 'road' ? '#3B82F6' : dt === 'office' ? '#6366F1' : T.border}`, background: 'transparent', color: dt === 'road' ? '#3B82F6' : dt === 'office' ? '#6366F1' : T.faint, cursor: 'pointer' }}>
+                    {dt === 'road' ? '🚗' : dt === 'office' ? '🏢' : '—'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{tasks.length} task{tasks.length !== 1 ? 's' : ''}</div>
+                {tasks.slice(0, 5).map(t => {
+                  const cat = catByKey(t.cat);
+                  return <div key={t.id} style={{ fontSize: 11, color: T.ink, padding: '2px 0 2px 6px', borderLeft: `2px solid ${cat.color}`, marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.text}</div>;
+                })}
+                {tasks.length > 5 && <div style={{ fontSize: 11, color: T.muted }}>+{tasks.length - 5} more</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // ─── SalesMonthlyView ────────────────────────────────────────────────────────
+
+  const SalesMonthlyView = ({ selDate, tasksByDate, dayFlags, userColor }) => {
+    const cells      = smonthDates(selDate);
+    const allCells   = cells.filter(Boolean);
+    const roadDays   = allCells.filter(d => (dayFlags[sdkOf(d)] || {}).dayType === 'road').length;
+    const officeDays = allCells.filter(d => (dayFlags[sdkOf(d)] || {}).dayType === 'office').length;
+    const totalTasks = allCells.reduce((sum, d) => sum + (tasksByDate[sdkOf(d)] || []).length, 0);
+
+    return (
+      <div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.heading, marginBottom: 14 }}>
+          {S_MONTH_NAMES[selDate.getMonth()]} {selDate.getFullYear()}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
+          {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: T.muted, padding: '4px 0' }}>{d}</div>)}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 16 }}>
+          {cells.map((d, i) => {
+            if (!d) return <div key={`e${i}`} />;
+            const cddk   = sdkOf(d);
+            const dt     = (dayFlags[cddk] || {}).dayType;
+            const ts     = tasksByDate[cddk] || [];
+            const isToday2 = sdkOf(today()) === cddk;
+            return (
+              <div key={cddk} style={{ borderRadius: 8, border: `1px solid ${isToday2 ? userColor : T.border}`, background: T.cardBg, padding: '6px 4px', minHeight: 56, textAlign: 'center' }}>
+                <div style={{ fontSize: 12, fontWeight: isToday2 ? 700 : 400, color: isToday2 ? userColor : T.ink }}>{d.getDate()}</div>
+                <div style={{ fontSize: 14, marginTop: 2 }}>{dt === 'road' ? '🚗' : dt === 'office' ? '🏢' : ''}</div>
+                {ts.length > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginTop: 2 }}>{ts.length}</div>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 20, padding: '12px 16px', background: T.surface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#3B82F6' }}>{roadDays}</div>
+            <div style={{ fontSize: 12, color: T.muted }}>Road days</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#6366F1' }}>{officeDays}</div>
+            <div style={{ fontSize: 12, color: T.muted }}>Office days</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.heading }}>{totalTasks}</div>
+            <div style={{ fontSize: 12, color: T.muted }}>Tasks this month</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── SalesApp ────────────────────────────────────────────────────────────────
+
+  const S_LS_KEY  = 'prontoHQ.sales.state.v1';
+  const S_LS_USER = 'prontoHQ.sales.user';
+
+  const sloadState = () => {
+    try { const raw = localStorage.getItem(S_LS_KEY); return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
+  };
+
+  const SalesApp = ({ onSwitchWorkspace }) => {
+    const saved = sloadState() || {};
+
+    const [salesUser,    setSalesUser]    = useSs(() => { try { return localStorage.getItem(S_LS_USER) || null; } catch(_) { return null; } });
+    const [tab,          setTab]          = useSs('today');
+    const [selDate,      setSelDate]      = useSs(today);
+    const [tasksByDate,  setTasksByDate]  = useSs(() => saved.tasksByDate  || {});
+    const [schedule,     setSchedule]     = useSs(() => saved.schedule     || {});
+    const [dayFlags,     setDayFlags]     = useSs(() => saved.dayFlags     || {});
+    const [accounts,     setAccounts]     = useSs(() => saved.accounts     || []);
+    const [deletedTasks, setDeletedTasks] = useSs(() => saved.deletedTasks || []);
+
+    const dk        = sdkOf(selDate);
+    const isBronson = salesUser === 'bronson';
+    const userObj   = userByKey(salesUser || 'bronson');
+    const userColor = userObj.color;
+
+    useEs(() => {
+      try { localStorage.setItem(S_LS_KEY, JSON.stringify({ tasksByDate, schedule, dayFlags, accounts, deletedTasks })); } catch(e) {}
+    }, [tasksByDate, schedule, dayFlags, accounts, deletedTasks]);
+
+    useEs(() => {
+      if (salesUser) { try { localStorage.setItem(S_LS_USER, salesUser); } catch(_) {} }
+    }, [salesUser]);
+
+    const addTask = useCBs((targetDk, task) => {
+      setTasksByDate(prev => ({ ...prev, [targetDk]: [...(prev[targetDk] || []), { ...task, updatedAt: Date.now() }] }));
+    }, []);
+
+    const updateTask = useCBs((targetDk, id, patch) => {
+      setTasksByDate(prev => ({ ...prev, [targetDk]: (prev[targetDk] || []).map(t => t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t) }));
+    }, []);
+
+    const deleteTask = useCBs((targetDk, id) => {
+      setTasksByDate(prev => {
+        const task = (prev[targetDk] || []).find(t => t.id === id);
+        if (task) setDeletedTasks(d => [...d, { ...task, deletedAt: Date.now() }]);
+        return { ...prev, [targetDk]: (prev[targetDk] || []).filter(t => t.id !== id) };
+      });
+    }, []);
+
+    const moveTask = useCBs((fromDk, toDk, id) => {
+      setTasksByDate(prev => {
+        const task = (prev[fromDk] || []).find(t => t.id === id);
+        if (!task) return prev;
+        return { ...prev, [fromDk]: (prev[fromDk] || []).filter(t => t.id !== id), [toDk]: [...(prev[toDk] || []), { ...task, updatedAt: Date.now() }] };
+      });
+    }, []);
+
+    const visibleTasks = useCBs((arr) => {
+      if (isBronson) return arr;
+      return arr.filter(t => !t.private && (t.delegated || t.owner === 'victoria'));
+    }, [isBronson]);
+
+    if (!salesUser) {
+      return <SalesUserPicker onSelect={(key) => { setSalesUser(key); setTab('today'); }} onSwitchWorkspace={onSwitchWorkspace} />;
+    }
+
+    const bronsonTabs = [
+      { key: 'today',    label: "Today's View" },
+      { key: 'tasks',    label: 'Tasks' },
+      { key: 'schedule', label: 'Schedule' },
+      { key: 'accounts', label: 'Accounts' },
+      { key: 'weekly',   label: 'Weekly' },
+      { key: 'monthly',  label: 'Monthly' },
+    ];
+    const victoriaTabs = [
+      { key: 'today',    label: "Today's View" },
+      { key: 'tasks',    label: 'Tasks' },
+      { key: 'schedule', label: 'Schedule' },
+    ];
+    const tabs = isBronson ? bronsonTabs : victoriaTabs;
+
+    const prevDay = () => { const d = new Date(selDate); d.setDate(d.getDate() - 1); setSelDate(d); };
+    const nextDay = () => { const d = new Date(selDate); d.setDate(d.getDate() + 1); setSelDate(d); };
+
+    const sharedProps = { salesUser, isBronson, selDate, setSelDate, dk, tasksByDate, schedule, setSchedule, dayFlags, setDayFlags, addTask, updateTask, deleteTask, moveTask, visibleTasks, userColor, accounts, setAccounts };
+
+    return (
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ background: T.cardBg, borderBottom: `1px solid ${T.border}`, padding: '0 24px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, height: 56 }}>
+            <div style={{ fontSize: 17, fontWeight: 900, color: T.heading, letterSpacing: '-0.5px', flexShrink: 0 }}>Pronto Hire</div>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 2, color: '#fff', background: T.navy || '#1E3A5F', padding: '3px 10px', borderRadius: 6, flexShrink: 0 }}>SALES & GM</div>
+            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button onClick={prevDay} style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
+              <span style={{ fontSize: 13, color: T.ink, fontWeight: 600, minWidth: 160, textAlign: 'center', whiteSpace: 'nowrap' }}>{sfmtDateStr(selDate)}</span>
+              <button onClick={nextDay} style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
+              <button onClick={() => setSelDate(today())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer' }}>Today</button>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: userColor, color: '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{userObj.name[0]}</div>
+            </div>
+            <button onClick={() => setSalesUser(null)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', whiteSpace: 'nowrap' }}>Switch user</button>
+            <button onClick={onSwitchWorkspace} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', whiteSpace: 'nowrap' }}>Switch workspace</button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
+            {tabs.map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)} style={{
+                padding: '10px 16px', border: 'none',
+                borderBottom: tab === t.key ? `2px solid ${userColor}` : '2px solid transparent',
+                background: 'transparent',
+                color: tab === t.key ? userColor : T.muted,
+                cursor: 'pointer', fontWeight: tab === t.key ? 700 : 400,
+                fontSize: 13, whiteSpace: 'nowrap', transition: 'all 0.15s',
+              }}>{t.label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, maxWidth: 960, width: '100%', margin: '0 auto', padding: '24px 20px', boxSizing: 'border-box' }}>
+          {tab === 'today'    && <SalesTodayView    {...sharedProps} />}
+          {tab === 'tasks'    && <SalesTaskView     {...sharedProps} />}
+          {tab === 'schedule' && <SalesScheduleView {...sharedProps} />}
+          {tab === 'accounts' && isBronson && <SalesAccountsView accounts={accounts} setAccounts={setAccounts} tasksByDate={tasksByDate} userColor={userColor} />}
+          {tab === 'weekly'   && isBronson && <SalesWeeklyView   selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} schedule={schedule} dayFlags={dayFlags} setDayFlags={setDayFlags} visibleTasks={visibleTasks} userColor={userColor} />}
+          {tab === 'monthly'  && isBronson && <SalesMonthlyView  selDate={selDate} tasksByDate={tasksByDate} dayFlags={dayFlags} userColor={userColor} />}
+        </div>
+      </div>
+    );
+  };
+
+  // ─── Exports ─────────────────────────────────────────────────────────────────
+  window.WorkspaceSelector = WorkspaceSelector;
+  window.SalesApp          = SalesApp;
+
 })();
 </script>
 
