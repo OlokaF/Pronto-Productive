@@ -15980,721 +15980,614 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
   }
 
   // ─── 8. Sales Task View Components ─────────────────────────────────────────
+  // Components: SalesMiniCalendar, SalesViewFilters, SalesCategoryTags,
+  // BronsonTaskCard, VictoriaTaskCard, BronsonColumn, VictoriaColumn,
+  // SalesDayView, SalesWeekView, SalesMonthView
 
-  // ─── SalesMiniCalendar, SalesViewFilters, SalesCategoryTags,
-  // ─── BronsonTaskCard, VictoriaTaskCard, BronsonColumn, VictoriaColumn,
-  // ─── SalesDayView, SalesWeekView, SalesMonthView
-  // (all use React.createElement; globals: T, MONTHS, DAYS_LONG, today, sameDay,
-  //  addDays, parseISO, sfmtDateStr, sweekDates, smonthDates, SALES_CATS,
-  //  scatByKey, surgByKey, suid — all available in this scope)
-// ─── SalesMiniCalendar ───────────────────────────────────────────────────────
 function SalesMiniCalendar({ selDate, setSelDate, tasksByDate }) {
-  const [viewDate, setViewDate] = useSs(() => new Date(selDate));
-  const todayD = today();
-  const yr = viewDate.getFullYear();
-  const mo = viewDate.getMonth();
-  const offset =
-    yr * 12 + mo - (todayD.getFullYear() * 12 + todayD.getMonth());
-
-  const firstDay = new Date(yr, mo, 1);
-  const startDow = (firstDay.getDay() + 6) % 7; // Mon=0
+  const [calOffset, setCalOffset] = useSs(0);
+  const base = new Date(selDate.getFullYear(), selDate.getMonth() + calOffset, 1);
+  const yr = base.getFullYear(), mo = base.getMonth();
+  const firstDow = (new Date(yr, mo, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(yr, mo + 1, 0).getDate();
+  const todayD = today();
   const cells = [];
-  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let i = 0; i < firstDow; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(yr, mo, d));
-
-  const hdr = { fontSize: 9, fontWeight: 800, color: T.muted, textAlign: 'center', letterSpacing: '0.06em' };
-  const DOW = ['Mo','Tu','We','Th','Fr','Sa','Su'];
-
+  const monLabel = `${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][mo]} ${yr}`;
   return (
-    React.createElement('div', { style: { width: 216, userSelect: 'none' } },
-      React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 } },
-        React.createElement('button', {
-          onClick: () => setViewDate(new Date(yr, mo - 1, 1)),
-          style: { background: 'none', border: 'none', cursor: 'pointer', color: T.ink, fontSize: 14, padding: '2px 6px' }
-        }, '‹'),
-        React.createElement('span', { style: { fontSize: 12, fontWeight: 700, color: T.heading } },
-          MONTHS[mo] + ' ' + yr),
-        React.createElement('button', {
-          onClick: () => setViewDate(new Date(yr, mo + 1, 1)),
-          style: { background: 'none', border: 'none', cursor: 'pointer', color: T.ink, fontSize: 14, padding: '2px 6px' }
-        }, '›')
-      ),
-      React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1, marginBottom: 2 } },
-        DOW.map(d => React.createElement('div', { key: d, style: hdr }, d))
-      ),
-      React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1 } },
-        cells.map((date, i) => {
-          if (!date) return React.createElement('div', { key: 'e' + i });
-          const key = sfmtDateStr(date);
-          const isToday = sameDay(date, todayD);
-          const isSel = sameDay(date, selDate);
-          const hasTasks = tasksByDate && tasksByDate[key] && tasksByDate[key].length > 0;
-          return React.createElement('div', {
-            key,
-            onClick: () => setSelDate(date),
-            style: {
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              cursor: 'pointer', padding: '3px 0', borderRadius: 6,
-              background: isSel ? T.navy : 'transparent',
-              border: isToday && !isSel ? `2px solid ${T.gold}` : '2px solid transparent',
-            }
-          },
-            React.createElement('span', {
-              style: { fontSize: 11, fontWeight: isSel ? 700 : 400, color: isSel ? '#fff' : T.ink, lineHeight: 1.4 }
-            }, date.getDate()),
-            hasTasks
-              ? React.createElement('div', { style: { width: 4, height: 4, borderRadius: '50%', background: isSel ? '#fff' : T.navy, marginTop: 1 } })
-              : React.createElement('div', { style: { width: 4, height: 4 } })
+    <div style={{ width: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <button onClick={() => setCalOffset(calOffset - 1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, fontSize: 13, padding: '0 2px' }}>‹</button>
+        <span style={{ fontSize: 9, fontWeight: 800, color: T.heading, letterSpacing: '0.08em' }}>{monLabel}</span>
+        <button onClick={() => setCalOffset(calOffset + 1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, fontSize: 13, padding: '0 2px' }}>›</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1, marginBottom: 2 }}>
+        {['M','T','W','T','F','S','S'].map((d, i) => (
+          <div key={i} style={{ fontSize: 9, fontWeight: 800, color: T.faint, textAlign: 'center', paddingBottom: 2 }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1 }}>
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} />;
+          const isSel = sameDay(d, selDate);
+          const isToday = sameDay(d, todayD);
+          const key = sfmtDateStr(d);
+          const hasTasks = tasksByDate[key] && tasksByDate[key].some(t => !t.done);
+          const hasUrgent = tasksByDate[key] && tasksByDate[key].some(t => t.urgency === 'urgent' && !t.done);
+          return (
+            <button key={i} onClick={() => { setSelDate(d); setCalOffset(0); }}
+              style={{ width: '100%', aspectRatio: '1/1', borderRadius: 4, border: `1.5px solid ${isSel ? T.navy : isToday ? T.gold : 'transparent'}`, background: isSel ? T.navy : isToday ? T.gold + '22' : 'transparent', color: isSel ? '#fff' : isToday ? T.gold : T.text, fontSize: 10.5, fontWeight: isSel || isToday ? 800 : 400, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, padding: 2 }}>
+              {d.getDate()}
+              {hasTasks && <div style={{ width: 3, height: 3, borderRadius: '50%', background: hasUrgent ? T.gold : T.navy }} />}
+            </button>
           );
-        })
-      ),
-      offset !== 0 && React.createElement('button', {
-        onClick: () => { setViewDate(new Date(todayD.getFullYear(), todayD.getMonth(), 1)); setSelDate(todayD); },
-        style: { marginTop: 6, fontSize: 10, color: T.navy, background: 'none', border: `1px solid ${T.navy}`, borderRadius: 5, padding: '2px 8px', cursor: 'pointer', width: '100%' }
-      }, 'Today')
-    )
+        })}
+      </div>
+      {calOffset !== 0 && (
+        <button onClick={() => { setCalOffset(0); setSelDate(today()); }}
+          style={{ marginTop: 6, background: 'none', border: 'none', cursor: 'pointer', color: T.navy, fontSize: 10, fontWeight: 700, padding: 0 }}>Today</button>
+      )}
+    </div>
   );
 }
 
-// ─── SalesViewFilters ────────────────────────────────────────────────────────
 function SalesViewFilters({ filter, setFilter, tasks, overdueCount }) {
-  const done = tasks.filter(t => t.done).length;
   const notDone = tasks.filter(t => !t.done).length;
+  const completed = tasks.filter(t => t.done).length;
   const urgent = tasks.filter(t => t.urgency === 'urgent' && !t.done).length;
   const items = [
     { key: 'all', label: 'All Tasks', count: notDone },
-    { key: 'completed', label: 'Completed', count: done },
+    { key: 'completed', label: 'Completed', count: completed },
     { key: 'urgent', label: 'Urgent', count: urgent },
     { key: 'overdue', label: 'Overdue', count: overdueCount },
   ];
   return (
-    React.createElement('div', { style: { marginTop: 16 } },
-      React.createElement('div', { style: { fontSize: 9, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 } }, 'Filters'),
-      items.map(({ key, label, count }) => {
-        const sel = filter === key;
-        return React.createElement('div', {
-          key,
-          onClick: () => setFilter(key),
-          style: {
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '6px 8px', borderRadius: 7, cursor: 'pointer', marginBottom: 2,
-            background: sel ? `${T.navy}18` : 'transparent',
-            borderLeft: sel ? `3px solid ${T.navy}` : '3px solid transparent',
-          }
-        },
-          React.createElement('span', { style: { fontSize: 12, color: sel ? T.navy : T.ink, fontWeight: sel ? 700 : 400 } }, label),
-          React.createElement('span', { style: { fontSize: 11, color: T.muted, background: T.surface2, borderRadius: 10, padding: '1px 7px', minWidth: 20, textAlign: 'center' } }, count)
+    <div>
+      <div style={{ fontSize: 9.5, fontWeight: 800, color: T.faint, letterSpacing: '0.12em', marginBottom: 8 }}>VIEW TASKS</div>
+      {items.map(item => {
+        const sel = filter === item.key;
+        return (
+          <button key={item.key} onClick={() => setFilter(item.key)}
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 6, marginBottom: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: sel ? T.navy + '12' : 'transparent', border: `1px solid ${sel ? T.navy + '28' : 'transparent'}`, color: sel ? T.navy : T.text, fontWeight: sel ? 700 : 400, cursor: 'pointer', fontSize: 12 }}>
+            <span>{item.label}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: sel ? T.navy : T.faint, background: sel ? T.navy + '18' : T.surface2, padding: '1px 7px', borderRadius: 10 }}>{item.count}</span>
+          </button>
         );
-      })
-    )
+      })}
+    </div>
   );
 }
 
-// ─── SalesCategoryTags ───────────────────────────────────────────────────────
 function SalesCategoryTags({ activeTag, setActiveTag }) {
   return (
-    React.createElement('div', { style: { marginTop: 16 } },
-      React.createElement('div', { style: { fontSize: 9, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 } }, 'Categories'),
-      SALES_CATS.map(cat => {
-        const sel = activeTag === cat.key;
-        return React.createElement('div', {
-          key: cat.key,
-          onClick: () => setActiveTag(sel ? null : cat.key),
-          style: {
-            display: 'flex', alignItems: 'center', gap: 7, padding: '5px 8px',
-            borderRadius: 7, cursor: 'pointer', marginBottom: 2,
-            background: sel ? `${T.navy}14` : 'transparent',
-          }
-        },
-          React.createElement('div', { style: { width: 10, height: 10, borderRadius: 2, background: cat.color, flexShrink: 0 } }),
-          React.createElement('span', { style: { fontSize: 12, color: sel ? T.navy : T.ink, fontWeight: sel ? 700 : 400 } }, cat.label)
+    <div>
+      <div style={{ fontSize: 9.5, fontWeight: 800, color: T.faint, letterSpacing: '0.12em', marginBottom: 8 }}>TAGS</div>
+      {SALES_CATS.map(cat => {
+        const active = activeTag === cat.key;
+        return (
+          <button key={cat.key} onClick={() => setActiveTag(active ? null : cat.key)}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', padding: '5px 8px', borderRadius: 5, marginBottom: 2, fontSize: 11.5, fontWeight: active ? 700 : 400, background: active ? cat.color + '18' : 'transparent', border: `1px solid ${active ? cat.color + '30' : 'transparent'}`, color: active ? cat.color : T.text, cursor: 'pointer' }}>
+            <div style={{ width: 7, height: 7, borderRadius: 2, background: cat.color, flexShrink: 0 }} />
+            {cat.label}
+          </button>
         );
-      }),
-      activeTag && React.createElement('button', {
-        onClick: () => setActiveTag(null),
-        style: { marginTop: 4, fontSize: 11, color: T.muted, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px' }
-      }, '✕ Clear filter')
-    )
+      })}
+      {activeTag && (
+        <button onClick={() => setActiveTag(null)}
+          style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', color: T.muted, fontSize: 10.5, padding: 0 }}>✕ Clear filter</button>
+      )}
+    </div>
   );
 }
 
-// ─── BronsonTaskCard ─────────────────────────────────────────────────────────
 function BronsonTaskCard({ task, onToggle, onFocus, onDelegate, onDelete, onPrivacyToggle, compact }) {
   const cat = scatByKey(task.cat);
   const urg = surgByKey(task.urgency);
-  const pad = compact ? '7px 10px' : '10px 12px';
-  const isDelegated = task.delegated;
   return (
-    React.createElement('div', {
-      style: {
-        display: 'flex', alignItems: 'flex-start', gap: 8, padding: pad,
-        background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 10,
-        opacity: task.done ? 0.6 : 1, marginBottom: 5,
-      }
-    },
-      React.createElement('button', {
-        onClick: () => onToggle(task.id),
-        style: {
-          width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#22c55e' : T.border}`,
-          background: task.done ? '#22c55e' : 'transparent', cursor: 'pointer', flexShrink: 0, marginTop: 1,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11
-        }
-      }, task.done ? '✓' : ''),
-      urg && React.createElement('div', { title: urg.label, style: { width: 9, height: 9, borderRadius: '50%', background: urg.color, flexShrink: 0, marginTop: 5 } }),
-      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-        React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginBottom: 2 } },
-          cat && React.createElement('span', {
-            style: { fontSize: 9, fontWeight: 700, color: '#fff', background: cat.color, borderRadius: 5, padding: '1px 6px', letterSpacing: '0.06em' }
-          }, cat.label)
-        ),
-        React.createElement('div', { style: { fontSize: 13, color: T.ink, textDecoration: task.done ? 'line-through' : 'none', lineHeight: 1.4 } }, task.text),
-        task.account && React.createElement('div', { style: { fontSize: 11, color: T.muted, marginTop: 2 } }, task.account)
-      ),
-      isDelegated
-        ? React.createElement('span', { style: { fontSize: 10, color: '#0d9488', background: '#0d948818', borderRadius: 6, padding: '2px 7px', fontWeight: 700, whiteSpace: 'nowrap' } }, 'Delegated →')
-        : React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 } },
-            React.createElement('button', { onClick: () => onPrivacyToggle(task.id), title: task.isPrivate ? 'Private' : 'Shared', style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: task.isPrivate ? T.gold : T.muted, padding: '1px 3px' } }, task.isPrivate ? '🔒' : '🔓'),
-            React.createElement('button', { onClick: () => onDelegate(task.id), title: 'Delegate to Victoria', style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.muted, padding: '1px 3px' } }, '↗'),
-            React.createElement('button', { onClick: () => onFocus(task.id), title: task.inFocus ? 'Remove from focus' : 'Pin to focus', style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: task.inFocus ? T.gold : T.muted, padding: '1px 3px' } }, '⭐'),
-            React.createElement('button', { onClick: () => onDelete(task.id), title: 'Delete', style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: T.muted, padding: '1px 3px' } }, '×')
-          )
-    )
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: compact ? '6px 8px' : '8px 10px', borderRadius: 8, background: T.cardBg, marginBottom: 5, border: `1px solid ${T.border}` }}>
+      <button onClick={() => onToggle(task.id)}
+        style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#22c55e' : T.border}`, background: task.done ? '#22c55e' : 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+        {task.done && '✓'}
+      </button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: urg ? urg.color : T.border, flexShrink: 0 }} />
+          {cat && <span style={{ fontSize: 9.5, fontWeight: 700, background: cat.color, color: '#fff', padding: '1px 5px', borderRadius: 3 }}>{cat.label}</span>}
+        </div>
+        <div style={{ fontSize: 13, color: T.ink, textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.55 : 1, wordBreak: 'break-word' }}>{task.text}</div>
+        {task.account && <div style={{ fontSize: 10.5, color: T.muted, marginTop: 1 }}>{task.account}</div>}
+        {task.delegated && (
+          <span style={{ display: 'inline-block', marginTop: 3, fontSize: 9.5, fontWeight: 700, color: '#0d9488', background: '#0d948818', padding: '1px 7px', borderRadius: 8 }}>→ Victoria</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
+        <button onClick={() => onPrivacyToggle(task.id)} title={task.isPrivate ? 'Private' : 'Public'}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: task.isPrivate ? T.gold : T.muted, padding: '1px 3px' }}>{task.isPrivate ? '🔒' : '🔓'}</button>
+        {!task.delegated && (
+          <button onClick={() => onFocus(task.id)} title="Focus"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: task.inFocus ? T.gold : T.muted, padding: '1px 3px' }}>⭐</button>
+        )}
+        {!task.delegated && (
+          <button onClick={() => onDelegate(task.id)} title="Delegate"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.muted, padding: '1px 3px' }}>↗</button>
+        )}
+        <button onClick={() => onDelete(task.id)} title="Delete"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.muted, padding: '1px 3px' }}>×</button>
+      </div>
+    </div>
   );
 }
 
-// ─── VictoriaTaskCard ────────────────────────────────────────────────────────
 function VictoriaTaskCard({ task, onToggle, onDelete, onSendUpdate }) {
-  const [updateOpen, setUpdateOpen] = useSs(false);
+  const [expanded, setExpanded] = useSs(false);
   const [updateText, setUpdateText] = useSs('');
   const cat = scatByKey(task.cat);
   const urg = surgByKey(task.urgency);
   const latestUpdate = task.updates && task.updates.length > 0 ? task.updates[task.updates.length - 1] : null;
-
-  function submitUpdate() {
+  function handleSend() {
     if (!updateText.trim()) return;
     onSendUpdate(task.id, updateText.trim());
     setUpdateText('');
-    setUpdateOpen(false);
+    setExpanded(false);
   }
-
   return (
-    React.createElement('div', { style: { marginBottom: 5 } },
-      React.createElement('div', {
-        style: {
-          display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px',
-          background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 10,
-          opacity: task.done ? 0.6 : 1,
-        }
-      },
-        React.createElement('button', {
-          onClick: () => onToggle(task.id),
-          style: {
-            width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#22c55e' : T.border}`,
-            background: task.done ? '#22c55e' : 'transparent', cursor: 'pointer', flexShrink: 0, marginTop: 1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11
-          }
-        }, task.done ? '✓' : ''),
-        urg && React.createElement('div', { style: { width: 9, height: 9, borderRadius: '50%', background: urg.color, flexShrink: 0, marginTop: 5 } }),
-        React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-          cat && React.createElement('span', { style: { fontSize: 9, fontWeight: 700, color: '#fff', background: cat.color, borderRadius: 5, padding: '1px 6px', letterSpacing: '0.06em', display: 'inline-block', marginBottom: 2 } }, cat.label),
-          React.createElement('div', { style: { fontSize: 13, color: T.ink, textDecoration: task.done ? 'line-through' : 'none', lineHeight: 1.4 } }, task.text),
-          task.account && React.createElement('div', { style: { fontSize: 11, color: T.muted, marginTop: 2 } }, task.account)
-        ),
-        React.createElement('div', { style: { display: 'flex', gap: 3, flexShrink: 0 } },
-          React.createElement('button', {
-            onClick: () => setUpdateOpen(o => !o),
-            style: { fontSize: 10, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 5, padding: '2px 6px', cursor: 'pointer', color: T.ink }
-          }, '📤 Update'),
-          React.createElement('button', { onClick: () => onDelete(task.id), style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: T.muted } }, '×')
-        )
-      ),
-      updateOpen && React.createElement('div', { style: { padding: '6px 10px', background: T.surface, border: `1px solid ${T.border}`, borderTop: 'none', borderRadius: '0 0 10px 10px' } },
-        React.createElement('textarea', {
-          value: updateText, onChange: e => setUpdateText(e.target.value),
-          placeholder: 'Type your update for Bronson…',
-          style: { width: '100%', fontSize: 12, padding: 6, borderRadius: 6, border: `1px solid ${T.border}`, resize: 'vertical', minHeight: 52, background: T.cardBg, color: T.ink, boxSizing: 'border-box' }
-        }),
-        React.createElement('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 4 } },
-          React.createElement('button', { onClick: () => setUpdateOpen(false), style: { fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: T.muted } }, 'Cancel'),
-          React.createElement('button', { onClick: submitUpdate, style: { fontSize: 11, background: T.navy, color: '#fff', border: 'none', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' } }, 'Send')
-        )
-      ),
-      latestUpdate && !updateOpen && React.createElement('div', {
-        style: { margin: '2px 0 0 30px', fontSize: 11, color: T.muted, background: T.surface2, borderRadius: '0 0 8px 8px', padding: '4px 10px', borderLeft: `3px solid ${T.border}` }
-      }, React.createElement('span', { style: { fontWeight: 600 } }, latestUpdate.from + ': '), latestUpdate.text)
-    )
+    <div style={{ padding: '8px 10px', borderRadius: 8, background: T.cardBg, marginBottom: 5, border: `1px solid ${T.border}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <button onClick={() => onToggle(task.id)}
+          style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#22c55e' : T.border}`, background: task.done ? '#22c55e' : 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+          {task.done && '✓'}
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: urg ? urg.color : T.border, flexShrink: 0 }} />
+            {cat && <span style={{ fontSize: 9.5, fontWeight: 700, background: cat.color, color: '#fff', padding: '1px 5px', borderRadius: 3 }}>{cat.label}</span>}
+          </div>
+          <div style={{ fontSize: 13, color: T.ink, textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.55 : 1 }}>{task.text}</div>
+          {task.account && <div style={{ fontSize: 10.5, color: T.muted, marginTop: 1 }}>{task.account}</div>}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <button onClick={() => setExpanded(!expanded)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: expanded ? T.navy : T.muted, padding: '1px 3px' }}>📤</button>
+          <button onClick={() => onDelete(task.id)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.muted, padding: '1px 3px' }}>×</button>
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <textarea value={updateText} onChange={e => setUpdateText(e.target.value)} placeholder="Type update for Bronson…"
+            style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, resize: 'none', minHeight: 52, outline: 'none' }} />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setExpanded(false)}
+              style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={handleSend}
+              style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: 'none', background: T.navy, color: '#fff', cursor: 'pointer', fontWeight: 700 }}>Send</button>
+          </div>
+        </div>
+      )}
+      {latestUpdate && (
+        <div style={{ marginTop: 6, fontSize: 11, color: T.muted, fontStyle: 'italic', paddingLeft: 8, borderLeft: `2px solid ${T.border}` }}>Victoria: {latestUpdate.text}</div>
+      )}
+    </div>
   );
 }
 
-// ─── BronsonColumn ───────────────────────────────────────────────────────────
-function BronsonColumn({ tasks, allDayTasks, dateKey, addTask, updateTask, deleteTask, dayType, setDayType, isBronson }) {
-  const [handedOffOpen, setHandedOffOpen] = useSs(false);
-  const [reactiveInput, setReactiveInput] = useSs('');
+function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayType, setDayType }) {
   const [focusInput, setFocusInput] = useSs('');
+  const [reactiveInput, setReactiveInput] = useSs('');
   const [recurInput, setRecurInput] = useSs('');
   const [ongoingInput, setOngoingInput] = useSs('');
-  const [addBottomInput, setAddBottomInput] = useSs('');
-
-  const focusTasks = tasks.filter(t => t.inFocus && !t.done);
-  const delegatedTasks = tasks.filter(t => t.delegated);
-  const reactiveTasks = tasks.filter(t => !t.inFocus && !t.delegated && t.section === 'reactive');
-  const recurringTasks = tasks.filter(t => t.section === 'recurring');
-  const ongoingTasks = tasks.filter(t => t.section === 'ongoing');
-
-  const sortedReactive = (() => {
-    if (dayType === 'road') {
-      const pri = reactiveTasks.filter(t => t.cat === 'call' || t.cat === 'visit');
-      const rest = reactiveTasks.filter(t => t.cat !== 'call' && t.cat !== 'visit');
-      return [...pri, ...rest];
-    } else if (dayType === 'office') {
-      const pri = reactiveTasks.filter(t => ['pricing','email','admin'].includes(t.cat));
-      const rest = reactiveTasks.filter(t => !['pricing','email','admin'].includes(t.cat));
-      return [...pri, ...rest];
-    }
-    return reactiveTasks;
-  })();
-
-  const done = tasks.filter(t => t.done).length;
-  const total = tasks.length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
-
-  function quickAdd(text, section, extra) {
-    if (!text.trim()) return;
-    addTask({ text: text.trim(), section: section || 'reactive', owner: 'bronson', isPrivate: true, ...extra });
-  }
+  const [handedOffOpen, setHandedOffOpen] = useSs(false);
 
   function toggleFocus(id) {
-    const t = tasks.find(t => t.id === id);
+    const t = tasks.find(x => x.id === id);
     if (!t) return;
-    const focused = tasks.filter(t => t.inFocus && !t.done);
-    if (!t.inFocus && focused.length >= 3) return;
+    if (!t.inFocus) {
+      const focusCount = tasks.filter(x => x.inFocus && !x.done).length;
+      if (focusCount >= 3) return;
+    }
     updateTask(id, { inFocus: !t.inFocus });
   }
-
   function toggleDelegate(id) {
-    const t = tasks.find(t => t.id === id);
+    const t = tasks.find(x => x.id === id);
     if (!t) return;
     updateTask(id, { delegated: !t.delegated, inFocus: false });
   }
-
   function togglePrivacy(id) {
-    const t = tasks.find(t => t.id === id);
+    const t = tasks.find(x => x.id === id);
     if (!t) return;
     updateTask(id, { isPrivate: !t.isPrivate });
   }
-
-  const sectionHdr = (label, borderColor) => React.createElement('div', {
-    style: { fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: `3px solid ${borderColor}`, paddingLeft: 7, marginBottom: 6, marginTop: 2 }
-  }, label);
-
-  const dtBtn = (label, val, icon) => React.createElement('button', {
-    onClick: () => setDayType(dayType === val ? null : val),
-    style: {
-      fontSize: 11, padding: '3px 9px', borderRadius: 6, cursor: 'pointer', marginLeft: 4,
-      background: dayType === val ? (val === 'road' ? T.gold : T.navy) : T.surface2,
-      color: dayType === val ? '#fff' : T.ink,
-      border: `1px solid ${dayType === val ? (val === 'road' ? T.gold : T.navy) : T.border}`,
-      fontWeight: dayType === val ? 700 : 400
-    }
-  }, icon + ' ' + label);
-
-  const qaInput = (val, setVal, placeholder, section, extra) => React.createElement('div', { style: { display: 'flex', gap: 5, marginTop: 5 } },
-    React.createElement('input', {
-      value: val, onChange: e => setVal(e.target.value),
-      onKeyDown: e => { if (e.key === 'Enter') { quickAdd(val, section, extra); setVal(''); } },
-      placeholder,
-      style: { flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.cardBg, color: T.ink }
-    })
-  );
-
-  return (
-    React.createElement('div', { style: { minWidth: 0 } },
-      React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' } },
-        React.createElement('div', { style: { width: 36, height: 36, borderRadius: '50%', background: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flexShrink: 0 } }, 'B'),
-        React.createElement('div', { style: { flex: 1 } },
-          React.createElement('div', { style: { fontWeight: 700, fontSize: 14, color: T.heading } }, 'Bronson'),
-          React.createElement('div', { style: { fontSize: 11, color: T.muted } }, 'GM · Sales & Operations · ' + pct + '% done')
-        ),
-        dtBtn('Road Day', 'road', '🚗'),
-        dtBtn('Office Day', 'office', '🏢')
-      ),
-
-      sectionHdr('Today\'s Focus', T.gold),
-      React.createElement('div', { style: { background: `${T.gold}10`, borderRadius: 8, padding: '8px 10px', marginBottom: 8 } },
-        focusTasks.length === 0
-          ? React.createElement('div', { style: { fontSize: 12, color: T.muted, fontStyle: 'italic' } }, 'Pin up to 3 tasks as today\'s focus →')
-          : focusTasks.map(t => React.createElement(BronsonTaskCard, { key: t.id, task: t, onToggle: id => updateTask(id, { done: !t.done }), onFocus: toggleFocus, onDelegate: toggleDelegate, onDelete: deleteTask, onPrivacyToggle: togglePrivacy })),
-        dayType === 'road' && React.createElement('div', { style: { fontSize: 11, color: T.gold, marginTop: 4, fontWeight: 600 } }, '🚗 Road day: prioritise calls & site visits'),
-        dayType === 'office' && React.createElement('div', { style: { fontSize: 11, color: T.navy, marginTop: 4, fontWeight: 600 } }, '🏢 Office day: pricing, emails & admin'),
-        qaInput(focusInput, setFocusInput, '+ Pin a task…', 'reactive', { inFocus: true })
-      ),
-
-      sectionHdr('Reactive · Just In', '#f97316'),
-      sortedReactive.map(t => React.createElement(BronsonTaskCard, { key: t.id, task: t, onToggle: id => updateTask(id, { done: !t.done }), onFocus: toggleFocus, onDelegate: toggleDelegate, onDelete: deleteTask, onPrivacyToggle: togglePrivacy })),
-      qaInput(reactiveInput, setReactiveInput, '+ Add incoming task…', 'reactive'),
-
-      React.createElement('div', {
-        onClick: () => setHandedOffOpen(o => !o),
-        style: { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', margin: '10px 0 4px' }
-      },
-        React.createElement('div', { style: { fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: '3px solid #a855f7', paddingLeft: 7, flex: 1 } }, 'Handed Off'),
-        React.createElement('span', { style: { fontSize: 10, color: T.muted, background: T.surface2, borderRadius: 10, padding: '1px 6px' } }, delegatedTasks.length),
-        React.createElement('span', { style: { fontSize: 12, color: T.muted } }, handedOffOpen ? '▾' : '▸')
-      ),
-      handedOffOpen && delegatedTasks.map(t => React.createElement(BronsonTaskCard, { key: t.id, task: t, compact: true, onToggle: id => updateTask(id, { done: !t.done }), onFocus: toggleFocus, onDelegate: toggleDelegate, onDelete: deleteTask, onPrivacyToggle: togglePrivacy })),
-
-      sectionHdr('Recurring Tasks', '#3B82F6'),
-      recurringTasks.map(t => React.createElement(BronsonTaskCard, { key: t.id, task: t, onToggle: id => updateTask(id, { done: !t.done }), onFocus: toggleFocus, onDelegate: toggleDelegate, onDelete: deleteTask, onPrivacyToggle: togglePrivacy })),
-      qaInput(recurInput, setRecurInput, '+ Add recurring task…', 'recurring'),
-
-      sectionHdr('Ongoing Jobs', T.muted),
-      ongoingTasks.map(t => React.createElement(BronsonTaskCard, { key: t.id, task: t, onToggle: id => updateTask(id, { done: !t.done }), onFocus: toggleFocus, onDelegate: toggleDelegate, onDelete: deleteTask, onPrivacyToggle: togglePrivacy })),
-      qaInput(ongoingInput, setOngoingInput, '+ Add ongoing job…', 'ongoing'),
-
-      React.createElement('button', {
-        onClick: () => { const text = prompt('New task:'); if (text) quickAdd(text, 'reactive'); },
-        style: { marginTop: 10, width: '100%', padding: '8px', fontSize: 12, background: T.surface2, border: `1px dashed ${T.border}`, borderRadius: 8, cursor: 'pointer', color: T.muted }
-      }, '+ Add Task')
-    )
-  );
-}
-
-// ─── VictoriaColumn ──────────────────────────────────────────────────────────
-function VictoriaColumn({ tasks, allDayTasks, dateKey, salesUser, addTask, updateTask, deleteTask }) {
-  const [doneOpen, setDoneOpen] = useSs(false);
-  const assigned = tasks.filter(t => t.owner === 'bronson' && t.delegated && !t.isPrivate);
-  const inProgress = tasks.filter(t => t.owner === 'victoria' && !t.done && t.section !== 'done');
-  const doneToday = tasks.filter(t => t.done);
-
-  function handleSendUpdate(id, text) {
-    const t = tasks.find(t => t.id === id);
-    if (!t) return;
-    const upd = { id: suid(), from: 'Victoria', text, time: new Date().toISOString() };
-    updateTask(id, { updates: [...(t.updates || []), upd] });
+  function addFocus(text) {
+    if (!text.trim()) return;
+    addTask({ text: text.trim(), inFocus: true, section: 'reactive', owner: 'bronson', isPrivate: true, delegated: false });
+  }
+  function addReactive(text) {
+    if (!text.trim()) return;
+    addTask({ text: text.trim(), section: 'reactive', owner: 'bronson', isPrivate: true, delegated: false });
+  }
+  function addRecur(text) {
+    if (!text.trim()) return;
+    addTask({ text: text.trim(), section: 'recurring', owner: 'bronson', isPrivate: true, delegated: false });
+  }
+  function addOngoing(text) {
+    if (!text.trim()) return;
+    addTask({ text: text.trim(), section: 'ongoing', owner: 'bronson', isPrivate: true, delegated: false });
   }
 
-  const sectionHdr = (label, borderColor) => React.createElement('div', {
-    style: { fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: `3px solid ${borderColor}`, paddingLeft: 7, marginBottom: 6, marginTop: 2 }
-  }, label);
+  const focusTasks = tasks.filter(t => t.inFocus && !t.delegated);
+  const delegatedTasks = tasks.filter(t => t.delegated);
+  let reactiveTasks = tasks.filter(t => !t.inFocus && !t.delegated && t.section === 'reactive');
+  if (dayType === 'road') reactiveTasks = [...reactiveTasks.filter(t => ['calls','visits'].includes(t.cat)), ...reactiveTasks.filter(t => !['calls','visits'].includes(t.cat))];
+  else if (dayType === 'office') reactiveTasks = [...reactiveTasks.filter(t => ['pricing','email','admin'].includes(t.cat)), ...reactiveTasks.filter(t => !['pricing','email','admin'].includes(t.cat))];
+  const recurTasks = tasks.filter(t => !t.inFocus && !t.delegated && t.section === 'recurring');
+  const ongoingTasks = tasks.filter(t => !t.inFocus && !t.delegated && t.section === 'ongoing');
+  const total = tasks.length, done = tasks.filter(t => t.done).length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const shStyle = (color) => ({ fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: `3px solid ${color}`, paddingLeft: 7, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 });
+  const inputStyle = { flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.cardBg, color: T.ink, outline: 'none' };
+
+  const cardProps = (t) => ({
+    key: t.id, task: t,
+    onToggle: id => updateTask(id, { done: !tasks.find(x => x.id === id).done }),
+    onFocus: toggleFocus, onDelegate: toggleDelegate,
+    onDelete: deleteTask, onPrivacyToggle: togglePrivacy
+  });
 
   return (
-    React.createElement('div', { style: { minWidth: 0 } },
-      React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' } },
-        React.createElement('div', { style: { width: 36, height: 36, borderRadius: '50%', background: '#DB2777', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flexShrink: 0 } }, 'V'),
-        React.createElement('div', { style: { flex: 1 } },
-          React.createElement('div', { style: { fontWeight: 700, fontSize: 14, color: T.heading } }, 'Victoria'),
-          React.createElement('div', { style: { fontSize: 11, color: T.muted } }, 'EA · Delegated Tasks · ' + assigned.length + ' assigned')
-        )
-      ),
-
-      sectionHdr('Assigned to Me', '#3B82F6'),
-      assigned.length === 0
-        ? React.createElement('div', { style: { fontSize: 12, color: T.muted, fontStyle: 'italic', marginBottom: 8 } }, 'Nothing delegated yet')
-        : assigned.map(t => React.createElement(VictoriaTaskCard, { key: t.id, task: t, onToggle: id => updateTask(id, { done: !t.done }), onDelete: deleteTask, onSendUpdate: handleSendUpdate })),
-
-      sectionHdr('In Progress', T.gold),
-      inProgress.map(t => React.createElement(VictoriaTaskCard, { key: t.id, task: t, onToggle: id => updateTask(id, { done: !t.done }), onDelete: deleteTask, onSendUpdate: handleSendUpdate })),
-      inProgress.length === 0 && React.createElement('div', { style: { fontSize: 12, color: T.muted, fontStyle: 'italic', marginBottom: 8 } }, 'No tasks in progress'),
-
-      React.createElement('div', {
-        onClick: () => setDoneOpen(o => !o),
-        style: { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', margin: '10px 0 4px' }
-      },
-        React.createElement('div', { style: { fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: '3px solid #22c55e', paddingLeft: 7, flex: 1 } }, 'Done Today'),
-        React.createElement('span', { style: { fontSize: 10, color: T.muted, background: T.surface2, borderRadius: 10, padding: '1px 6px' } }, doneToday.length),
-        React.createElement('span', { style: { fontSize: 12, color: T.muted } }, doneOpen ? '▾' : '▸')
-      ),
-      doneOpen && doneToday.map(t => React.createElement(VictoriaTaskCard, { key: t.id, task: t, onToggle: id => updateTask(id, { done: !t.done }), onDelete: deleteTask, onSendUpdate: handleSendUpdate })),
-
-      React.createElement('button', {
-        onClick: () => { const text = prompt('New task for Victoria:'); if (text) addTask({ text: text.trim(), owner: 'victoria', isPrivate: false, delegated: false, section: 'reactive' }); },
-        style: { marginTop: 10, width: '100%', padding: '8px', fontSize: 12, background: T.surface2, border: `1px dashed ${T.border}`, borderRadius: 8, cursor: 'pointer', color: T.muted }
-      }, '+ Add my own task')
-    )
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ height: 4, borderRadius: 2, background: T.surface2, marginBottom: 12, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: T.navy, borderRadius: 2, transition: 'width 0.4s' }} />
+      </div>
+      <div style={{ background: T.gold + '10', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+        <div style={{ ...shStyle(T.gold), borderLeft: `3px solid ${T.gold}` }}>
+          <span>🎯 Today's Focus</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            <button onClick={() => setDayType('road')} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, border: 'none', cursor: 'pointer', background: dayType === 'road' ? T.gold : T.surface2, color: dayType === 'road' ? '#fff' : T.muted, fontWeight: 700 }}>🚗 Road</button>
+            <button onClick={() => setDayType('office')} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, border: 'none', cursor: 'pointer', background: dayType === 'office' ? T.navy : T.surface2, color: dayType === 'office' ? '#fff' : T.muted, fontWeight: 700 }}>🏢 Office</button>
+          </div>
+        </div>
+        {dayType === 'road' && <div style={{ fontSize: 10.5, color: T.gold, marginBottom: 6, fontStyle: 'italic' }}>Road day: prioritise client visits and calls</div>}
+        {dayType === 'office' && <div style={{ fontSize: 10.5, color: T.navy, marginBottom: 6, fontStyle: 'italic' }}>Office day: tackle pricing, emails and admin</div>}
+        {focusTasks.map(t => <BronsonTaskCard {...cardProps(t)} />)}
+        {focusTasks.length < 3 && (
+          <input value={focusInput} placeholder="Add focus task…" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+            onChange={e => setFocusInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { addFocus(focusInput); setFocusInput(''); } }} />
+        )}
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ ...shStyle('#f97316') }}>Reactive · Just In</div>
+        {reactiveTasks.map(t => <BronsonTaskCard {...cardProps(t)} />)}
+        <input value={reactiveInput} placeholder="Add task…" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+          onChange={e => setReactiveInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { addReactive(reactiveInput); setReactiveInput(''); } }} />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <button onClick={() => setHandedOffOpen(!handedOffOpen)}
+          style={{ ...shStyle('#0d9488'), background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', padding: 0 }}>
+          <span>Handed Off</span>
+          <span style={{ fontSize: 9.5, fontWeight: 700, background: '#0d948818', color: '#0d9488', padding: '1px 6px', borderRadius: 8, marginLeft: 4 }}>{delegatedTasks.length}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: T.muted }}>{handedOffOpen ? '▾' : '▸'}</span>
+        </button>
+        {handedOffOpen && delegatedTasks.map(t => <BronsonTaskCard {...cardProps(t)} />)}
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ ...shStyle('#3b82f6') }}>Recurring Tasks</div>
+        {recurTasks.map(t => <BronsonTaskCard {...cardProps(t)} />)}
+        <input value={recurInput} placeholder="Add recurring…" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+          onChange={e => setRecurInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { addRecur(recurInput); setRecurInput(''); } }} />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ ...shStyle(T.border) }}>Ongoing Jobs</div>
+        {ongoingTasks.map(t => <BronsonTaskCard {...cardProps(t)} />)}
+        <input value={ongoingInput} placeholder="Add ongoing…" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+          onChange={e => setOngoingInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { addOngoing(ongoingInput); setOngoingInput(''); } }} />
+      </div>
+    </div>
   );
 }
 
-// ─── SalesDayView ────────────────────────────────────────────────────────────
+function VictoriaColumn({ tasks, dateKey, salesUser, addTask, updateTask, deleteTask }) {
+  const [myTaskInput, setMyTaskInput] = useSs('');
+  const [doneOpen, setDoneOpen] = useSs(false);
+
+  function handleSendUpdate(id, text) {
+    const t = tasks.find(x => x.id === id);
+    if (!t) return;
+    const newUpd = { id: suid(), text, createdAt: new Date().toISOString() };
+    updateTask(id, { updates: [...(t.updates || []), newUpd] });
+  }
+  function addMyTask(text) {
+    if (!text.trim()) return;
+    addTask({ text: text.trim(), owner: 'victoria', isPrivate: false, delegated: false, section: 'reactive' });
+  }
+
+  const assigned = tasks.filter(t => t.owner === 'bronson' && t.delegated && !t.isPrivate);
+  const inProgress = tasks.filter(t => t.owner === 'victoria' && !t.done);
+  const doneToday = tasks.filter(t => t.owner === 'victoria' && t.done);
+
+  const shStyle = (color) => ({ fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: `3px solid ${color}`, paddingLeft: 7, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 });
+  const inputStyle = { flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.cardBg, color: T.ink, outline: 'none' };
+
+  const cardProps = (t) => ({
+    key: t.id, task: t,
+    onToggle: id => updateTask(id, { done: !tasks.find(x => x.id === id).done }),
+    onDelete: deleteTask,
+    onSendUpdate: handleSendUpdate
+  });
+
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ ...shStyle('#3b82f6') }}>Assigned to Me</div>
+        {assigned.length === 0 && <div style={{ fontSize: 11.5, color: T.muted, padding: '4px 0 8px' }}>No delegated tasks.</div>}
+        {assigned.map(t => <VictoriaTaskCard {...cardProps(t)} />)}
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ ...shStyle(T.gold) }}>In Progress</div>
+        {inProgress.map(t => <VictoriaTaskCard {...cardProps(t)} />)}
+        <input value={myTaskInput} placeholder="Add my task…" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+          onChange={e => setMyTaskInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { addMyTask(myTaskInput); setMyTaskInput(''); } }} />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <button onClick={() => setDoneOpen(!doneOpen)}
+          style={{ ...shStyle('#22c55e'), background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', padding: 0 }}>
+          <span>Done Today</span>
+          <span style={{ fontSize: 9.5, fontWeight: 700, background: '#22c55e18', color: '#22c55e', padding: '1px 6px', borderRadius: 8, marginLeft: 4 }}>{doneToday.length}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: T.muted }}>{doneOpen ? '▾' : '▸'}</span>
+        </button>
+        {doneOpen && doneToday.map(t => <VictoriaTaskCard {...cardProps(t)} />)}
+      </div>
+    </div>
+  );
+}
+
 function SalesDayView({ selDate, setSelDate, tasksByDate, addTask, updateTask, deleteTask, dayFlags, setDayFlags, isBronson, salesUser, userColor, visibleTasks }) {
   const [filter, setFilter] = useSs('all');
   const [activeTag, setActiveTag] = useSs(null);
   const [personView, setPersonView] = useSs('all');
   const [search, setSearch] = useSs('');
-  const todayD = today();
+  const [statsFilter, setStatsFilter] = useSs(null);
+
   const dateKey = sfmtDateStr(selDate);
   const dayTasksRaw = tasksByDate[dateKey] || [];
-
-  const overdueCount = React.useMemo(() => {
-    let n = 0;
-    Object.entries(tasksByDate).forEach(([k, arr]) => {
-      if (k < dateKey) n += arr.filter(t => !t.done).length;
-    });
-    return n;
-  }, [tasksByDate, dateKey]);
-
-  const filteredTasks = React.useMemo(() => {
-    let ts = dayTasksRaw;
-    if (search) ts = ts.filter(t => t.text.toLowerCase().includes(search.toLowerCase()) || (t.account || '').toLowerCase().includes(search.toLowerCase()));
-    if (activeTag) ts = ts.filter(t => t.cat === activeTag);
-    if (filter === 'completed') ts = ts.filter(t => t.done);
-    else if (filter === 'urgent') ts = ts.filter(t => t.urgency === 'urgent' && !t.done);
-    else if (filter === 'overdue') ts = [];
-    else ts = ts.filter(t => !t.done);
-    return ts;
-  }, [dayTasksRaw, search, activeTag, filter]);
-
-  const bronsonTasks = filteredTasks.filter(t => t.owner === 'bronson' || (!t.owner));
-  const victoriaTasks = filteredTasks.filter(t => t.owner === 'victoria' || (t.owner === 'bronson' && t.delegated && !t.isPrivate));
-
   const flags = dayFlags[dateKey] || {};
-  function setDayType(val) { setDayFlags(prev => ({ ...prev, [dateKey]: { ...prev[dateKey], dayType: val } })); }
 
-  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  function setDayType(val) {
+    setDayFlags(prev => ({ ...prev, [dateKey]: { ...(prev[dateKey] || {}), dayType: val } }));
+  }
+
+  const bronsonTasks = dayTasksRaw.filter(t => t.owner === 'bronson' || !t.owner);
+  const victoriaTasks = dayTasksRaw.filter(t => t.owner === 'victoria' || (t.owner === 'bronson' && t.delegated && !t.isPrivate));
+  const todayD = today();
+  const overdueCount = dayTasksRaw.filter(t => !t.done && selDate < todayD).length;
+
+  const statCards = [
+    { key: 'total', label: 'Total Tasks', sub: 'All tasks today', color: T.navy, value: dayTasksRaw.filter(t => !t.done).length },
+    { key: 'completed', label: 'Completed', sub: 'Done today', color: '#22c55e', value: dayTasksRaw.filter(t => t.done).length },
+    { key: 'urgent', label: 'Urgent', sub: 'Needs attention', color: '#ef4444', value: dayTasksRaw.filter(t => t.urgency === 'urgent' && !t.done).length },
+    { key: 'delegated', label: 'Delegated', sub: 'Handed to Victoria', color: '#8b5cf6', value: bronsonTasks.filter(t => t.delegated).length },
+    { key: 'overdue', label: 'Overdue', sub: 'Past due date', color: '#f97316', value: overdueCount },
+  ];
+
+  const dn = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const isToday = sameDay(selDate, todayD);
-  const dowName = DAYS_LONG[selDate.getDay()].toUpperCase();
-  const dateLabel = dowName + ' · ' + selDate.getDate() + ' ' + MONTHS[selDate.getMonth()].toUpperCase() + ' ' + selDate.getFullYear();
+  const dayLabel = `${dn[selDate.getDay()].toUpperCase()} · ${selDate.getDate()} ${mn[selDate.getMonth()].toUpperCase().slice(0,3)} ${selDate.getFullYear()}`;
+  const titleLabel = isToday ? "Today's Tasks" : `${dn[selDate.getDay()]}'s Tasks`;
 
-  const statCard = (label, val, sub, color) => React.createElement('div', {
-    style: { flex: 1, background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 12, padding: '14px 14px 12px', borderTop: `3px solid ${color}`, cursor: 'pointer', minWidth: 0 }
-  },
-    React.createElement('div', { style: { fontSize: 28, fontWeight: 900, color: T.heading, lineHeight: 1 } }, val),
-    React.createElement('div', { style: { fontSize: 12, color: T.muted, marginTop: 4 } }, label),
-    sub && React.createElement('div', { style: { fontSize: 11, color, marginTop: 2, fontWeight: 600 } }, sub)
-  );
-
-  const totalTasks = dayTasksRaw.filter(t => !t.done).length;
-  const doneCnt = dayTasksRaw.filter(t => t.done).length;
-  const urgentCnt = dayTasksRaw.filter(t => t.urgency === 'urgent' && !t.done).length;
-  const delegCnt = dayTasksRaw.filter(t => t.delegated).length;
-  const donePct = dayTasksRaw.length ? Math.round((doneCnt / dayTasksRaw.length) * 100) : 0;
-
-  const pillBtn = (label, val) => React.createElement('button', {
-    onClick: () => setPersonView(val),
-    style: {
-      padding: '5px 13px', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontWeight: personView === val ? 700 : 400,
-      background: personView === val ? T.navy : 'transparent',
-      color: personView === val ? '#fff' : T.ink,
-      border: 'none'
-    }
-  }, label);
+  function handleAddTask(section) {
+    addTask({ text: 'New task', section: section || 'reactive', owner: 'bronson', isPrivate: true, delegated: false });
+  }
 
   const showBronson = personView === 'all' || personView === 'bronson';
   const showVictoria = personView === 'all' || personView === 'victoria';
 
   return (
-    React.createElement('div', { style: { display: 'flex', gap: 0, height: '100%', minHeight: 0 } },
-      React.createElement('div', { style: { width: 216, flexShrink: 0, padding: '20px 14px', borderRight: `1px solid ${T.border}`, overflowY: 'auto' } },
-        React.createElement(SalesMiniCalendar, { selDate, setSelDate, tasksByDate }),
-        React.createElement(SalesViewFilters, { filter, setFilter, tasks: dayTasksRaw, overdueCount }),
-        React.createElement(SalesCategoryTags, { activeTag, setActiveTag })
-      ),
-      React.createElement('div', { style: { flex: 1, overflowY: 'auto', padding: '24px 28px' } },
-        React.createElement('div', { style: { fontSize: 11, fontWeight: 800, color: T.gold, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 } }, dateLabel),
-        React.createElement('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14, gap: 12 } },
-          React.createElement('div', null,
-            React.createElement('h2', { style: { margin: 0, fontSize: 24, fontWeight: 900, color: T.heading } }, isToday ? 'Today\'s Tasks' : (DAYS_LONG[selDate.getDay()] + '\'s Tasks')),
-            React.createElement('p', { style: { margin: '3px 0 0', fontSize: 13, color: T.muted } }, 'Sales pipeline, delegations, and account work.')
-          ),
-          React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
-            React.createElement('input', { value: search, onChange: e => setSearch(e.target.value), placeholder: 'Search tasks…', style: { fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.cardBg, color: T.ink, width: 160 } }),
-            React.createElement('button', {
-              onClick: () => addTask({ text: 'New task', section: 'reactive', owner: 'bronson', isPrivate: true }),
-              style: { padding: '7px 14px', background: T.navy, color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }
-            }, '+ Add Task')
-          )
-        ),
-
-        React.createElement('div', { style: { display: 'flex', gap: 10, marginBottom: 18 } },
-          statCard('Total Tasks', totalTasks, null, T.navy),
-          statCard('Completed', doneCnt, donePct + '% done', '#22c55e'),
-          statCard('Urgent', urgentCnt, urgentCnt > 0 ? 'Needs attention' : null, '#ef4444'),
-          statCard('Delegated', delegCnt, null, '#a855f7'),
-          statCard('Overdue', overdueCount, overdueCount > 0 ? 'From past days' : null, '#f97316')
-        ),
-
-        React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 } },
-          React.createElement('div', { style: { display: 'flex', background: T.surface, borderRadius: 8, padding: 3 } },
-            pillBtn('⊞ All', 'all'),
-            pillBtn('B · Bronson', 'bronson'),
-            pillBtn('V · Victoria', 'victoria')
-          )
-        ),
-
-        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: showBronson && showVictoria ? '1fr 1fr' : '1fr', gap: 24 } },
-          showBronson && React.createElement(BronsonColumn, { tasks: bronsonTasks, allDayTasks: dayTasksRaw, dateKey, addTask, updateTask, deleteTask, dayType: flags.dayType, setDayType, isBronson }),
-          showVictoria && React.createElement(VictoriaColumn, { tasks: victoriaTasks, allDayTasks: dayTasksRaw, dateKey, salesUser, addTask, updateTask, deleteTask })
-        )
-      )
-    )
+    <div style={{ display: 'flex', gap: 0 }}>
+      <div style={{ width: 216, paddingRight: 20, borderRight: `1px solid ${T.border}`, marginRight: 24, flexShrink: 0 }}>
+        <SalesMiniCalendar selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} />
+        <div style={{ marginTop: 22 }}>
+          <SalesViewFilters filter={filter} setFilter={setFilter} tasks={dayTasksRaw} overdueCount={overdueCount} />
+        </div>
+        <div style={{ marginTop: 22 }}>
+          <SalesCategoryTags activeTag={activeTag} setActiveTag={setActiveTag} />
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.gold, letterSpacing: '0.14em', marginBottom: 4 }}>{dayLabel}</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: T.heading, lineHeight: 1.1 }}>{titleLabel}</div>
+            <div style={{ fontSize: 12.5, color: T.muted, marginTop: 4 }}>Sales pipeline, delegations and account work.</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks…"
+              style={{ fontSize: 12, padding: '7px 12px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, outline: 'none', width: 160 }} />
+            <button onClick={() => handleAddTask('reactive')}
+              style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 7, border: 'none', background: T.navy, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Add Task</button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 18 }}>
+          {statCards.map(sc => (
+            <div key={sc.key} onClick={() => setStatsFilter(statsFilter === sc.key ? null : sc.key)}
+              style={{ padding: '12px 14px', borderRadius: 10, background: T.cardBg, border: `1.5px solid ${statsFilter === sc.key ? sc.color + '70' : T.border}`, cursor: 'pointer', transition: 'border-color 0.15s' }}>
+              <div style={{ fontSize: 28, fontWeight: 900, color: sc.color, lineHeight: 1 }}>{sc.value}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, marginTop: 4 }}>{sc.label}</div>
+              <div style={{ fontSize: 10, color: T.muted }}>{sc.sub}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 18, background: T.surface, borderRadius: 8, padding: 3, alignSelf: 'flex-start', width: 'fit-content' }}>
+          {[{key:'all',label:'⊞ All'},{key:'bronson',label:'B Bronson',color:'#3b82f6'},{key:'victoria',label:'V Victoria',color:'#ec4899'}].map(p => (
+            <button key={p.key} onClick={() => setPersonView(p.key)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 6, border: `1px solid ${personView === p.key && p.color ? p.color : 'transparent'}`, background: personView === p.key ? (p.color ? p.color + '18' : T.navy) : 'transparent', color: personView === p.key ? (p.color || '#fff') : T.text, fontWeight: personView === p.key ? 700 : 400, cursor: 'pointer', fontSize: 12, transition: 'all 0.15s' }}>
+              {p.color && <div style={{ width: 24, height: 24, borderRadius: '50%', background: p.color + '28', border: `1.5px solid ${p.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: p.color }}>{p.key[0].toUpperCase()}</div>}
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: showBronson && showVictoria ? '1fr 1fr' : '1fr', gap: 20 }}>
+          {showBronson && (
+            <BronsonColumn tasks={bronsonTasks} dateKey={dateKey} addTask={addTask} updateTask={updateTask} deleteTask={deleteTask} dayType={flags.dayType} setDayType={setDayType} />
+          )}
+          {showVictoria && (
+            <VictoriaColumn tasks={victoriaTasks} dateKey={dateKey} salesUser={salesUser} addTask={addTask} updateTask={updateTask} deleteTask={deleteTask} />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
-// ─── SalesWeekView ───────────────────────────────────────────────────────────
-function SalesWeekView({ selDate, setSelDate, tasksByDate, dayFlags, setDayFlags, isBronson, salesUser, visibleTasks, userColor }) {
+function SalesWeekView({ selDate, setSelDate, tasksByDate, dayFlags, setDayFlags, isBronson, userColor }) {
   const weekDates = sweekDates(selDate);
   const todayD = today();
+  const [anchor, setAnchor] = useSs(selDate);
+  const dates = sweekDates(anchor);
+  const startLabel = `${dates[0].getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dates[0].getMonth()]}`;
+  const endLabel = `${dates[6].getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dates[6].getMonth()]}`;
 
   function cycleDayType(dateKey) {
     if (!isBronson) return;
-    const current = (dayFlags[dateKey] || {}).dayType;
-    const next = current === undefined || current === null ? 'road' : current === 'road' ? 'office' : null;
-    setDayFlags(prev => ({ ...prev, [dateKey]: { ...prev[dateKey], dayType: next } }));
+    const cur = (dayFlags[dateKey] || {}).dayType;
+    const next = cur === 'road' ? 'office' : cur === 'office' ? null : 'road';
+    setDayFlags(prev => ({ ...prev, [dateKey]: { ...(prev[dateKey] || {}), dayType: next } }));
   }
 
-  const weekStart = weekDates[0];
-  const weekEnd = weekDates[weekDates.length - 1];
-  const fmtD = d => d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3);
-
   return (
-    React.createElement('div', { style: { padding: '20px 24px', height: '100%', overflowY: 'auto' } },
-      React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 } },
-        React.createElement('button', { onClick: () => setSelDate(addDays(selDate, -7)), style: { fontSize: 12, padding: '6px 12px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface2, cursor: 'pointer', color: T.ink } }, '← Previous Week'),
-        React.createElement('div', { style: { textAlign: 'center' } },
-          React.createElement('h2', { style: { margin: 0, fontSize: 18, fontWeight: 800, color: T.heading } }, 'Week of ' + fmtD(weekStart) + ' – ' + fmtD(weekEnd)),
-          React.createElement('div', { style: { fontSize: 11, color: T.muted } }, 'Sales week overview')
-        ),
-        React.createElement('div', { style: { display: 'flex', gap: 8 } },
-          React.createElement('button', { onClick: () => setSelDate(addDays(selDate, 7)), style: { fontSize: 12, padding: '6px 12px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface2, cursor: 'pointer', color: T.ink } }, 'Next Week →'),
-          React.createElement('button', { style: { fontSize: 12, padding: '6px 12px', borderRadius: 7, border: `1px solid ${T.navy}`, background: T.navy, cursor: 'pointer', color: '#fff', fontWeight: 700 } }, '🔒 Lock in Week')
-        )
-      ),
-
-      React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10 } },
-        weekDates.map(date => {
-          const key = sfmtDateStr(date);
-          const dayTasks = tasksByDate[key] || [];
-          const flags = dayFlags[key] || {};
-          const isToday = sameDay(date, todayD);
-          const isSel = sameDay(date, selDate);
-          const dayTypeColor = flags.dayType === 'road' ? T.gold : flags.dayType === 'office' ? T.navy : T.border;
-          const DOW_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-          const visible = dayTasks.slice(0, 4);
-          const overflow = dayTasks.length - 4;
-
-          return React.createElement('div', {
-            key,
-            style: { background: T.cardBg, border: `1px solid ${isSel ? T.navy : T.border}`, borderRadius: 10, overflow: 'hidden', cursor: 'pointer' },
-            onClick: () => setSelDate(date)
-          },
-            React.createElement('div', {
-              onClick: e => { e.stopPropagation(); cycleDayType(key); },
-              style: { height: 8, background: dayTypeColor, cursor: isBronson ? 'pointer' : 'default', transition: 'background 0.2s' }
-            }),
-            React.createElement('div', { style: { padding: '8px 10px' } },
-              React.createElement('div', { style: { fontWeight: isToday ? 800 : 600, fontSize: 13, color: isToday ? T.navy : T.heading, marginBottom: 4 } }, DOW_SHORT[date.getDay()] + ' ' + date.getDate()),
-              React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 4, marginBottom: 5, flexWrap: 'wrap' } },
-                React.createElement('span', { style: { fontSize: 11, color: T.muted } }, dayTasks.length + ' tasks'),
-                dayTasks.filter(t => t.urgency === 'urgent').map(t => {
-                  const urg = surgByKey(t.urgency);
-                  return React.createElement('div', { key: t.id, style: { width: 7, height: 7, borderRadius: '50%', background: urg ? urg.color : T.muted } });
-                })
-              ),
-              visible.map(t => {
-                const cat = scatByKey(t.cat);
-                return React.createElement('div', {
-                  key: t.id,
-                  style: { fontSize: 11, color: T.ink, borderLeft: `3px solid ${cat ? cat.color : T.border}`, paddingLeft: 5, marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: t.done ? 0.5 : 1 }
-                }, t.text);
-              }),
-              overflow > 0 && React.createElement('div', { style: { fontSize: 10, color: T.muted, marginTop: 2 } }, '+' + overflow + ' more')
-            )
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <button onClick={() => setAnchor(addDays(anchor, -7))} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: T.text, fontSize: 12 }}>← Prev</button>
+        <span style={{ fontWeight: 800, fontSize: 13, color: T.heading }}>Week of {startLabel} – {endLabel}</span>
+        <button onClick={() => setAnchor(addDays(anchor, 7))} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: T.text, fontSize: 12 }}>Next →</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 8 }}>
+        {dates.map((d, i) => {
+          const dk = sfmtDateStr(d);
+          const dayTasks = tasksByDate[dk] || [];
+          const dt = (dayFlags[dk] || {}).dayType;
+          const isToday = sameDay(d, todayD);
+          const isSel = sameDay(d, selDate);
+          const notDone = dayTasks.filter(t => !t.done);
+          const preview = notDone.slice(0, 4);
+          const overflow = notDone.length - 4;
+          const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+          const bandColor = dt === 'road' ? T.gold : dt === 'office' ? T.navy : T.border;
+          return (
+            <div key={dk} onClick={() => setSelDate(d)}
+              style={{ background: T.cardBg, borderRadius: 10, border: `1.5px solid ${isSel ? T.navy : T.border}`, cursor: 'pointer', overflow: 'hidden', transition: 'border-color 0.15s' }}>
+              <div onClick={e => { e.stopPropagation(); cycleDayType(dk); }}
+                style={{ height: 8, background: bandColor, cursor: isBronson ? 'pointer' : 'default' }} />
+              <div style={{ padding: '8px 8px 10px' }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: isToday ? T.navy : T.muted, marginBottom: 1 }}>{dayNames[i]}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: isToday ? T.navy : T.heading, marginBottom: 5 }}>{d.getDate()}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                  <span style={{ fontSize: 10, color: T.muted }}>{notDone.length} tasks</span>
+                  {dayTasks.some(t => t.urgency === 'urgent' && !t.done) && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />}
+                </div>
+                {preview.map(t => {
+                  const cat = scatByKey(t.cat);
+                  return (
+                    <div key={t.id} style={{ fontSize: 10, color: T.text, padding: '2px 4px', borderLeft: `2px solid ${cat ? cat.color : T.border}`, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.text}</div>
+                  );
+                })}
+                {overflow > 0 && <span style={{ fontSize: 9.5, color: T.muted, fontWeight: 700 }}>+{overflow} more</span>}
+              </div>
+            </div>
           );
-        })
-      )
-    )
+        })}
+      </div>
+    </div>
   );
 }
 
-// ─── SalesMonthView ──────────────────────────────────────────────────────────
-function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson, salesUser, visibleTasks, userColor }) {
+function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson }) {
+  const [moOffset, setMoOffset] = useSs(0);
+  const base = new Date(selDate.getFullYear(), selDate.getMonth() + moOffset, 1);
+  const yr = base.getFullYear(), mo = base.getMonth();
+  const firstDow = (new Date(yr, mo, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(yr, mo + 1, 0).getDate();
   const todayD = today();
-  const monthCells = smonthDates(selDate);
-  const yr = selDate.getFullYear();
-  const mo = selDate.getMonth();
+  const mnNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-  const allMonthTasks = React.useMemo(() => {
-    let ts = [];
-    Object.entries(tasksByDate).forEach(([k, arr]) => {
-      const d = parseISO(k);
-      if (d.getFullYear() === yr && d.getMonth() === mo) ts = ts.concat(arr);
-    });
-    return ts;
-  }, [tasksByDate, yr, mo]);
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(yr, mo, d));
 
-  const roadDays = Object.entries(dayFlags).filter(([k, v]) => {
-    const d = parseISO(k);
-    return d.getFullYear() === yr && d.getMonth() === mo && v.dayType === 'road';
-  }).length;
-  const officeDays = Object.entries(dayFlags).filter(([k, v]) => {
-    const d = parseISO(k);
-    return d.getFullYear() === yr && d.getMonth() === mo && v.dayType === 'office';
-  }).length;
-  const accountTouches = allMonthTasks.filter(t => t.account).length;
-  const urgentRemaining = allMonthTasks.filter(t => t.urgency === 'urgent' && !t.done).length;
-
-  const DOW_SHORT = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+  let roadDays = 0, officeDays = 0, touchpoints = 0, urgentRem = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dk = sfmtDateStr(new Date(yr, mo, d));
+    const dt = (dayFlags[dk] || {}).dayType;
+    if (dt === 'road') roadDays++;
+    if (dt === 'office') officeDays++;
+    const dtasks = tasksByDate[dk] || [];
+    touchpoints += dtasks.filter(t => t.account).length;
+    urgentRem += dtasks.filter(t => t.urgency === 'urgent' && !t.done).length;
+  }
 
   return (
-    React.createElement('div', { style: { padding: '20px 24px', height: '100%', overflowY: 'auto' } },
-      React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 } },
-        React.createElement('button', { onClick: () => setSelDate(new Date(yr, mo - 1, 1)), style: { fontSize: 12, padding: '6px 12px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface2, cursor: 'pointer', color: T.ink } }, '← Prev Month'),
-        React.createElement('h2', { style: { margin: 0, fontSize: 18, fontWeight: 800, color: T.heading } }, MONTHS[mo] + ' ' + yr),
-        React.createElement('button', { onClick: () => setSelDate(new Date(yr, mo + 1, 1)), style: { fontSize: 12, padding: '6px 12px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface2, cursor: 'pointer', color: T.ink } }, 'Next Month →')
-      ),
-
-      React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 6 } },
-        DOW_SHORT.map(d => React.createElement('div', { key: d, style: { fontSize: 10, fontWeight: 700, color: T.muted, textAlign: 'center', padding: '4px 0' } }, d))
-      ),
-      React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 } },
-        monthCells.map(({ date, inMonth }, i) => {
-          if (!date) return React.createElement('div', { key: 'e' + i });
-          const key = sfmtDateStr(date);
-          const dayTasks = tasksByDate[key] || [];
-          const flags = dayFlags[key] || {};
-          const isToday = sameDay(date, todayD);
-          const isSel = sameDay(date, selDate);
-          const accountTasks = dayTasks.filter(t => t.account).slice(0, 2);
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <button onClick={() => setMoOffset(moOffset - 1)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: T.text, fontSize: 12 }}>← Prev</button>
+        <span style={{ fontWeight: 800, fontSize: 15, color: T.heading }}>{mnNames[mo]} {yr}</span>
+        <button onClick={() => setMoOffset(moOffset + 1)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: T.text, fontSize: 12 }}>Next →</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1, marginBottom: 2 }}>
+        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
+          <div key={d} style={{ fontSize: 9.5, fontWeight: 800, color: T.faint, textAlign: 'center', padding: '4px 0' }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} style={{ minHeight: 72, background: T.surface2, borderRadius: 6 }} />;
+          const dk = sfmtDateStr(d);
+          const dayTasks = tasksByDate[dk] || [];
+          const dt = (dayFlags[dk] || {}).dayType;
+          const isToday = sameDay(d, todayD);
+          const isSel = sameDay(d, selDate);
           const hasUrgent = dayTasks.some(t => t.urgency === 'urgent' && !t.done);
-          const extraCount = dayTasks.length > 2 ? dayTasks.length : 0;
-
-          return React.createElement('div', {
-            key,
-            onClick: () => setSelDate(date),
-            style: {
-              minHeight: 72, background: inMonth ? T.cardBg : T.surface, border: `1px solid ${isSel ? T.navy : T.border}`,
-              borderRadius: 8, padding: '5px 6px', cursor: 'pointer', opacity: inMonth ? 1 : 0.45,
-              borderTop: `3px solid ${flags.dayType === 'road' ? T.gold : flags.dayType === 'office' ? T.navy : T.border}`
-            }
-          },
-            React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 } },
-              React.createElement('span', { style: { fontSize: 12, fontWeight: isToday ? 800 : 400, color: isToday ? T.navy : T.ink } }, date.getDate()),
-              React.createElement('div', { style: { display: 'flex', gap: 2, alignItems: 'center' } },
-                flags.dayType === 'road' && React.createElement('span', { style: { fontSize: 11 } }, '🚗'),
-                flags.dayType === 'office' && React.createElement('span', { style: { fontSize: 11 } }, '🏢'),
-                hasUrgent && React.createElement('div', { style: { width: 7, height: 7, borderRadius: '50%', background: '#ef4444' } })
-              )
-            ),
-            accountTasks.map(t => React.createElement('div', { key: t.id, style: { fontSize: 10, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, t.account)),
-            extraCount > 2 && React.createElement('div', { style: { fontSize: 10, color: T.muted, marginTop: 1 } }, dayTasks.length + ' tasks')
+          const accounts = [...new Set(dayTasks.filter(t => t.account).map(t => t.account))].slice(0, 2);
+          const taskCount = dayTasks.filter(t => !t.done).length;
+          const topColor = dt === 'road' ? T.gold : dt === 'office' ? T.navy : T.border;
+          return (
+            <div key={dk} onClick={() => setSelDate(d)}
+              style={{ minHeight: 72, background: isSel ? T.navy + '0a' : T.cardBg, borderRadius: 6, borderTop: `3px solid ${topColor}`, border: `1px solid ${isSel ? T.navy : T.border}`, cursor: 'pointer', padding: '4px 6px', position: 'relative', transition: 'border-color 0.15s' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                <span style={{ fontSize: 12, fontWeight: isToday ? 900 : 600, color: isToday ? T.navy : T.text }}>{d.getDate()}</span>
+                {hasUrgent && <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />}
+                {dt === 'road' && <span style={{ fontSize: 9 }}>🚗</span>}
+                {dt === 'office' && <span style={{ fontSize: 9 }}>🏢</span>}
+              </div>
+              {accounts.map((a, ai) => (
+                <div key={ai} style={{ fontSize: 8.5, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a}</div>
+              ))}
+              {taskCount > 2 && (
+                <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 8.5, fontWeight: 700, background: T.surface2, color: T.muted, padding: '1px 5px', borderRadius: 8 }}>+{taskCount} tasks</span>
+              )}
+            </div>
           );
-        })
-      ),
-
-      React.createElement('div', { style: { display: 'flex', gap: 12, marginTop: 18, flexWrap: 'wrap' } },
-        [
-          { label: 'Road Days', val: roadDays, color: T.gold },
-          { label: 'Office Days', val: officeDays, color: T.navy },
-          { label: 'Account Touchpoints', val: accountTouches, color: '#3B82F6' },
-          { label: 'Urgent Remaining', val: urgentRemaining, color: '#ef4444' },
-        ].map(({ label, val, color }) =>
-          React.createElement('div', { key: label, style: { flex: 1, minWidth: 120, background: T.cardBg, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: '10px 14px' } },
-            React.createElement('div', { style: { fontSize: 22, fontWeight: 900, color: T.heading } }, val),
-            React.createElement('div', { style: { fontSize: 11, color: T.muted, marginTop: 2 } }, label)
-          )
-        )
-      )
-    )
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginTop: 18 }}>
+        {[
+          { label: 'Road Days', value: roadDays, color: T.gold },
+          { label: 'Office Days', value: officeDays, color: T.navy },
+          { label: 'Account Touchpoints', value: touchpoints, color: '#3b82f6' },
+          { label: 'Urgent Remaining', value: urgentRem, color: '#ef4444' },
+        ].map(sc => (
+          <div key={sc.label} style={{ padding: '12px 14px', borderRadius: 10, background: T.cardBg, border: `1.5px solid ${T.border}` }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: sc.color }}>{sc.value}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.ink, marginTop: 3 }}>{sc.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -16708,9 +16601,12 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson,
     const dk = sfmtDateStr(selDate);
 
     const addTask = useCBs((task) => {
-      const t = { id: suid(), createdAt: Date.now(), updatedAt: Date.now(),
-                  isPrivate: true, delegated: false, inFocus: false, section: 'reactive',
-                  owner: task.owner || salesUser, ...task };
+      const t = {
+        id: suid(), createdAt: Date.now(), updatedAt: Date.now(),
+        isPrivate: true, delegated: false, inFocus: false, section: 'reactive',
+        done: false, updates: [],
+        owner: task.owner || salesUser, ...task
+      };
       setTasksByDate(prev => ({ ...prev, [dk]: [...(prev[dk] || []), t] }));
     }, [dk, salesUser]);
 
@@ -16736,15 +16632,16 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson,
     };
 
     return (
-      <div style={{ display:'flex', flexDirection:'column', minHeight: 0 }}>
-        <div style={{ display:'flex', gap: 4, paddingBottom: 10, marginBottom: 4, borderBottom:`1px solid ${T.border}`, flexShrink: 0 }}>
-          {['day','week','month'].map(v => (
-            <button key={v} onClick={() => setSubView(v)}
-              style={{ padding:'5px 18px', borderRadius: 8, border:'none', cursor:'pointer', fontSize: 12,
-                       fontWeight: subView === v ? 700 : 500, fontFamily:'inherit',
-                       background: subView === v ? userColor : 'transparent',
-                       color: subView === v ? '#fff' : T.muted }}>
-              {v.toUpperCase()}
+      <div style={{ display:'flex', flexDirection:'column', gap: 14 }}>
+        {/* ─ Marketing-style segmented view switcher ─ */}
+        <div style={{ display:'flex', border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden', alignSelf:'flex-start' }}>
+          {[['day','DAY'],['week','WEEK'],['month','MONTH']].map(([k,l]) => (
+            <button key={k} onClick={() => setSubView(k)}
+              style={{ padding:'8px 20px', border:'none', cursor:'pointer', fontFamily:'inherit',
+                       background: subView===k ? T.navy : 'transparent',
+                       color: subView===k ? '#fff' : T.muted,
+                       fontSize:11, fontWeight:800, letterSpacing:'0.08em' }}>
+              {l}
             </button>
           ))}
         </div>
@@ -16754,6 +16651,7 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson,
       </div>
     );
   }
+
   // ─── 9. SalesScheduleView ─────────────────────────────────────────────────
 
   function SalesScheduleView({ selDate, tasksByDate, setTasksByDate,
