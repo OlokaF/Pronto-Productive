@@ -1240,19 +1240,22 @@ function _mergeDayNotes(myDN, theirDN) {
   return out;
 }
 
-// Merge content calendar: union by date key, items merged by id using updatedAt
+// Merge content calendar: union by date key, items merged by id (or title+type fallback for legacy items)
 function _mergeContent(myC, theirC) {
   const a = myC || {}, b = theirC || {};
   const dates = new Set([...Object.keys(a), ...Object.keys(b)]);
   const out = {};
   for (const dk of dates) {
-    const byId = {};
-    [...(a[dk] || []), ...(b[dk] || [])].forEach(item => {
-      if (!item || !item.id) return;
-      const ex = byId[item.id];
-      if (!ex || (item.updatedAt || 0) > (ex.updatedAt || 0)) byId[item.id] = item;
+    const byKey = {};
+    const toKey = item => item.id || ((item.title || "") + "_" + (item.type || ""));
+    const toArr = x => Array.isArray(x) ? x : (x ? Object.values(x) : []);
+    [...toArr(a[dk]), ...toArr(b[dk])].forEach(item => {
+      if (!item || (!item.id && !item.title)) return;
+      const k = toKey(item);
+      const ex = byKey[k];
+      if (!ex || (item.updatedAt || 0) > (ex.updatedAt || 0)) byKey[k] = item;
     });
-    out[dk] = Object.values(byId);
+    out[dk] = Object.values(byKey);
   }
   return out;
 }
@@ -7983,7 +7986,7 @@ function AddPostForm({ onAdd, defaultType = "Post" }) {
   const reset = () => { setTitle(""); setType(defaultType); setPillar(null); setNotes(""); setExpanded(false); };
   const submit = () => {
     if (!title.trim()) { reset(); return; }
-    const post = { title: title.trim(), type };
+    const post = { id: "post_" + Date.now(), title: title.trim(), type, updatedAt: Date.now() };
     if (pillar) post.pillar = pillar;
     if (notes.trim()) post.notes = notes.trim();
     onAdd(post);
@@ -8476,7 +8479,8 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
   const safeSetToPostList = setToPostList || (() => {});
 
   const updatePost = (dk, idx, post) => {
-    onSetContent(prev => { const arr = (prev[dk]||[]).slice(); arr[idx]=post; return {...prev,[dk]:arr}; });
+    const stamped = { ...post, updatedAt: Date.now() };
+    onSetContent(prev => { const arr = (prev[dk]||[]).slice(); arr[idx]=stamped; return {...prev,[dk]:arr}; });
   };
   const deletePost = (dk, idx) => {
     const post = (content[dk]||[])[idx];
