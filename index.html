@@ -1213,17 +1213,78 @@ function _mergeScheduleCols(mySchedule, theirSchedule, myIdentity) {
   return out;
 }
 
+// Merge dayNotes: union of all date keys; recurringDone/ojDone use OR logic (if either person ticked it, both see it ticked)
+function _mergeDayNotes(myDN, theirDN) {
+  const a = myDN || {}, b = theirDN || {};
+  const dates = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const out = {};
+  for (const dk of dates) {
+    const ma = a[dk] || {}, mb = b[dk] || {};
+    // recurringDone: OR merge — if either ticked it, show as ticked
+    const rdA = ma.recurringDone || {}, rdB = mb.recurringDone || {};
+    const rdMerged = { ...rdA };
+    Object.entries(rdB).forEach(([id, val]) => {
+      if (val) rdMerged[id] = true;
+      else if (!(id in rdMerged)) rdMerged[id] = false;
+    });
+    // ojDone: OR merge — same logic for ongoing job done ticks
+    const ojA = ma.ojDone || {}, ojB = mb.ojDone || {};
+    const ojMerged = { ...ojA };
+    Object.entries(ojB).forEach(([id, val]) => {
+      if (val) ojMerged[id] = true;
+      else if (!(id in ojMerged)) ojMerged[id] = false;
+    });
+    // Other fields: use most-recently-updated person's data, fall back to either
+    out[dk] = { ...ma, ...mb, recurringDone: rdMerged, ojDone: ojMerged };
+  }
+  return out;
+}
+
+// Merge content calendar: union by date key, items merged by id using updatedAt
+function _mergeContent(myC, theirC) {
+  const a = myC || {}, b = theirC || {};
+  const dates = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const out = {};
+  for (const dk of dates) {
+    const byId = {};
+    [...(a[dk] || []), ...(b[dk] || [])].forEach(item => {
+      if (!item || !item.id) return;
+      const ex = byId[item.id];
+      if (!ex || (item.updatedAt || 0) > (ex.updatedAt || 0)) byId[item.id] = item;
+    });
+    out[dk] = Object.values(byId);
+  }
+  return out;
+}
+
+// Merge flat arrays (recurringTasks, toBeCompleted, ongoingJobs) by id using updatedAt
+function _mergeById(arrA, arrB) {
+  const a = arrA || [], b = arrB || [];
+  const byId = {};
+  [...a, ...b].forEach(item => {
+    if (!item || !item.id) return;
+    const ex = byId[item.id];
+    if (!ex || (item.updatedAt || 0) > (ex.updatedAt || 0)) byId[item.id] = item;
+  });
+  return Object.values(byId);
+}
+
 // Produce final merged state: myState contributes my identity's data, theirState contributes the other's
 function _mergeState(myState, theirState, myIdentity) {
   if (!myState && !theirState) return {};
   if (!myState) return theirState;
   if (!theirState) return myState;
   return {
-    ...myState, // use my state as base (content, uniform, etc.)
+    ...myState, // use my state as base (uniform, etc.)
     tasksByDate: _mergeTasksByDate(myState.tasksByDate, theirState.tasksByDate, myState.deletedTasks, theirState.deletedTasks),
     schedule: _mergeScheduleCols(myState.schedule, theirState.schedule, myIdentity),
     actualSchedule: _mergeScheduleCols(myState.actualSchedule, theirState.actualSchedule, myIdentity),
     deletedTasks: _mergeDeletedTasks(myState.deletedTasks, theirState.deletedTasks),
+    dayNotes: _mergeDayNotes(myState.dayNotes, theirState.dayNotes),
+    content: _mergeContent(myState.content, theirState.content),
+    recurringTasks: _mergeById(myState.recurringTasks, theirState.recurringTasks),
+    toBeCompleted: _mergeById(myState.toBeCompleted, theirState.toBeCompleted),
+    ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
   };
 }
 
