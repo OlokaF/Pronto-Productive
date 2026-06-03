@@ -1260,16 +1260,29 @@ function _mergeContent(myC, theirC) {
   return out;
 }
 
-// Merge ideas object: union string arrays per category, no duplicates
+// Merge ideas object: union per category, deduplicated by text value
+// Handles mixed entries: plain strings OR rich objects {text, notes, files, images}
 function _mergeIdeas(a, b) {
   if (!a && !b) return {};
   if (!a) return b;
   if (!b) return a;
+  const getText = v => (v && typeof v === "object") ? (v.text || "") : String(v || "");
   const out = { ...a };
   Object.keys(b).forEach(cat => {
-    const setA = new Set(out[cat] || []);
-    (b[cat] || []).forEach(idea => setA.add(idea));
-    out[cat] = [...setA];
+    const existing = out[cat] || [];
+    const existingTexts = new Set(existing.map(getText));
+    // Only add ideas from b that aren't already present (by text value)
+    const toAdd = (b[cat] || []).filter(v => !existingTexts.has(getText(v)));
+    // Prefer the richer version: if b has notes/files for an idea, upgrade the existing entry
+    const upgraded = existing.map(entry => {
+      const eText = getText(entry);
+      const bMatch = (b[cat] || []).find(v => getText(v) === eText);
+      if (bMatch && typeof bMatch === "object" && (bMatch.notes || (bMatch.files||[]).length || (bMatch.images||[]).length)) {
+        return { ...( typeof entry === "object" ? entry : { text: eText }), ...bMatch };
+      }
+      return entry;
+    });
+    out[cat] = [...upgraded, ...toAdd];
   });
   return out;
 }
