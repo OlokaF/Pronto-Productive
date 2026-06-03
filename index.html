@@ -1355,6 +1355,7 @@ function _mergeState(myState, theirState, myIdentity) {
     toBeCompleted: _mergeById(myState.toBeCompleted, theirState.toBeCompleted),
     ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
     toPostList: _mergeById(myState.toPostList, theirState.toPostList),
+    categories: [...new Set([...(myState.categories||[]), ...(theirState.categories||[])])],
   };
 }
 
@@ -11900,7 +11901,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.notifDismissed) setNotifDismissed(s.notifDismissed);
     if (s.avatars) { setAvatars(s.avatars); try { localStorage.setItem("prontoHQ.avatars", JSON.stringify(s.avatars)); } catch(_) {} }
     if (s.branding) setBranding(s.branding);
-    if (s.categories) setCategories(s.categories);
+    if (s.categories) setCategories(prev => { const next = [...(prev||[])]; (s.categories||[]).forEach(c => { if (!next.includes(c)) next.push(c); }); return next; }); // merge, never replace
     if (s.postApprovals) setPostApprovals(s.postApprovals);
     if (s.videoEvents) setVideoEvents(s.videoEvents);
     if (s.visibleTabs) setVisibleTabs(s.visibleTabs);
