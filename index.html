@@ -1260,6 +1260,20 @@ function _mergeContent(myC, theirC) {
   return out;
 }
 
+// Merge ideas object: union string arrays per category, no duplicates
+function _mergeIdeas(a, b) {
+  if (!a && !b) return {};
+  if (!a) return b;
+  if (!b) return a;
+  const out = { ...a };
+  Object.keys(b).forEach(cat => {
+    const setA = new Set(out[cat] || []);
+    (b[cat] || []).forEach(idea => setA.add(idea));
+    out[cat] = [...setA];
+  });
+  return out;
+}
+
 // Merge flat arrays (recurringTasks, toBeCompleted, ongoingJobs) by id using updatedAt
 function _mergeById(arrA, arrB) {
   const a = arrA || [], b = arrB || [];
@@ -1285,6 +1299,7 @@ function _mergeState(myState, theirState, myIdentity) {
     deletedTasks: _mergeDeletedTasks(myState.deletedTasks, theirState.deletedTasks),
     dayNotes: _mergeDayNotes(myState.dayNotes, theirState.dayNotes),
     content: _mergeContent(myState.content, theirState.content),
+    ideas: _mergeIdeas(myState.ideas, theirState.ideas),
     recurringTasks: _mergeById(myState.recurringTasks, theirState.recurringTasks),
     toBeCompleted: _mergeById(myState.toBeCompleted, theirState.toBeCompleted),
     ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
@@ -11571,7 +11586,19 @@ function App({ onSwitchWorkspace = () => {} }) {
     }
     return cleaned;
   });
-  const [content, setContent] = useS(() => loadOr("content", buildContentState));
+  const [content, setContent] = useS(() => {
+    // Always seed from RAW_CONTENT so historical data is never permanently lost.
+    // Stored user edits win for any date that already has posts; missing dates get restored.
+    const built = buildContentState();
+    const stored = saved && saved.content !== undefined ? saved.content : null;
+    if (!stored) return built;
+    const merged = { ...built };
+    Object.entries(stored).forEach(([dk, items]) => {
+      const arr = Array.isArray(items) ? items : Object.values(items || {});
+      if (arr.length > 0) merged[dk] = arr; // stored overrides built for non-empty dates
+    });
+    return merged;
+  });
   const [chatAs, setChatAs] = useS("vanja");
   const [todayUser, setTodayUser] = useS(() => {
     try { return localStorage.getItem("prontoHQ.todayUser") || null; } catch(_) { return null; }
@@ -11782,8 +11809,8 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (!s) return;
     if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
     if (s.tasksByDate) setTasksByDate(s.tasksByDate);
-    if (s.content) setContent(s.content);
-    if (s.ideas) setIdeas(s.ideas);
+    if (s.content) setContent(prev => _mergeContent(prev, s.content)); // merge, never replace
+    if (s.ideas)   setIdeas(prev => _mergeIdeas(prev, s.ideas));       // merge, never replace
     if (s.suppliers) setSuppliers(s.suppliers);
     if (s.budget) setBudget(s.budget);
     if (s.onboarding) setOnboarding(s.onboarding);
