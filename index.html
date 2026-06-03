@@ -1696,11 +1696,22 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
         {(toBeCompleted.length > 0 || addingTBC) && (
           <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:6 }}>
             {toBeCompleted.map(t => (
-              <div key={t.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <div style={{ width:18, height:18, borderRadius:4, border:`1.5px solid ${T.border}`, flexShrink:0 }} />
                 <span style={{ fontSize:12, color:T.ink, flex:1 }}>{t.text}</span>
-                <span style={{ fontSize:9, color: t.owner==="oloka" ? T.oloka : T.vanja, fontWeight:800 }}>{t.owner==="oloka"?"O":"V"}</span>
-                {onAdd && <button onClick={() => { setSendingTask({ id:t.id, text:t.text, owner:t.owner, isOJ:false }); setSendDate(dateKey); }} title="Send to a day" style={{ background:T.navy, border:"none", borderRadius:4, color:"#fff", cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
+                {/* Move to Oloka / Vanja today */}
+                {onAdd && (
+                  <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                    <button
+                      onClick={() => { onAdd(dateKey, { text:t.text, owner:"oloka", category:"Admin", priority:"Normal", done:false }); setToBeCompleted(prev => prev.filter(x => x.id !== t.id)); }}
+                      title="Move to Oloka's list today"
+                      style={{ background:T.oloka+"20", border:`1.5px solid ${T.oloka}`, borderRadius:5, color:T.oloka, cursor:"pointer", fontSize:10, fontWeight:800, padding:"2px 9px", fontFamily:"inherit" }}>O</button>
+                    <button
+                      onClick={() => { onAdd(dateKey, { text:t.text, owner:"vanja", category:"Admin", priority:"Normal", done:false }); setToBeCompleted(prev => prev.filter(x => x.id !== t.id)); }}
+                      title="Move to Vanja's list today"
+                      style={{ background:T.vanja+"20", border:`1.5px solid ${T.vanja}`, borderRadius:5, color:T.vanja, cursor:"pointer", fontSize:10, fontWeight:800, padding:"2px 9px", fontFamily:"inherit" }}>V</button>
+                  </div>
+                )}
                 <button onClick={() => setToBeCompleted(prev => prev.filter(x => x.id !== t.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
               </div>
             ))}
@@ -2217,9 +2228,6 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
-                dayNotes={dayNotes} setDayNotes={setDayNotes}
-                recurringTasks={recurringTasks} toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
-                content={content} staff={staff}
               />}
               {showOloka && <PersonColumn name="Oloka" role="Content · Photo, Video, Social" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
                 tasks={olokaFiltered} allTasks={olokaAll} dateKey={dateKey}
@@ -2228,9 +2236,6 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
-                dayNotes={dayNotes} setDayNotes={setDayNotes}
-                recurringTasks={recurringTasks} toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
-                content={content} staff={staff}
               />}
             </div>
           );
@@ -2356,7 +2361,7 @@ function SharedTasksPanel({ dateKey, dayNotes, setDayNotes, recurringTasks, toBe
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars, dayNotes, setDayNotes, recurringTasks, toBeCompleted, setToBeCompleted, content, staff }) {
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
@@ -2474,17 +2479,6 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
         </div>
       </div>
 
-      {/* ── Shared recurring & TBC panel ── */}
-      {setDayNotes && (
-        <SharedTasksPanel
-          dateKey={dateKey}
-          dayNotes={dayNotes} setDayNotes={setDayNotes}
-          recurringTasks={recurringTasks || []}
-          toBeCompleted={toBeCompleted || []} setToBeCompleted={setToBeCompleted || (() => {})}
-          content={content} staff={staff}
-          onAdd={onAdd}
-        />
-      )}
     </div>
   );
 }
