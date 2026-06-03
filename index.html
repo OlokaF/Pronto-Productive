@@ -162,6 +162,7 @@ const CONTENT_TYPES = {
   "Carousel":        { color:"#BE185D", soft:"#FBE7F0" },
   "Event":           { color:"#92400E", soft:"#FAEBD9" },
   "Promotion":       { color:"#9D174D", soft:"#FCE7F0" },
+  "Sales":           { color:"#10B981", soft:"#D1FAE5" },
   "Post":            { color:"#6B7280", soft:"#F1F3F7" },
 };
 
@@ -176,7 +177,8 @@ function inferContentType(text) {
   if (/video|youtube|quick hitch|hydraulic attachment/.test(t)) return "Video";
   if (/staff|profile|spotlight|day in the life/.test(t)) return "Staff";
   if (/bbq|breakfast|trade event|king'?s birthday|easter|christmas|mothers day|fathers day|anzac|womens day|valentine|fools/.test(t)) return "Event";
-  if (/promo|giveaway|deal|sale|winner|gift card/.test(t)) return "Promotion";
+  if (/machinery for sale|machine for sale|for sale post/.test(t)) return "Sales";
+  if (/promo|giveaway|deal|sale(?! of)|winner|gift card/.test(t)) return "Promotion";
   if (/digger|excavator|truck|tipper|komatsu|yanmar|kobelco|hyundai|hitachi|kubota|fuso|loader|sweeper|hydrema|wheeled|14 ton|2.5t|3t|access|acsess|machine hire/.test(t)) return "Machine Feature";
   if (/carosel|carousel/.test(t)) return "Carousel";
   return "Post";
@@ -8556,9 +8558,8 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
     const { dk, idx } = deleteConfirm;
     onSetContent(prev => {
       const arr = (prev[dk]||[]).filter((_,i)=>i!==idx);
-      const next = {...prev};
-      if (arr.length === 0) delete next[dk]; else next[dk] = arr;
-      return next;
+      // Keep dk:[] so the init knows this date was intentionally cleared (not just missing)
+      return { ...prev, [dk]: arr };
     });
     setDeleteConfirm(null);
   };
@@ -8567,8 +8568,7 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
     const { dk, idx, post } = deleteConfirm;
     onSetContent(prev => {
       const arr = (prev[dk]||[]).filter((_,i)=>i!==idx);
-      const next = {...prev};
-      if (arr.length === 0) delete next[dk]; else next[dk] = arr;
+      return { ...prev, [dk]: arr };
       return next;
     });
     safeSetToPostList(prev => [{
@@ -11638,14 +11638,15 @@ function App({ onSwitchWorkspace = () => {} }) {
   });
   const [content, setContent] = useS(() => {
     // Always seed from RAW_CONTENT so historical data is never permanently lost.
-    // Stored user edits win for any date that already has posts; missing dates get restored.
+    // Stored data wins for ANY date present in stored — including empty arrays (= intentional deletion).
+    // Only dates entirely absent from stored fall back to the built seed.
     const built = buildContentState();
     const stored = saved && saved.content !== undefined ? saved.content : null;
     if (!stored) return built;
     const merged = { ...built };
     Object.entries(stored).forEach(([dk, items]) => {
       const arr = Array.isArray(items) ? items : Object.values(items || {});
-      if (arr.length > 0) merged[dk] = arr; // stored overrides built for non-empty dates
+      merged[dk] = arr; // stored always wins — empty array means intentionally deleted
     });
     return merged;
   });
@@ -11865,7 +11866,16 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (!s) return;
     if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
     if (s.tasksByDate) setTasksByDate(s.tasksByDate);
-    if (s.content) setContent(prev => _mergeContent(prev, s.content)); // merge, never replace
+    if (s.content) setContent(prev => {
+      // Only bring in dates entirely new to local state.
+      // If local already has a date (even as []), that user's version wins (preserves deletions).
+      const out = { ...prev };
+      const toArr = x => Array.isArray(x) ? x : Object.values(x || {});
+      Object.entries(s.content || {}).forEach(([dk, items]) => {
+        if (!(dk in out)) { const arr = toArr(items).filter(Boolean); if (arr.length > 0) out[dk] = arr; }
+      });
+      return out;
+    }); // add new dates only, never override local
     if (s.ideas)   setIdeas(prev => _mergeIdeas(prev, s.ideas));       // merge, never replace
     if (s.suppliers) setSuppliers(s.suppliers);
     if (s.budget) setBudget(s.budget);
