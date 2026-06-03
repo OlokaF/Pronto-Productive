@@ -1352,6 +1352,7 @@ function _mergeState(myState, theirState, myIdentity) {
     recurringTasks: _mergeById(myState.recurringTasks, theirState.recurringTasks),
     toBeCompleted: _mergeById(myState.toBeCompleted, theirState.toBeCompleted),
     ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
+    toPostList: _mergeById(myState.toPostList, theirState.toPostList),
   };
 }
 
@@ -11893,7 +11894,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.toBeCompleted)  setToBeCompleted(s.toBeCompleted);
     if (s.uniform) setUniform(s.uniform);
     if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
-    if (s.toPostList) setToPostList(s.toPostList);
+    if (s.toPostList) setToPostList(prev => { const titles = new Set((prev||[]).map(p=>(p.title||"").toLowerCase().trim())); const add = (Array.isArray(s.toPostList)?s.toPostList:Object.values(s.toPostList||{})).filter(p=>!titles.has((p.title||"").toLowerCase().trim())); return [...(prev||[]), ...add]; });
     if (s.emailItems) setEmailItems(s.emailItems);
     if (s.emailComments) setEmailComments(s.emailComments);
     if (s.emailActivity) setEmailActivity(s.emailActivity);
