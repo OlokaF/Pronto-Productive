@@ -11756,7 +11756,14 @@ function App({ onSwitchWorkspace = () => {} }) {
   // Branding — app name, subtitle, custom logo
   const [branding, setBranding] = useS(() => loadOr("branding", () => ({ appName:"PRONTO", appSubtitle:"PRODUCTIVE", logoUrl:null })));
   // Editable task categories
-  const [categories, setCategories] = useS(() => loadOr("categories", () => ["Social Post","Email","Video","Design","Blog","Meeting","Event","Admin"]));
+  const [categories, setCategories] = useS(() => {
+    const defaults = ["Social Post","Email","Video","Design","Blog","Meeting","Event","Admin","AI","Website","Content Capture","Editing"];
+    const stored = loadOr("categories", () => null);
+    if (!stored) return defaults;
+    // Add any new default categories that aren't in the stored list yet
+    const extra = defaults.filter(c => !stored.includes(c));
+    return extra.length > 0 ? [...stored, ...extra] : stored;
+  });
   // Post approvals
   const [postApprovals, setPostApprovals] = useS(() => loadOr("postApprovals", () => []));
   // Video schedule events — date → [{ id, talent, location, type, durationMin, notes }]
