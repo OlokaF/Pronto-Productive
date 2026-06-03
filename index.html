@@ -2217,6 +2217,9 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
+                dayNotes={dayNotes} setDayNotes={setDayNotes}
+                recurringTasks={recurringTasks} toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
+                content={content} staff={staff}
               />}
               {showOloka && <PersonColumn name="Oloka" role="Content · Photo, Video, Social" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
                 tasks={olokaFiltered} allTasks={olokaAll} dateKey={dateKey}
@@ -2225,6 +2228,9 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
+                dayNotes={dayNotes} setDayNotes={setDayNotes}
+                recurringTasks={recurringTasks} toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
+                content={content} staff={staff}
               />}
             </div>
           );
@@ -2258,7 +2264,99 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars }) {
+function SharedTasksPanel({ dateKey, dayNotes, setDayNotes, recurringTasks, toBeCompleted, setToBeCompleted, content, staff, onAdd }) {
+  const [open, setOpen] = useStateV(false);
+  const ORANGE = "#F97316";
+
+  const recurringDone = ((dayNotes || {})[dateKey] || {}).recurringDone || {};
+  const setRecDone = (id, val) => setDayNotes(prev => {
+    const day = prev[dateKey] || {};
+    return { ...prev, [dateKey]: { ...day, recurringDone: { ...(day.recurringDone || {}), [id]: val } } };
+  });
+
+  const dow = dateKey ? new Date(dateKey + "T12:00:00").getDay() : 0;
+  const BUILTIN = [
+    { id:"__stories_casual__",  text:"Social Stories – Casual",          weekdays:[1,2,3,4,5] },
+    { id:"__stories_hire__",    text:"Social Stories – Machine Hire",     weekdays:[1,2,3,4,5] },
+    { id:"__stories_forsale__", text:"Social Stories – Machine For Sale", weekdays:[2,4] },
+  ];
+  const todayMMDD = dateKey ? dateKey.slice(5) : "";
+  const staffEvents = (staff || []).flatMap(s => {
+    const evts = [];
+    const dobMatch = (s.dob || "").match(/^\d{4}-(\d{2}-\d{2})$/);
+    if (dobMatch && dobMatch[1] === todayMMDD) evts.push({ id:"bday_"+s.name, text:`🎂 ${(s.name||"").split(" ")[0]}'s Birthday` });
+    const startMatch = (s.started || "").match(/^\d{4}-(\d{2}-\d{2})$/);
+    if (startMatch && startMatch[1] === todayMMDD) evts.push({ id:"anni_"+s.name, text:`🎉 ${(s.name||"").split(" ")[0]}'s Work Anniversary` });
+    return evts;
+  });
+  const contentText = (() => {
+    const override = ((dayNotes || {})[dateKey] || {}).socialPostText;
+    if (override !== undefined) return override;
+    const e = ((content || {})[dateKey] || [])[0];
+    return e ? (e.title || e.text || e.caption || "") : "";
+  })();
+
+  const allItems = [
+    { id:"__socialpost__", text:"Social Post" + (contentText ? " — " + contentText : ""), done: !!recurringDone["__socialpost__"] },
+    ...BUILTIN.filter(t => t.weekdays.includes(dow)).map(t => ({ id:t.id, text:t.text, done:!!recurringDone[t.id] })),
+    ...staffEvents.map(ev => ({ id:ev.id, text:ev.text, done:!!recurringDone[ev.id] })),
+    ...(recurringTasks || []).filter(rt => !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text))
+      .map(rt => ({ id:rt.id, text:rt.text, done:!!recurringDone[rt.id] })),
+  ];
+  const doneCount = allItems.filter(i => i.done).length;
+
+  return (
+    <div style={{ borderTop:`1px solid ${T.border}` }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"9px 16px", background:"transparent", border:"none", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+        <span style={{ fontSize:11, fontWeight:700, color:T.muted }}>
+          <span style={{ color:ORANGE, marginRight:5 }}>🔁</span>Recurring &amp; TBC
+          <span style={{ marginLeft:6, fontWeight:400, color:T.faint }}>{doneCount}/{allItems.length} done</span>
+          {(toBeCompleted||[]).length > 0 && <span style={{ marginLeft:8, color:T.navy, fontWeight:700 }}>· 📋 {toBeCompleted.length}</span>}
+        </span>
+        <span style={{ fontSize:11, color:T.faint }}>{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding:"2px 14px 12px" }}>
+          {allItems.map(item => (
+            <div key={item.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"4px 0" }}>
+              <button onClick={() => setRecDone(item.id, !item.done)}
+                style={{ width:16, height:16, borderRadius:3, flexShrink:0, border:`2px solid ${ORANGE}`, background:item.done?ORANGE:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:9, fontWeight:900 }}>
+                {item.done ? "✓" : ""}
+              </button>
+              <span style={{ fontSize:11.5, flex:1, color:item.done?T.muted:T.ink, textDecoration:item.done?"line-through":"none" }}>{item.text}</span>
+              {onAdd && !item.done && (
+                <button onClick={() => onAdd(dateKey, { text:item.text, owner:"oloka", category:"Social Post", priority:"Normal" })}
+                  style={{ padding:"1px 6px", background:ORANGE+"18", border:`1px solid ${ORANGE}44`, borderRadius:3, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→</button>
+              )}
+            </div>
+          ))}
+          {allItems.length === 0 && <p style={{ fontSize:10, color:T.faint, fontStyle:"italic", margin:"4px 0 0" }}>No recurring tasks · add them in the section below.</p>}
+
+          {(toBeCompleted||[]).length > 0 && (
+            <div style={{ marginTop:8 }}>
+              <div style={{ fontSize:9.5, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:4 }}>📋 TO BE COMPLETED</div>
+              {toBeCompleted.map(t => (
+                <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"3px 0" }}>
+                  <div style={{ width:16, height:16, borderRadius:3, border:`1.5px solid ${T.border}`, flexShrink:0 }} />
+                  <span style={{ fontSize:11.5, color:T.ink, flex:1 }}>{t.text}</span>
+                  <span style={{ fontSize:9, fontWeight:800, color:t.owner==="oloka"?T.oloka:T.vanja }}>{t.owner==="oloka"?"O":"V"}</span>
+                  {onAdd && (
+                    <button onClick={() => { onAdd(dateKey, { text:t.text, owner:t.owner, category:"Admin", priority:"Normal" }); setToBeCompleted(prev => prev.filter(x => x.id !== t.id)); }}
+                      style={{ padding:"1px 6px", background:T.navy+"15", border:`1px solid ${T.navy}40`, borderRadius:3, color:T.navy, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars, dayNotes, setDayNotes, recurringTasks, toBeCompleted, setToBeCompleted, content, staff }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
@@ -2375,6 +2473,18 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
           )}
         </div>
       </div>
+
+      {/* ── Shared recurring & TBC panel ── */}
+      {setDayNotes && (
+        <SharedTasksPanel
+          dateKey={dateKey}
+          dayNotes={dayNotes} setDayNotes={setDayNotes}
+          recurringTasks={recurringTasks || []}
+          toBeCompleted={toBeCompleted || []} setToBeCompleted={setToBeCompleted || (() => {})}
+          content={content} staff={staff}
+          onAdd={onAdd}
+        />
+      )}
     </div>
   );
 }
