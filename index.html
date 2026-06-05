@@ -2790,9 +2790,13 @@ function WeekView({ selDate, tasksByDate, content, onPickDate, onToggle, onShift
                 <div style={{ flex:1, padding:"8px 10px", overflowY:"auto" }}>
                   {post&&post.title&&(()=>{
                     const tc=CONTENT_TYPES[post.type]||CONTENT_TYPES.Post;
-                    return <div style={{ padding:"5px 8px", background:tc.soft, borderLeft:`2px solid ${tc.color}`, borderRadius:4, marginBottom:8 }}>
-                      <p style={{ margin:0, fontSize:8.5, fontWeight:800, color:tc.color, letterSpacing:"0.1em" }}>{post.type.toUpperCase()}</p>
-                      <p style={{ margin:0, fontSize:10.5, color:T.ink, fontWeight:600, lineHeight:1.3 }}>{post.title.length>36?post.title.slice(0,36)+"…":post.title}</p>
+                    const isPosted=!!post.posted;
+                    return <div style={{ padding:"5px 8px", background:isPosted?"#F0FDF4":tc.soft, borderLeft:`2px solid ${isPosted?"#10B981":tc.color}`, borderRadius:4, marginBottom:8 }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                        <p style={{ margin:0, fontSize:8.5, fontWeight:800, color:isPosted?"#16A34A":tc.color, letterSpacing:"0.1em" }}>{post.type.toUpperCase()}</p>
+                        {isPosted&&<span style={{ fontSize:9, color:"#16A34A", fontWeight:900 }}>✓</span>}
+                      </div>
+                      <p style={{ margin:0, fontSize:10.5, color:isPosted?"#16A34A":T.ink, fontWeight:600, lineHeight:1.3, textDecoration:isPosted?"line-through":"none", opacity:isPosted?0.7:1 }}>{post.title.length>36?post.title.slice(0,36)+"…":post.title}</p>
                     </div>;
                   })()}
                   {events.map((e,i)=><p key={i} style={{ fontSize:10, color:T.gold, fontWeight:600, marginBottom:4 }}>• {e.text}</p>)}
@@ -3045,7 +3049,8 @@ function MonthView({ selDate, tasksByDate, content, onPickDate, onMoveTask, onAd
                     {/* Post pill */}
                     {post&&post.title&&(()=>{
                       const tc=CONTENT_TYPES[post.type]||CONTENT_TYPES.Post;
-                      return <p style={{ margin:"0 0 3px", fontSize:8.5, color:T.ink, lineHeight:1.2, fontWeight:700, paddingLeft:4, borderLeft:`2px solid ${tc.color}` }}>{post.title.length>28?post.title.slice(0,28)+"…":post.title}</p>;
+                      const isPosted=!!post.posted;
+                      return <p style={{ margin:"0 0 3px", fontSize:8.5, color:isPosted?"#16A34A":T.ink, lineHeight:1.2, fontWeight:700, paddingLeft:4, borderLeft:`2px solid ${isPosted?"#10B981":tc.color}`, textDecoration:isPosted?"line-through":"none", opacity:isPosted?0.7:1 }}>{isPosted?"✓ ":""}{post.title.length>28?post.title.slice(0,28)+"…":post.title}</p>;
                     })()}
 
                     {/* Key tasks */}
@@ -7848,6 +7853,7 @@ const iconBtnStyle = {
 };
 
 function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, dragging }) {
+  const posted = !!post.posted;
   const tc = CONTENT_TYPES[post.type] || CONTENT_TYPES.Post;
   const [editing, setEditing] = useSc(false);
   const [text, setText] = useSc(post.title);
@@ -7882,15 +7888,15 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
       }}
       onDragEnd={onDragEnd}
       style={{
-        background:T.cardBg,
-        border:`1px solid ${T.border}`,
-        borderLeft:`4px solid ${tc.color}`,
+        background: posted ? "#F0FDF4" : T.cardBg,
+        border:`1px solid ${posted ? "#86EFAC" : T.border}`,
+        borderLeft:`4px solid ${posted ? "#10B981" : tc.color}`,
         borderRadius:6,
         padding:"10px 12px",
         position:"relative",
         cursor: editing ? "text" : "grab",
         opacity: dragging ? 0.4 : 1,
-        transition:"opacity 0.1s",
+        transition:"background 0.2s, border 0.2s",
       }}
     >
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6, gap:6, flexWrap:"wrap" }}>
@@ -7910,6 +7916,11 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
             </button>
             {typeOpen && <ContentTypePicker value={post.type} onChange={(t) => onChange({...post, type:t})} onClose={() => setTypeOpen(false)}/>}
           </div>
+          {posted && (
+            <span style={{ display:"inline-flex", alignItems:"center", gap:3, padding:"2px 7px", borderRadius:3, background:"#DCFCE7", color:"#16A34A", fontSize:9, fontWeight:800, letterSpacing:"0.08em" }}>
+              ✓ POSTED
+            </span>
+          )}
           <div style={{ position:"relative" }} ref={pillarRef}>
             <button onClick={(e) => { e.stopPropagation(); setPillarOpen(o => !o); setTypeOpen(false); }} title="Counts towards monthly pillar" style={{
               display:"inline-flex", alignItems:"center", gap:5,
@@ -7960,6 +7971,19 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+          {/* Posted tick toggle */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onChange({ ...post, posted: !posted, updatedAt: Date.now() }); }}
+            title={posted ? "Mark as not posted" : "Mark as posted ✓"}
+            style={{
+              width:22, height:22, borderRadius:"50%", border:"none", cursor:"pointer",
+              display:"inline-flex", alignItems:"center", justifyContent:"center",
+              background: posted ? "#10B981" : T.surface2,
+              color: posted ? "#fff" : T.muted,
+              fontSize:12, fontWeight:900, lineHeight:1,
+              transition:"background 0.15s, color 0.15s",
+              flexShrink:0,
+            }}>✓</button>
           <span title="Drag to reschedule" style={{ color:T.faint, padding:"0 2px", cursor:"grab" }}>
             <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><circle cx="3" cy="3" r="1"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="9" r="1"/><circle cx="9" cy="3" r="1"/><circle cx="9" cy="6" r="1"/><circle cx="9" cy="9" r="1"/></svg>
           </span>
@@ -7967,7 +7991,7 @@ function ContentCard({ post, onChange, onDelete, onDragStart, onDragEnd, draggin
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 2l3 3-9 9H2v-3z"/></svg>
           </button>
           <button onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Delete" style={iconBtnStyle}>
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,4 13,4"/><path d="M5 4V2.5C5 2 5.3 2 5.8 2h4.4c.5 0 .8 0 .8.5V4"/><path d="M4.5 4l.5 9c0 .5.4.5.8.5h4.4c.4 0 .8 0 .8-.5L11.5 4"/></svg>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,4 13,4"/><path d="M5 4V2.5C5 2 5.3 2 5.8 2h4.4c.5 0 .8 0 .8-.5V4"/><path d="M4.5 4l.5 9c0 .5.4.5.8.5h4.4c.4 0 .8 0 .8-.5L11.5 4"/></svg>
           </button>
         </div>
       </div>
@@ -8999,27 +9023,43 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                     {postsWithIdx.map(({p, i}) => {
                       const tc = CONTENT_TYPES[p.type] || CONTENT_TYPES.Post;
                       const dgp = dragProps(dk, i);
+                      const isPosted = !!p.posted;
                       return (
                         <div key={i}
                           draggable={true}
                           onDragStart={dgp.onDragStart} onDragEnd={dgp.onDragEnd}
                           onClick={() => setModal({ mode:"edit", date:dk, idx:i, post:p })}
                           style={{
-                            background:tc.soft, borderLeft:`3px solid ${tc.color}`,
+                            background: isPosted ? "#F0FDF4" : tc.soft,
+                            borderLeft:`3px solid ${isPosted ? "#10B981" : tc.color}`,
                             padding:"4px 7px", borderRadius:3,
-                            fontSize:10.5, color:T.ink, fontWeight:600, lineHeight:1.3,
+                            fontSize:10.5, color: isPosted ? "#16A34A" : T.ink, fontWeight:600, lineHeight:1.3,
                             cursor:"pointer", opacity: dgp.dragging ? 0.4 : 1,
                             position:"relative",
+                            border: isPosted ? "1px solid #86EFAC" : undefined,
+                            borderLeftWidth: 3,
                           }}>
-                          <span style={{ fontSize:8.5, color:tc.color, fontWeight:800, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>{p.type.toUpperCase()}</span>
-                          {p.title ? (p.title.length > 50 ? p.title.slice(0,50) + "…" : p.title) : <span style={{ color:T.faint, fontStyle:"italic", fontWeight:400 }}>(untitled)</span>}
-                          {(() => {
+                          <span style={{ fontSize:8.5, color: isPosted ? "#16A34A" : tc.color, fontWeight:800, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>
+                            {isPosted ? "✓ POSTED" : p.type.toUpperCase()}
+                          </span>
+                          <span style={{ textDecoration: isPosted ? "line-through" : "none", opacity: isPosted ? 0.7 : 1 }}>
+                            {p.title ? (p.title.length > 50 ? p.title.slice(0,50) + "…" : p.title) : <span style={{ color:T.faint, fontStyle:"italic", fontWeight:400 }}>(untitled)</span>}
+                          </span>
+                          {!isPosted && (() => {
                             const st = CONTENT_STATUSES.find(s => s.key === (p.status||"idea")) || CONTENT_STATUSES[0];
                             return <span style={{ display:"inline-block", marginTop:2, padding:"1px 5px", borderRadius:8, background:st.color+"20", color:st.color, fontSize:8, fontWeight:800, letterSpacing:"0.06em" }}>{st.label}</span>;
                           })()}
-                          {p.notes && (
-                            <span title={p.notes} style={{ position:"absolute", bottom:2, right:18, fontSize:9, color:tc.color, opacity:0.7 }}>📝</span>
+                          {p.notes && !isPosted && (
+                            <span title={p.notes} style={{ position:"absolute", bottom:2, right:28, fontSize:9, color:tc.color, opacity:0.7 }}>📝</span>
                           )}
+                          {/* Posted tick button */}
+                          <button onClick={(e) => { e.stopPropagation(); updatePost(dk, i, { ...p, posted: !isPosted, updatedAt: Date.now() }); }} title={isPosted ? "Unmark as posted" : "Mark as posted ✓"} style={{
+                            position:"absolute", top:2, right:18,
+                            width:14, height:14, background: isPosted ? "#10B981" : "transparent", border: isPosted ? "none" : `1px solid #10B98166`,
+                            color: isPosted ? "#fff" : "#10B981", opacity: isPosted ? 1 : 0.6, cursor:"pointer", padding:0,
+                            borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center",
+                            fontSize:9, fontWeight:900, lineHeight:1,
+                          }} onMouseEnter={e => e.currentTarget.style.opacity="1"} onMouseLeave={e => e.currentTarget.style.opacity = isPosted ? "1" : "0.6"}>✓</button>
                           <button onClick={(e) => { e.stopPropagation(); deletePost(dk, i); }} title="Delete" style={{
                             position:"absolute", top:2, right:2,
                             width:14, height:14, background:"transparent", border:"none",
@@ -9060,17 +9100,18 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
 
 // ── Shared modal: full add/edit form (used in Month view) ──
 function PostModal({ post, onSave, onClose, onDelete }) {
-  const initial = post || { title:"", type:"Post", pillar:null, notes:"" };
+  const initial = post || { title:"", type:"Post", pillar:null, notes:"", posted:false };
   const [title, setTitle] = React.useState(initial.title || "");
   const [type, setType] = React.useState(initial.type || "Post");
   const [pillar, setPillar] = React.useState(initial.pillar || null);
   const [notes, setNotes] = React.useState(initial.notes || "");
+  const [posted, setPosted] = React.useState(!!initial.posted);
   const inputRef = React.useRef(null);
   React.useEffect(() => { inputRef.current && inputRef.current.focus(); }, []);
 
   const submit = () => {
     if (!title.trim()) return;
-    const next = { title: title.trim(), type };
+    const next = { title: title.trim(), type, posted, updatedAt: Date.now() };
     if (pillar) next.pillar = pillar;
     if (notes.trim()) next.notes = notes.trim();
     onSave(next);
@@ -9175,6 +9216,27 @@ function PostModal({ post, onSave, onClose, onDelete }) {
               resize:"vertical", lineHeight:1.4, marginBottom:14, fontStyle:"italic",
             }}
           />
+
+          {/* Posted toggle */}
+          <button onClick={() => setPosted(v => !v)} style={{
+            display:"flex", alignItems:"center", gap:10, width:"100%",
+            padding:"10px 14px", borderRadius:6, cursor:"pointer", fontFamily:"inherit",
+            background: posted ? "#F0FDF4" : T.surface2,
+            border: `1.5px solid ${posted ? "#86EFAC" : T.border}`,
+            transition:"background 0.15s, border 0.15s",
+          }}>
+            <span style={{
+              width:22, height:22, borderRadius:"50%", flexShrink:0,
+              background: posted ? "#10B981" : "transparent",
+              border: posted ? "none" : `2px solid #10B981`,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              color: posted ? "#fff" : "#10B981", fontSize:13, fontWeight:900,
+              transition:"background 0.15s",
+            }}>✓</span>
+            <span style={{ fontSize:11, fontWeight:800, color: posted ? "#16A34A" : T.muted, letterSpacing:"0.08em" }}>
+              {posted ? "POSTED ✓" : "MARK AS POSTED"}
+            </span>
+          </button>
         </div>
 
         <div style={{ padding:"14px 22px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", background:T.surface }}>
