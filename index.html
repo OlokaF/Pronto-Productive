@@ -1382,6 +1382,7 @@ function _mergeState(myState, theirState, myIdentity) {
     toPostList: _mergeById(myState.toPostList, theirState.toPostList),
     categories: [...new Set([...(myState.categories||[]), ...(theirState.categories||[])])],
     uniform: _mergeUniform(myState.uniform, theirState.uniform),
+    postApprovals: _mergeById(myState.postApprovals, theirState.postApprovals),
   };
 }
 
@@ -1853,7 +1854,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
         </div>
         {(toBeCompleted.length > 0 || addingTBC) && (
           <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:6 }}>
-            {toBeCompleted.map(t => (
+            {(toBeCompleted||[]).filter(t => !t.deleted).map(t => (
               <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <div style={{ width:18, height:18, borderRadius:4, border:`1.5px solid ${T.border}`, flexShrink:0 }} />
                 <span style={{ fontSize:12, color:T.ink, flex:1 }}>{t.text}</span>
@@ -1870,7 +1871,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
                       style={{ background:T.vanja+"20", border:`1.5px solid ${T.vanja}`, borderRadius:5, color:T.vanja, cursor:"pointer", fontSize:10, fontWeight:800, padding:"2px 9px", fontFamily:"inherit" }}>V</button>
                   </div>
                 )}
-                <button onClick={() => setToBeCompleted(prev => prev.filter(x => x.id !== t.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
+                <button onClick={() => setToBeCompleted(prev => prev.map(x => x.id === t.id ? { ...x, deleted:true, updatedAt:Date.now() } : x))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
               </div>
             ))}
             {toBeCompleted.length === 0 && !addingTBC && (
@@ -11901,6 +11902,84 @@ function App({ onSwitchWorkspace = () => {} }) {
     try { localStorage.setItem("prontoHQ.theme", theme); } catch(_) {}
   }, []); // run once on mount
 
+  // ── Approval notifications: chime + toast + email when approvals change ──
+  const prevApprovalsRef = useR(null);
+  const [approvalToast, setApprovalToast] = useS(null); // { msg, color }
+
+  function playChime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const times = [[0, 523.25], [0.18, 659.25], [0.36, 783.99]];
+      times.forEach(([t, freq]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = freq; osc.type = "sine";
+        gain.gain.setValueAtTime(0, ctx.currentTime + t);
+        gain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + t + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.5);
+        osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + 0.6);
+      });
+    } catch(_) {}
+  }
+
+  async function sendApprovalEmail(to, subject, body) {
+    try {
+      const msalApp = window._msalApp;
+      if (msalApp) {
+        const accounts = msalApp.getAllAccounts();
+        if (accounts.length > 0) {
+          const resp = await msalApp.acquireTokenSilent({ scopes:["Mail.Send"], account:accounts[0] });
+          await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+            method:"POST",
+            headers:{ "Authorization":"Bearer " + resp.accessToken, "Content-Type":"application/json" },
+            body: JSON.stringify({ message:{ subject, body:{ contentType:"HTML", content:body }, toRecipients:[{ emailAddress:{ address:to } }] }, saveToSentItems:true }),
+          });
+          return;
+        }
+      }
+    } catch(_) {}
+    // Fallback: open mailto
+    window.open(`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body.replace(/<[^>]+>/g,""))}`);
+  }
+
+  useE(() => {
+    const prev = prevApprovalsRef.current;
+    prevApprovalsRef.current = postApprovals;
+    if (!prev) return; // skip on first load
+    const me = todayUser || "oloka";
+    postApprovals.forEach(ap => {
+      const old = prev.find(p => p.id === ap.id);
+      if (!old) {
+        // New submission
+        if (ap.createdBy === me) {
+          const otherEmail = me === "oloka" ? "vanja@prontohire.co.nz" : "oloka@prontohire.co.nz";
+          const otherName = me === "oloka" ? "Vanja" : "Oloka";
+          setApprovalToast({ msg: `✅ Submitted "${ap.title}" for ${otherName}'s approval`, color:"#059669" });
+          playChime();
+          sendApprovalEmail(otherEmail, `[Pronto HQ] ${me === "oloka" ? "Oloka" : "Vanja"} submitted a post for approval`, `<p><b>${me === "oloka" ? "Oloka" : "Vanja"}</b> has submitted <b>${ap.title}</b> for your approval in Pronto HQ.</p><p>Platform: ${ap.platform}</p><p>Please log in to review it.</p>`);
+        } else {
+          // Someone else submitted — notify me
+          setApprovalToast({ msg: `📋 ${ap.createdBy === "oloka" ? "Oloka" : "Vanja"} submitted "${ap.title}" for approval`, color:"#2563EB" });
+          playChime();
+        }
+      } else if (old.status !== ap.status) {
+        // Status changed
+        const actorName = me === "oloka" ? "Oloka" : "Vanja";
+        const submitterEmail = ap.createdBy === "oloka" ? "oloka@prontohire.co.nz" : "vanja@prontohire.co.nz";
+        const submitterName = ap.createdBy === "oloka" ? "Oloka" : "Vanja";
+        const statusLabel = ap.status === "approved" ? "✅ Approved" : ap.status === "rejected" ? "❌ Needs changes" : ap.status === "published" ? "🚀 Published" : ap.status;
+        setApprovalToast({ msg: `${statusLabel} — "${ap.title}"`, color: ap.status === "approved" ? "#059669" : ap.status === "rejected" ? "#DC2626" : "#7C3AED" });
+        playChime();
+        if (ap.createdBy !== me) {
+          sendApprovalEmail(submitterEmail, `[Pronto HQ] Your post "${ap.title}" has been ${ap.status}`, `<p>${actorName} has updated the status of <b>${ap.title}</b> to <b>${statusLabel}</b>.</p>${ap.statusNote ? `<p>Note: ${ap.statusNote}</p>` : ""}<p>Log in to Pronto HQ to view details.</p>`);
+        }
+      }
+    });
+  }, [postApprovals]);
+
+  useE(() => { if (approvalToast) { const t = setTimeout(() => setApprovalToast(null), 5000); return () => clearTimeout(t); } }, [approvalToast]);
+
   // Autosave on any change — also schedules a KV write via syncRef (debounced 1.5 s)
   useE(() => {
     const state = fullState();
@@ -11990,7 +12069,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.avatars) { setAvatars(s.avatars); try { localStorage.setItem("prontoHQ.avatars", JSON.stringify(s.avatars)); } catch(_) {} }
     if (s.branding) setBranding(s.branding);
     if (s.categories) setCategories(prev => { const next = [...(prev||[])]; (s.categories||[]).forEach(c => { if (!next.includes(c)) next.push(c); }); return next; }); // merge, never replace
-    if (s.postApprovals) setPostApprovals(s.postApprovals);
+    if (s.postApprovals) setPostApprovals(prev => { const byId = {}; [...(prev||[]), ...(Array.isArray(s.postApprovals)?s.postApprovals:Object.values(s.postApprovals||{}))].forEach(p => { if (!p||!p.id) return; const ex = byId[p.id]; if (!ex || (p.updatedAt||0) > (ex.updatedAt||0)) byId[p.id] = p; }); return Object.values(byId).sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||"")); });
     if (s.videoEvents) setVideoEvents(s.videoEvents);
     if (s.visibleTabs) setVisibleTabs(s.visibleTabs);
     if (s.contentLabels) setContentLabels(s.contentLabels);
@@ -12237,7 +12316,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     return { eyebrow:`${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}`, big:"MONTH AT A GLANCE", sub:"Whole month. Color dots show owner load." };
   }, [tab, view, selDate]);
 
-  const tabBtn = (key, label) => (
+  const tabBtn = (key, label, badge) => (
     <button key={key} onClick={() => setTab(key)} style={{
       padding: isMobile ? "9px 11px" : "11px 20px",
       background: tab===key ? T.navy : "transparent",
@@ -12248,7 +12327,11 @@ function App({ onSwitchWorkspace = () => {} }) {
       cursor:"pointer", whiteSpace:"nowrap",
       borderBottom: tab===key ? `3px solid ${T.gold}` : "3px solid transparent",
       transition:"all 0.15s",
-    }}>{label}</button>
+      position:"relative",
+    }}>
+      {label}
+      {badge > 0 && <span style={{ position:"absolute", top:6, right:4, minWidth:14, height:14, borderRadius:7, background:"#EF4444", color:"#fff", fontSize:8, fontWeight:900, display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"0 3px", lineHeight:1 }}>{badge}</span>}
+    </button>
   );
 
   const viewBtn = (key, label) => (
@@ -12469,7 +12552,10 @@ function App({ onSwitchWorkspace = () => {} }) {
         gap:20, flexWrap:"wrap",
       }}>
         <div className="tab-bar" style={{ display:"flex", flexWrap:"wrap" }}>
-          {TABS.filter(t => visibleTabs.includes(t.key) && t.key !== "settings").map(t => tabBtn(t.key, t.label))}
+          {TABS.filter(t => visibleTabs.includes(t.key) && t.key !== "settings").map(t => {
+            const badge = t.key === "approvals" ? (postApprovals||[]).filter(p => p.status === "pending" && p.createdBy !== (todayUser||"oloka")).length : 0;
+            return tabBtn(t.key, t.label, badge);
+          })}
         </div>
         {showDateStrip && (
           <div className="date-strip" style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10 }}>
@@ -12555,6 +12641,12 @@ function App({ onSwitchWorkspace = () => {} }) {
           dayNotes={dayNotes} setDayNotes={setDayNotes}
           view={contentView} setView={setContentView}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
+        {approvalToast && (
+          <div onClick={() => setApprovalToast(null)} style={{ position:"fixed", bottom:24, right:24, zIndex:9999, background:approvalToast.color, color:"#fff", padding:"12px 20px", borderRadius:10, boxShadow:"0 8px 24px rgba(0,0,0,0.25)", fontSize:13, fontWeight:700, cursor:"pointer", maxWidth:340, display:"flex", alignItems:"center", gap:10, animation:"slideInRight 0.3s ease" }}>
+            <span style={{ flex:1 }}>{approvalToast.msg}</span>
+            <span style={{ fontSize:16, opacity:0.7 }}>×</span>
+          </div>
+        )}
         {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd}/>}
         {tab === "plan" && <PlanView plan={plan} setPlan={setPlan}/>}
         {tab === "team" && <TeamView staff={staff} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>}
@@ -12818,6 +12910,7 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
       createdAt: new Date().toISOString(),
       status: "pending",
       statusNote: "",
+      updatedAt: Date.now(),
     };
     setPostApprovals(prev => [newPost, ...prev]);
     setForm({ title:"", body:"", platform:"Instagram", mediaFiles:[] });
@@ -12825,7 +12918,7 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
   };
 
   const updateStatus = (id, status, note) => {
-    setPostApprovals(prev => prev.map(p => p.id === id ? { ...p, status, statusNote: note || "" } : p));
+    setPostApprovals(prev => prev.map(p => p.id === id ? { ...p, status, statusNote: note || "", updatedAt: Date.now() } : p));
   };
 
   const deletePost = (id) => {
@@ -15445,6 +15538,7 @@ window.OutlookSync = (() => {
     if (!_msal) _msal = buildMsal();
     if (!_msal) return null;
     if (!_initialized) { await _msal.initialize(); _initialized = true; }
+    window._msalApp = _msal;
     return _msal;
   }
 
