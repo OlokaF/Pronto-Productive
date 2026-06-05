@@ -1329,6 +1329,27 @@ function _mergeIdeas(a, b) {
   return out;
 }
 
+// Merge uniform stock data: last-write-wins by _updatedAt; log entries are unioned
+function _mergeUniform(a, b) {
+  if (!a && !b) return {};
+  if (!a) return b;
+  if (!b) return a;
+  const aTime = a._updatedAt || 0;
+  const bTime = b._updatedAt || 0;
+  // Take the more recently updated stock counts
+  const base = bTime > aTime ? { ...b } : { ...a };
+  // Union the issue logs from both
+  const logA = a.log || [], logB = b.log || [];
+  const seen = new Set();
+  const mergedLog = [...logA, ...logB].filter(e => {
+    const key = `${e.date}_${e.staff}_${e.item}_${e.size}_${e.qty}`;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  }).sort((x, y) => (y.date||"").localeCompare(x.date||"")).slice(0, 200);
+  base.log = mergedLog;
+  return base;
+}
+
 // Merge flat arrays (recurringTasks, toBeCompleted, ongoingJobs) by id using updatedAt
 function _mergeById(arrA, arrB) {
   const a = arrA || [], b = arrB || [];
@@ -1360,6 +1381,7 @@ function _mergeState(myState, theirState, myIdentity) {
     ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
     toPostList: _mergeById(myState.toPostList, theirState.toPostList),
     categories: [...new Set([...(myState.categories||[]), ...(theirState.categories||[])])],
+    uniform: _mergeUniform(myState.uniform, theirState.uniform),
   };
 }
 
@@ -11976,7 +11998,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
     if (s.ongoingJobs)    setOngoingJobs(s.ongoingJobs);
     if (s.toBeCompleted)  setToBeCompleted(s.toBeCompleted);
-    if (s.uniform) setUniform(s.uniform);
+    if (s.uniform) setUniform(prev => _mergeUniform(prev, s.uniform));
     if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
     if (s.toPostList) setToPostList(prev => { const titles = new Set((prev||[]).map(p=>(p.title||"").toLowerCase().trim())); const add = (Array.isArray(s.toPostList)?s.toPostList:Object.values(s.toPostList||{})).filter(p=>!titles.has((p.title||"").toLowerCase().trim())); return [...(prev||[]), ...add]; });
     if (s.emailItems) setEmailItems(s.emailItems);
@@ -13611,6 +13633,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
         sec,
       };
       next.log = [entry, ...(next.log || [])].slice(0, 200);
+      next._updatedAt = Date.now();
       return next;
     });
     setIssueModal(null); setIssueStaff(""); setIssueQty(1);
@@ -13630,6 +13653,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
       it[k] = Math.max(0, (it[k] || 0) + delta);
       s[item] = it;
       next[sec] = s;
+      next._updatedAt = Date.now(); // stamp so sync merge knows this is newer
       return next;
     });
   };
@@ -13645,10 +13669,10 @@ function UniformView({ uniform, setUniform, staff = [] }) {
 
   const WOMENS_ITEMS = [
     { key:"polo_w",        label:"Polos",                           sizes:["8","10","12","14","16","18","20"] },
-    { key:"ss_blue",       label:"Short sleeve dress shirts (Blue)",sizes:["8","10","12","14","16","18","20"] },
-    { key:"ss_black",      label:"Short sleeve dress shirts (Black)",sizes:["8","10","12","14","16","18","20"] },
-    { key:"ls_blue",       label:"Long sleeve dress shirts (Blue)", sizes:["8","10","12","14","16","18","20"] },
-    { key:"ls_black",      label:"Long sleeve dress shirts (Black)",sizes:["8","10","12","14","16","18","20"] },
+    { key:"ss_blue",       label:"Short sleeve dress shirts (Blue)",sizes:["8","10","12","14","16","18","20","24"] },
+    { key:"ss_black",      label:"Short sleeve dress shirts (Black)",sizes:["8","10","12","14","16","18","20","24"] },
+    { key:"ls_blue",       label:"Long sleeve dress shirts (Blue)", sizes:["8","10","12","14","16","18","20","24"] },
+    { key:"ls_black",      label:"Long sleeve dress shirts (Black)",sizes:["8","10","12","14","16","18","20","24"] },
     { key:"jacket_w",      label:"Jackets",                        sizes:["8","10","12","14","16","18","20"] },
     { key:"merino_w",      label:"Merinos",                        sizes:["8","10","12","14","16","18","20"] },
   ];
