@@ -1282,7 +1282,8 @@ function _mergeDayNotes(myDN, theirDN) {
   return out;
 }
 
-// Merge content calendar: union by date key, items merged by id (or title+type fallback for legacy items)
+// Merge content calendar: per-item last-write-wins by updatedAt (b wins on tie)
+// _deleted:true items are kept as tombstones so deletions propagate
 function _mergeContent(myC, theirC) {
   const a = myC || {}, b = theirC || {};
   const dates = new Set([...Object.keys(a), ...Object.keys(b)]);
@@ -1291,13 +1292,15 @@ function _mergeContent(myC, theirC) {
     const byKey = {};
     const toKey = item => item.id || ((item.title || "") + "_" + (item.type || ""));
     const toArr = x => Array.isArray(x) ? x : (x ? Object.values(x) : []);
+    // Process a first, then b (b wins on equal timestamps)
     [...toArr(a[dk]), ...toArr(b[dk])].forEach(item => {
       if (!item || (!item.id && !item.title)) return;
       const k = toKey(item);
       const ex = byKey[k];
-      if (!ex || (item.updatedAt || 0) > (ex.updatedAt || 0)) byKey[k] = item;
+      if (!ex || (item.updatedAt || 0) >= (ex.updatedAt || 0)) byKey[k] = item;
     });
-    out[dk] = Object.values(byKey);
+    const items = Object.values(byKey);
+    if (items.length > 0) out[dk] = items;
   }
   return out;
 }
@@ -1383,6 +1386,7 @@ function _mergeState(myState, theirState, myIdentity) {
     categories: [...new Set([...(myState.categories||[]), ...(theirState.categories||[])])],
     uniform: _mergeUniform(myState.uniform, theirState.uniform),
     postApprovals: _mergeById(myState.postApprovals, theirState.postApprovals),
+    machinesToPush: _mergeById(myState.machinesToPush, theirState.machinesToPush),
   };
 }
 
@@ -2104,6 +2108,10 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   const [taskSearch, setTaskSearch] = useStateV("");
   const [statsFilter, setStatsFilter] = useStateV(null);
   const [mobileDayTab, setMobileDayTab] = useStateV("tasks");
+  const [selectMode, setSelectMode] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState(new Set());
+  const [moveModalOpen, setMoveModalOpen] = React.useState(false);
+  const [moveTargetDate, setMoveTargetDate] = React.useState("");
 
   const dateKey = isoDate(selDate);
   const dayTasks = tasksByDate[dateKey] || [];
@@ -2294,6 +2302,9 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
               <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="17" y2="6"/><line x1="6" y1="10" x2="14" y2="10"/><line x1="9" y1="14" x2="11" y2="14"/></svg>
               Filters
             </button>
+            <button onClick={() => { setSelectMode(v => { if(v) setSelectedIds(new Set()); return !v; }); }} style={{ padding:"7px 14px", background:selectMode?T.gold:T.cardBg, color:selectMode?"#fff":T.text, border:`1px solid ${selectMode?T.gold:T.border}`, borderRadius:7, fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+              {selectMode ? "✕ CANCEL SELECT" : "SELECT"}
+            </button>
             <div style={{ display:"flex", borderRadius:7, overflow:"hidden", border:`1px solid ${T.navy}` }}>
               <button onClick={() => onAdd(dateKey, { text:"", priority:"Normal", category:(window.prontoCats||CATS)[0]||"Social Post", done:false, owner:"oloka" })} style={{ padding:"7px 16px", background:T.navy, border:"none", color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>+ Add Task</button>
               <button style={{ padding:"7px 10px", background:T.navy+"dd", border:"none", borderLeft:`1px solid rgba(255,255,255,0.2)`, color:"#fff", fontSize:12, cursor:"pointer" }}>▾</button>
@@ -2387,6 +2398,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
+                selectMode={selectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds}
               />}
               {showOloka && <PersonColumn name="Oloka" role="Content · Photo, Video, Social" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
                 tasks={olokaFiltered} allTasks={olokaAll} dateKey={dateKey}
@@ -2395,6 +2407,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
+                selectMode={selectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds}
               />}
             </div>
           );
@@ -2423,6 +2436,26 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           onChangeSubtasks={onChangeSubtasks} onConvertToSubtask={onConvertToSubtask}
           onChangeNotes={onChangeNotes} onDelete={onDelete}
         />
+      )}
+
+      {/* ── FLOATING MOVE BAR ── */}
+      {selectMode && selectedIds.size > 0 && (
+        <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", zIndex:9999, background:T.navy, color:"#fff", padding:"12px 20px", borderRadius:12, boxShadow:"0 8px 28px rgba(0,0,0,0.3)", display:"flex", alignItems:"center", gap:12, minWidth:340 }}>
+          <span style={{ fontSize:13, fontWeight:700 }}>Move {selectedIds.size} task{selectedIds.size!==1?"s":""} to:</span>
+          <input type="date" value={moveTargetDate} onChange={e => setMoveTargetDate(e.target.value)}
+            style={{ padding:"6px 10px", borderRadius:6, border:`1px solid rgba(255,255,255,0.3)`, background:"rgba(255,255,255,0.12)", color:"#fff", fontSize:12, fontFamily:"inherit", outline:"none" }} />
+          <button onClick={() => {
+            if (!moveTargetDate) return;
+            const newDk = moveTargetDate;
+            selectedIds.forEach(id => {
+              if (typeof onMoveTask === "function") onMoveTask(id, dateKey, newDk);
+            });
+            setSelectedIds(new Set());
+            setSelectMode(false);
+            setMoveTargetDate("");
+          }} style={{ padding:"7px 18px", background:"#fff", color:T.navy, border:"none", borderRadius:7, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>MOVE</button>
+          <button onClick={() => { setSelectedIds(new Set()); setSelectMode(false); setMoveTargetDate(""); }} style={{ background:"rgba(255,255,255,0.15)", border:"none", color:"#fff", borderRadius:7, padding:"7px 12px", cursor:"pointer", fontSize:13, fontFamily:"inherit" }}>✕</button>
+        </div>
       )}
     </div>
   );
@@ -2520,7 +2553,7 @@ function SharedTasksPanel({ dateKey, dayNotes, setDayNotes, recurringTasks, toBe
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars }) {
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars, selectMode, selectedIds, setSelectedIds }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
@@ -2586,9 +2619,19 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
       <div style={{ padding:"10px 10px 0" }}>
         <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
           {visible.map(t => (
-            <div key={t.id} onDoubleClick={() => onSelectTask && onSelectTask(t.id)}
-              style={{ cursor:"pointer", borderRadius:8, outline:selectedTaskId===t.id?`2px solid ${accent}50`:"none", outlineOffset:2 }}
-              title="Double-click to open details">
+            <div key={t.id} onDoubleClick={() => !selectMode && onSelectTask && onSelectTask(t.id)}
+              style={{ cursor:"pointer", borderRadius:8, outline:selectedTaskId===t.id?`2px solid ${accent}50`:"none", outlineOffset:2, display:"flex", alignItems:"flex-start", gap:6 }}>
+              {selectMode && (
+                <input type="checkbox" checked={selectedIds&&selectedIds.has(t.id)} onChange={() => {
+                  if (!setSelectedIds) return;
+                  setSelectedIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+                    return next;
+                  });
+                }} style={{ marginTop:10, accentColor:accent, width:16, height:16, flexShrink:0, cursor:"pointer" }} />
+              )}
+              <div style={{ flex:1, minWidth:0 }}>
               <TaskRow task={t} dateKey={dateKey}
                 onToggle={() => onToggle(t.id)}
                 onChangePriority={(p) => onChangePriority(t.id, p)}
@@ -2604,6 +2647,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                   if (onPickDate) onPickDate(new Date(newDate + "T00:00"));
                 } : undefined}
               />
+              </div>
             </div>
           ))}
           {visible.length === 0 && (
@@ -2788,7 +2832,7 @@ function WeekView({ selDate, tasksByDate, content, onPickDate, onToggle, onShift
             else if (wkFilter==="overdue") tasks=tasks.filter(t=>!t.done);
             const total=tasks.length, done=tasks.filter(t=>t.done).length;
             const isToday=sameDay(d,todayD), isSel=sameDay(d,selDate);
-            const post=content&&content[dk]?content[dk][0]:null;
+            const post=content&&content[dk]?(content[dk].find(p=>!p._deleted)||null):null;
             return (
               <div key={dk}
                 onDragOver={e=>handleDragOver(e,dk)}
@@ -3036,7 +3080,7 @@ function MonthView({ selDate, tasksByDate, content, onPickDate, onMoveTask, onAd
                 else if(mFilter==="completed") tasks=tasks.filter(t=>t.done);
                 const total=tasks.length, done=tasks.filter(t=>t.done).length;
                 const urgent=tasks.filter(t=>t.priority==="Urgent"&&!t.done).length;
-                const post=content&&content[dk]?content[dk][0]:null;
+                const post=content&&content[dk]?(content[dk].find(p=>!p._deleted)||null):null;
                 const isToday=sameDay(d,todayD), isSel=sameDay(d,selDate);
                 const MAX_SHOW=3;
                 const shown=tasks.slice(0,MAX_SHOW), extra=tasks.length-MAX_SHOW;
@@ -4252,7 +4296,7 @@ function getGreeting(name) {
 }
 
 // ── Today dashboard ──
-function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avatars, onJumpTask, onJumpSchedule, onJumpContent, onJumpStaff }) {
+function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avatars, onJumpTask, onJumpSchedule, onJumpContent, onJumpStaff, machinesToPush, setMachinesToPush }) {
   const todayD = today();
   const dk = isoDate(todayD);
 
@@ -4510,6 +4554,13 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
           <SCard icon="🕐" label="Scheduled" val={`${schedHours}h`} sub={`${Math.round(schedHours/11*100)}% of day`} color="#8B5CF6" bg="#EDE9FE20" onClick={onJumpSchedule} />
           <SCard icon="🚩" label="Urgent" val={urgentTasks.length} sub={urgentTasks.length===0?"Great job! 🎉":"Needs attention"} color="#EF4444" bg="#FEE2E220" onClick={() => onJumpTask(dk)} />
         </div>
+
+        {/* MACHINES TO PUSH */}
+        {setMachinesToPush && (
+          <div style={{ marginBottom:16 }}>
+            <MachinesToPushPanel machinesToPush={machinesToPush} setMachinesToPush={setMachinesToPush} />
+          </div>
+        )}
 
         {/* TWO-COLUMN GRID */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
@@ -5864,6 +5915,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [sideCalOffset, setSideCalOffset] = useSh(0);            // month offset for sidebar mini-calendar
   const [sidebarSearch, setSidebarSearch] = useSh("");           // task search in sidebar
   const [sidebarFilter, setSidebarFilter] = useSh("all");        // all|unscheduled|overdue|scheduled|completed
+  const [showSubtasks, setShowSubtasks] = useSh(false);          // expand subtasks in backlog
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -6233,7 +6285,13 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
               <div style={{ marginBottom:24 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
                   <span style={{ fontSize:11, fontWeight:800, letterSpacing:"0.1em", color:T.ink }}>TASK BACKLOG</span>
-                  <span style={{ fontSize:9, fontWeight:700, color:T.muted }}>{unscheduled.length} unscheduled</span>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <label style={{ display:"flex", alignItems:"center", gap:4, cursor:"pointer", fontSize:9, color:showSubtasks?T.gold:T.muted, fontWeight:700 }}>
+                      <input type="checkbox" checked={showSubtasks} onChange={e=>setShowSubtasks(e.target.checked)} style={{ accentColor:T.gold, width:11, height:11 }}/>
+                      SUBTASKS
+                    </label>
+                    <span style={{ fontSize:9, fontWeight:700, color:T.muted }}>{unscheduled.length} unscheduled</span>
+                  </div>
                 </div>
 
                 {/* Search */}
@@ -6274,37 +6332,50 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                         const ac=task.owner==="vanja"?T.vanja:T.oloka;
                         const isScheduled=scheduledHere.has(task.id);
                         const catColor=(window.prontoCatColors||CAT_COLOR)[task.category]||T.muted;
-                        return (
-                          <div key={task.id} draggable
-                            onDragStart={e=>{
-                              try{e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",String(task.id));}catch(_){}
-                            }}
-                            style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", background:isScheduled?T.surface:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, marginBottom:4, cursor:"grab", opacity:task.done?0.5:1 }}
-                            onMouseEnter={e=>e.currentTarget.style.borderColor=ac+"60"}
-                            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
-                          >
-                            <span style={{ width:4, height:4, borderRadius:"50%", background:ac, flexShrink:0 }}></span>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <p style={{ margin:0, fontSize:10.5, color:task.done?T.faint:T.ink, textDecoration:task.done?"line-through":"none", lineHeight:1.3, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{task.text}</p>
-                              <div style={{ display:"flex", gap:4, marginTop:2, alignItems:"center" }}>
-                                {task.category&&<span style={{ fontSize:8, color:catColor, background:catColor+"18", padding:"0 4px", borderRadius:3, fontWeight:700 }}>{task.category}</span>}
-                                {task.priority&&task.priority!=="Normal"&&<span style={{ fontSize:8, color:fmtPriority(task.priority), fontWeight:700 }}>{task.priority}</span>}
-                                {isScheduled&&<span style={{ fontSize:8, color:"#10B981", fontWeight:700 }}>✓ Scheduled</span>}
+                        const taskSubtasks = showSubtasks ? (task.subtasks||[]).filter(st=>!st.done) : [];
+                        const renderTaskRow = (t, isSubtask) => {
+                          const tScheduled = isSubtask ? false : isScheduled;
+                          const tId = isSubtask ? (task.id+"_sub_"+t.id) : task.id;
+                          const dragId = isSubtask ? null : task.id;
+                          return (
+                            <div key={tId} draggable={!isSubtask}
+                              onDragStart={!isSubtask ? (e=>{
+                                try{e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",String(dragId));}catch(_){}
+                              }) : undefined}
+                              style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", paddingLeft:isSubtask?20:8, background:tScheduled?T.surface:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, marginBottom:4, cursor:isSubtask?"default":"grab", opacity:t.done?0.5:1 }}
+                              onMouseEnter={e=>e.currentTarget.style.borderColor=ac+"60"}
+                              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
+                            >
+                              {isSubtask && <span style={{ fontSize:9, color:T.muted, flexShrink:0 }}>↳</span>}
+                              {!isSubtask && <span style={{ width:4, height:4, borderRadius:"50%", background:ac, flexShrink:0 }}></span>}
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <p style={{ margin:0, fontSize:isSubtask?9.5:10.5, color:t.done?T.faint:T.ink, textDecoration:t.done?"line-through":"none", lineHeight:1.3, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{t.text||t.title||""}</p>
+                                {!isSubtask && <div style={{ display:"flex", gap:4, marginTop:2, alignItems:"center" }}>
+                                  {t.category&&<span style={{ fontSize:8, color:catColor, background:catColor+"18", padding:"0 4px", borderRadius:3, fontWeight:700 }}>{t.category}</span>}
+                                  {t.priority&&t.priority!=="Normal"&&<span style={{ fontSize:8, color:fmtPriority(t.priority), fontWeight:700 }}>{t.priority}</span>}
+                                  {tScheduled&&<span style={{ fontSize:8, color:"#10B981", fontWeight:700 }}>✓ Scheduled</span>}
+                                </div>}
                               </div>
+                              {!tScheduled&&!isSubtask&&(
+                                <button onClick={()=>{
+                                  const o=task.owner||"oloka";
+                                  const ownerBlocks=daySchedule[o]||[];
+                                  const lastEnd=ownerBlocks.reduce((mx,b)=>Math.max(mx,(b.startMin||0)+(b.durationMin||30)),9*60);
+                                  const slot=Math.min(lastEnd,(SCHED_END-1)*60);
+                                  addBlock(o,task.id,slot,30);
+                                }}
+                                  title="Add to next free slot"
+                                  style={{ width:20, height:20, borderRadius:4, background:T.surface, border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, padding:0, fontFamily:"inherit" }}
+                                >+</button>
+                              )}
                             </div>
-                            {!isScheduled&&(
-                              <button onClick={()=>{
-                                const o=task.owner||"oloka";
-                                const ownerBlocks=daySchedule[o]||[];
-                                const lastEnd=ownerBlocks.reduce((mx,b)=>Math.max(mx,(b.startMin||0)+(b.durationMin||30)),9*60);
-                                const slot=Math.min(lastEnd,(SCHED_END-1)*60);
-                                addBlock(o,task.id,slot,30);
-                              }}
-                                title="Add to next free slot"
-                                style={{ width:20, height:20, borderRadius:4, background:T.surface, border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, padding:0, fontFamily:"inherit" }}
-                              >+</button>
-                            )}
-                          </div>
+                          );
+                        };
+                        return (
+                          <React.Fragment key={task.id}>
+                            {renderTaskRow(task, false)}
+                            {taskSubtasks.map(st => renderTaskRow(st, true))}
+                          </React.Fragment>
                         );
                       })}
                     </div>
@@ -8577,7 +8648,53 @@ function ContentKanbanView({ toPostList, setToPostList, onSetContent, filterType
   );
 }
 
-function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, dayNotes, setDayNotes, view: viewProp, setView: setViewProp }) {
+function MachinesToPushPanel({ machinesToPush, setMachinesToPush, compact }) {
+  const { useState: useMp, useRef: useMpRef } = React;
+  const [adding, setAdding] = useMp(false);
+  const [text, setText] = useMp("");
+  const inputRef = useMpRef(null);
+  const safeList = (machinesToPush || []).filter(m => !m.deleted);
+  const add = () => {
+    if (!text.trim()) return;
+    setMachinesToPush(prev => [...(prev||[]), { id:"mtp_"+Date.now(), text:text.trim(), updatedAt:Date.now() }]);
+    setText(""); setAdding(false);
+  };
+  const remove = (id) => setMachinesToPush(prev => (prev||[]).map(m => m.id===id ? {...m, deleted:true, updatedAt:Date.now()} : m));
+  return (
+    <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:14 }}>🚜</span>
+          <span style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:12, color:T.heading, letterSpacing:"0.08em" }}>MACHINES TO PUSH</span>
+          {safeList.length > 0 && <span style={{ background:T.urgent, color:"#fff", fontSize:9, fontWeight:900, padding:"1px 6px", borderRadius:8 }}>{safeList.length}</span>}
+        </div>
+        <button onClick={() => { setAdding(true); setTimeout(() => inputRef.current && inputRef.current.focus(), 50); }} style={{ background:T.navy, color:"#fff", border:"none", borderRadius:4, padding:"3px 10px", fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em" }}>+ ADD</button>
+      </div>
+      <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:5 }}>
+        {safeList.length === 0 && !adding && <p style={{ fontSize:10, color:T.faint, fontStyle:"italic", margin:0 }}>No machines queued</p>}
+        {safeList.map(m => (
+          <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ width:6, height:6, borderRadius:"50%", background:T.urgent, flexShrink:0 }}></span>
+            <span style={{ fontSize:11, color:T.ink, flex:1 }}>{m.text}</span>
+            <button onClick={() => remove(m.id)} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:13, padding:"0 2px", lineHeight:1 }}>×</button>
+          </div>
+        ))}
+        {adding && (
+          <div style={{ display:"flex", gap:6 }}>
+            <input ref={inputRef} value={text} onChange={e => setText(e.target.value)}
+              onKeyDown={e => { if(e.key==="Enter") add(); if(e.key==="Escape") { setAdding(false); setText(""); } }}
+              placeholder="Machine name…"
+              style={{ flex:1, padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }} />
+            <button onClick={add} style={{ padding:"4px 10px", background:T.navy, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
+            <button onClick={() => { setAdding(false); setText(""); }} style={{ padding:"4px 8px", background:T.surface2, border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, dayNotes, setDayNotes, view: viewProp, setView: setViewProp, machinesToPush, setMachinesToPush }) {
   const [viewLocal, setViewLocal] = useSc("week");
   const view = viewProp !== undefined ? viewProp : viewLocal;
   const setView = setViewProp || setViewLocal;
@@ -8592,6 +8709,7 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
   const [deleteConfirm, setDeleteConfirm] = useSc(null); // {dk, idx, post}
   const [showMobileList, setShowMobileList] = useSc(false);
   const [showIdeasPanel, setShowIdeasPanel] = useSc(true);
+  const [showMachinesPanel, setShowMachinesPanel] = useSc(false);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
   const safeToPostList = toPostList || [];
@@ -8609,8 +8727,7 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
     if (!deleteConfirm) return;
     const { dk, idx } = deleteConfirm;
     onSetContent(prev => {
-      const arr = (prev[dk]||[]).filter((_,i)=>i!==idx);
-      // Keep dk:[] so the init knows this date was intentionally cleared (not just missing)
+      const arr = (prev[dk]||[]).map((p,i) => i===idx ? { ...p, _deleted:true, updatedAt:Date.now() } : p);
       return { ...prev, [dk]: arr };
     });
     setDeleteConfirm(null);
@@ -8619,9 +8736,8 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
     if (!deleteConfirm) return;
     const { dk, idx, post } = deleteConfirm;
     onSetContent(prev => {
-      const arr = (prev[dk]||[]).filter((_,i)=>i!==idx);
+      const arr = (prev[dk]||[]).map((p,i) => i===idx ? { ...p, _deleted:true, updatedAt:Date.now() } : p);
       return { ...prev, [dk]: arr };
-      return next;
     });
     safeSetToPostList(prev => [{
       id: Date.now() + "_ret",
@@ -8729,6 +8845,15 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
               borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
             }}>💡 IDEAS{safeToPostList.length > 0 ? ` (${safeToPostList.length})` : ""}</button>
           )}
+          {!isMobile && machinesToPush !== undefined && (
+            <button onClick={() => setShowMachinesPanel(v => !v)} style={{
+              padding:"7px 14px",
+              background: showMachinesPanel ? T.navy : "transparent",
+              color: showMachinesPanel ? "#fff" : T.muted,
+              border:`1px solid ${showMachinesPanel ? T.navy : T.border}`,
+              borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
+            }}>🚜 MACHINES{(machinesToPush||[]).filter(m=>!m.deleted).length > 0 ? ` (${(machinesToPush||[]).filter(m=>!m.deleted).length})` : ""}</button>
+          )}
           <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
             {calViewBtn("week","Week")}
             {calViewBtn("month","Month")}
@@ -8806,6 +8931,11 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
             onIdeaDragEnd={() => setIdeaDrag(null)}
             isMobile={false}
           />
+        )}
+        {!isMobile && showMachinesPanel && machinesToPush !== undefined && (
+          <div style={{ width:280, flexShrink:0 }}>
+            <MachinesToPushPanel machinesToPush={machinesToPush} setMachinesToPush={setMachinesToPush} />
+          </div>
         )}
       </div>
 
@@ -8935,8 +9065,8 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
         const dk = isoDate(d);
         const allDayPosts = content[dk] || [];
         const postsWithIdx = filterType
-          ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => p.type === filterType)
-          : allDayPosts.map((p,i) => ({p,i}));
+          ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => !p._deleted && p.type === filterType)
+          : allDayPosts.map((p,i) => ({p,i})).filter(({p}) => !p._deleted);
         const isToday = sameDay(d, today);
         const dp = dropProps(dk);
         return (
@@ -9013,8 +9143,8 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
             const dk = isoDate(d);
             const allDayPosts = content[dk] || [];
             const postsWithIdx = filterType
-              ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => p.type === filterType)
-              : allDayPosts.map((p,i) => ({p,i}));
+              ? allDayPosts.map((p,i) => ({p,i})).filter(({p}) => !p._deleted && p.type === filterType)
+              : allDayPosts.map((p,i) => ({p,i})).filter(({p}) => !p._deleted);
             const isToday = sameDay(d, today);
             const dp = dropProps(dk);
             return (
@@ -11727,18 +11857,12 @@ function App({ onSwitchWorkspace = () => {} }) {
     return cleaned;
   });
   const [content, setContent] = useS(() => {
-    // Always seed from RAW_CONTENT so historical data is never permanently lost.
-    // Stored data wins for ANY date present in stored — including empty arrays (= intentional deletion).
-    // Only dates entirely absent from stored fall back to the built seed.
+    // Seed from RAW_CONTENT then merge stored data on top (stored wins by updatedAt per item)
     const built = buildContentState();
     const stored = saved && saved.content !== undefined ? saved.content : null;
     if (!stored) return built;
-    const merged = { ...built };
-    Object.entries(stored).forEach(([dk, items]) => {
-      const arr = Array.isArray(items) ? items : Object.values(items || {});
-      merged[dk] = arr; // stored always wins — empty array means intentionally deleted
-    });
-    return merged;
+    // Use _mergeContent: b (stored) wins on equal timestamps → stored user edits take priority
+    return _mergeContent(built, stored);
   });
   const [chatAs, setChatAs] = useS("vanja");
   const [todayUser, setTodayUser] = useS(() => {
@@ -11798,6 +11922,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [dayNotes, setDayNotes] = useS(() => loadOr("dayNotes", () => ({})));
   // Recurring daily tasks — appear every day with orange checkbox
   const [recurringTasks, setRecurringTasks] = useS(() => loadOr("recurringTasks", () => []));
+  const [machinesToPush, setMachinesToPush] = useS(() => loadOr("machinesToPush", () => []));
   const [toPostList, setToPostList] = useS(() => {
     // Always merge with seed so both users see the preset ideas
     const stored = saved && saved.toPostList !== undefined ? saved.toPostList : [];
@@ -11887,7 +12012,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog,
     branding, categories, postApprovals, videoEvents, visibleTabs,
     contentLabels, videoLabels,
-    recurringTasks, ongoingJobs, toBeCompleted,
+    recurringTasks, ongoingJobs, toBeCompleted, machinesToPush,
     uniform, brainDumpItems, toPostList,
     emailItems, emailComments, emailActivity, emailAttachments,
   });
@@ -11985,7 +12110,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, machinesToPush, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
 
@@ -12041,16 +12166,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (!s) return;
     if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
     if (s.tasksByDate) setTasksByDate(s.tasksByDate);
-    if (s.content) setContent(prev => {
-      // Only bring in dates entirely new to local state.
-      // If local already has a date (even as []), that user's version wins (preserves deletions).
-      const out = { ...prev };
-      const toArr = x => Array.isArray(x) ? x : Object.values(x || {});
-      Object.entries(s.content || {}).forEach(([dk, items]) => {
-        if (!(dk in out)) { const arr = toArr(items).filter(Boolean); if (arr.length > 0) out[dk] = arr; }
-      });
-      return out;
-    }); // add new dates only, never override local
+    if (s.content) setContent(prev => _mergeContent(prev, s.content)); // full per-item merge
     if (s.ideas)   setIdeas(prev => _mergeIdeas(prev, s.ideas));       // merge, never replace
     if (s.suppliers) setSuppliers(s.suppliers);
     if (s.budget) setBudget(s.budget);
@@ -12077,6 +12193,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
     if (s.ongoingJobs)    setOngoingJobs(s.ongoingJobs);
     if (s.toBeCompleted)  setToBeCompleted(s.toBeCompleted);
+    if (s.machinesToPush) setMachinesToPush(prev => _mergeById(prev, Array.isArray(s.machinesToPush)?s.machinesToPush:Object.values(s.machinesToPush||{})));
     if (s.uniform) setUniform(prev => _mergeUniform(prev, s.uniform));
     if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
     if (s.toPostList) setToPostList(prev => { const titles = new Set((prev||[]).map(p=>(p.title||"").toLowerCase().trim())); const add = (Array.isArray(s.toPostList)?s.toPostList:Object.values(s.toPostList||{})).filter(p=>!titles.has((p.title||"").toLowerCase().trim())); return [...(prev||[]), ...add]; });
@@ -12600,6 +12717,7 @@ function App({ onSwitchWorkspace = () => {} }) {
                 onJumpSchedule={() => setTab("schedule")}
                 onJumpContent={(dk) => { setSelDate(parseISO(dk)); setTab("content"); }}
                 onJumpStaff={() => setTab("team")}
+                machinesToPush={machinesToPush} setMachinesToPush={setMachinesToPush}
               />
             </div>
           ) : (
@@ -12639,7 +12757,8 @@ function App({ onSwitchWorkspace = () => {} }) {
         {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent}
           toPostList={toPostList} setToPostList={setToPostList}
           dayNotes={dayNotes} setDayNotes={setDayNotes}
-          view={contentView} setView={setContentView}/>}
+          view={contentView} setView={setContentView}
+          machinesToPush={machinesToPush} setMachinesToPush={setMachinesToPush}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
         {approvalToast && (
           <div onClick={() => setApprovalToast(null)} style={{ position:"fixed", bottom:24, right:24, zIndex:9999, background:approvalToast.color, color:"#fff", padding:"12px 20px", borderRadius:10, boxShadow:"0 8px 24px rgba(0,0,0,0.25)", fontSize:13, fontWeight:700, cursor:"pointer", maxWidth:340, display:"flex", alignItems:"center", gap:10, animation:"slideInRight 0.3s ease" }}>
