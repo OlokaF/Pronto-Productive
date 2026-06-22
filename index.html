@@ -5812,7 +5812,7 @@ function DailyReviewPanel({ dk, dayNotes, setDayNotes }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Break block strip (sidebar)
 // ─────────────────────────────────────────────────────────────────────────────
-function BreakBlockStrip({ drag, setDrag }) {
+function BreakBlockStrip({ drag, setDrag, addBreakBlock, activeUser, daySchedule }) {
   const [lunchDur, setLunchDur] = useSh(30);
   const [shortDur, setShortDur] = useSh(15);
 
@@ -5820,6 +5820,15 @@ function BreakBlockStrip({ drag, setDrag }) {
     { key:"lunch", label:"Lunch",  icon:"🍽", color:"#EF4444", soft:"#EF444415", dur:lunchDur, setter:setLunchDur },
     { key:"short", label:"Break",  icon:"☕", color:"#F97316", soft:"#F9731615", dur:shortDur, setter:setShortDur },
   ];
+
+  const addPreset = (label, dur) => {
+    if (!addBreakBlock) return;
+    const owner = activeUser === "both" ? "oloka" : activeUser;
+    const ownerBlocks = (daySchedule || {})[owner] || [];
+    const lastEnd = ownerBlocks.reduce((mx, b) => Math.max(mx, (b.startMin || 0) + (b.durationMin || 30)), 9 * 60);
+    const slot = Math.min(lastEnd, (SCHED_END - 1) * 60);
+    addBreakBlock(owner, label, slot, dur);
+  };
 
   return (
     <div style={{
@@ -5832,54 +5841,68 @@ function BreakBlockStrip({ drag, setDrag }) {
       <p style={{ fontSize:9, fontWeight:800, letterSpacing:"0.14em", color:T.muted, marginBottom:9 }}>BREAK BLOCKS</p>
       <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
         {BREAKS.map(({ key, label, icon, color, soft, dur, setter }) => (
-          <div key={key} style={{ display:"flex", alignItems:"center", gap:7 }}>
-            {/* Draggable block */}
-            <div
-              draggable
-              onDragStart={(e) => {
-                setDrag({ isBreak:true, breakLabel:label, durationMin:dur, fromCol:"break" });
-                try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", `break:${key}`); } catch(_) {}
-              }}
-              onDragEnd={() => setDrag(null)}
-              style={{
-                flex:1, padding:"7px 10px",
-                background:soft,
-                border:`1px dashed ${color}66`,
-                borderLeft:`3px solid ${color}`,
-                borderRadius:4,
-                cursor:"grab",
-                display:"flex", alignItems:"center", gap:7,
-                userSelect:"none",
-                // subtle diagonal stripe pattern
-                backgroundImage:`repeating-linear-gradient(135deg, transparent, transparent 4px, ${color}08 4px, ${color}08 8px)`,
-              }}
-            >
-              <span style={{ fontSize:13 }}>{icon}</span>
-              <span style={{ fontSize:11.5, fontWeight:700, color, flex:1 }}>{label}</span>
-              <span style={{ fontSize:10, fontWeight:600, color, opacity:0.8 }}>{dur}m</span>
-              <span style={{ fontSize:10, color:T.faint }}>⋮⋮</span>
+          <div key={key} style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+              {/* Draggable block */}
+              <div
+                draggable
+                onDragStart={(e) => {
+                  setDrag({ isBreak:true, breakLabel:label, durationMin:dur, fromCol:"break" });
+                  try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", `break:${key}`); } catch(_) {}
+                }}
+                onDragEnd={() => setDrag(null)}
+                style={{
+                  flex:1, padding:"7px 10px",
+                  background:soft,
+                  border:`1px dashed ${color}66`,
+                  borderLeft:`3px solid ${color}`,
+                  borderRadius:4,
+                  cursor:"grab",
+                  display:"flex", alignItems:"center", gap:7,
+                  userSelect:"none",
+                  backgroundImage:`repeating-linear-gradient(135deg, transparent, transparent 4px, ${color}08 4px, ${color}08 8px)`,
+                }}
+              >
+                <span style={{ fontSize:13 }}>{icon}</span>
+                <span style={{ fontSize:11.5, fontWeight:700, color, flex:1 }}>{label}</span>
+                <span style={{ fontSize:10, fontWeight:600, color, opacity:0.8 }}>{dur}m</span>
+                <span style={{ fontSize:10, color:T.faint }}>⋮⋮</span>
+              </div>
+              {/* ± duration adjuster */}
+              <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                <button onClick={() => setter(d => Math.min(120, d + 5))} style={{
+                  width:18, height:18, border:`1px solid ${T.border}`, borderRadius:3,
+                  background:T.cardBg, color:T.muted, cursor:"pointer",
+                  fontSize:11, fontWeight:800, lineHeight:1,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  padding:0,
+                }}>+</button>
+                <button onClick={() => setter(d => Math.max(5, d - 5))} style={{
+                  width:18, height:18, border:`1px solid ${T.border}`, borderRadius:3,
+                  background:T.cardBg, color:T.muted, cursor:"pointer",
+                  fontSize:11, fontWeight:800, lineHeight:1,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  padding:0,
+                }}>−</button>
+              </div>
             </div>
-            {/* ± duration adjuster */}
-            <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-              <button onClick={() => setter(d => Math.min(120, d + 5))} style={{
-                width:18, height:18, border:`1px solid ${T.border}`, borderRadius:3,
-                background:T.cardBg, color:T.muted, cursor:"pointer",
-                fontSize:11, fontWeight:800, lineHeight:1,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                padding:0,
-              }}>+</button>
-              <button onClick={() => setter(d => Math.max(5, d - 5))} style={{
-                width:18, height:18, border:`1px solid ${T.border}`, borderRadius:3,
-                background:T.cardBg, color:T.muted, cursor:"pointer",
-                fontSize:11, fontWeight:800, lineHeight:1,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                padding:0,
-              }}>−</button>
+            {/* Preset duration buttons */}
+            <div style={{ display:"flex", gap:4, paddingLeft:2 }}>
+              {[15, 30, 45, 60].map(pDur => (
+                <button key={pDur} onClick={() => addPreset(label, pDur)}
+                  style={{
+                    padding:"2px 7px", background:"transparent",
+                    border:`1px solid ${color}55`, borderRadius:20,
+                    color, fontSize:8.5, fontWeight:700, cursor:"pointer",
+                    fontFamily:"inherit", lineHeight:1.4,
+                  }}
+                >{pDur < 60 ? pDur+"m" : "1h"}</button>
+              ))}
             </div>
           </div>
         ))}
       </div>
-      <p style={{ fontSize:9.5, color:T.faint, marginTop:8 }}>Drag into the timeline · ± to adjust duration</p>
+      <p style={{ fontSize:9.5, color:T.faint, marginTop:8 }}>Drag into timeline or click a preset to add</p>
     </div>
   );
 }
@@ -5966,13 +5989,15 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   };
 
   // ── Planned schedule operations ──
-  const addBlock = (owner, taskId, startMin, durationMin = 30) => {
+  const addBlock = (owner, taskId, startMin, durationMin = 30, subtaskId) => {
     setSchedule(prev => {
       const next = { ...prev };
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
       day.vanja = (day.vanja || []).filter(b => b.taskId !== taskId);
       day.oloka = (day.oloka || []).filter(b => b.taskId !== taskId);
-      day[owner] = [...(day[owner] || []), { taskId, startMin, durationMin }];
+      const block = { taskId, startMin, durationMin };
+      if (subtaskId) block.subtaskId = subtaskId;
+      day[owner] = [...(day[owner] || []), block];
       day[owner].sort((a,b) => a.startMin - b.startMin);
       next[dk] = day;
       return next;
@@ -5987,6 +6012,34 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
       day[owner] = [...(day[owner] || []), { breakId, isBreak:true, breakLabel, startMin, durationMin }];
       day[owner].sort((a,b) => a.startMin - b.startMin);
       next[dk] = day;
+      return next;
+    });
+  };
+
+  // ── Date-specific schedule operations (for week view drops) ──
+  const addBlockForDate = (dateKey, owner, taskId, startMin, durationMin = 30, subtaskId) => {
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dateKey] || { vanja:[], oloka:[] }) };
+      day.vanja = (day.vanja || []).filter(b => b.taskId !== taskId);
+      day.oloka = (day.oloka || []).filter(b => b.taskId !== taskId);
+      const block = { taskId, startMin, durationMin };
+      if (subtaskId) block.subtaskId = subtaskId;
+      day[owner] = [...(day[owner] || []), block];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dateKey] = day;
+      return next;
+    });
+  };
+
+  const addBreakBlockForDate = (dateKey, owner, breakLabel, startMin, durationMin) => {
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dateKey] || { vanja:[], oloka:[] }) };
+      const breakId = newBreakId();
+      day[owner] = [...(day[owner] || []), { breakId, isBreak:true, breakLabel, startMin, durationMin }];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dateKey] = day;
       return next;
     });
   };
@@ -6245,6 +6298,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
             );
           })()}
 
+          {/* BREAK BLOCK STRIP */}
+          {React.createElement(BreakBlockStrip, { drag, setDrag, addBreakBlock, activeUser, daySchedule })}
+
           {/* FULL TASK BACKLOG */}
           {(() => {
             const allTasks = [];
@@ -6274,6 +6330,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
               ? [["COMPLETED",completed]]
               : sidebarFilter==="scheduled"
               ? [["SCHEDULED TODAY",scheduled]]
+              : sidebarFilter==="today_done"
+              ? [["COMPLETED TODAY", filtered.filter(t => t.done && t._date === dk)]]
               : [["TODAY",todayTasks],["OVERDUE",overdue],["UPCOMING",upcoming.slice(0,5)],["SCHEDULED",scheduled.slice(0,3)]];
 
             const fmtPriority = (p) => {
@@ -6306,7 +6364,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
 
                 {/* Filter pills */}
                 <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
-                  {[["all","All"],["unscheduled","Unscheduled"],["overdue","Overdue"],["scheduled","Scheduled"],["completed","Done"]].map(([k,l])=>(
+                  {[["all","All"],["unscheduled","Unscheduled"],["overdue","Overdue"],["scheduled","Scheduled"],["completed","Done"],["today_done","Today Done"]].map(([k,l])=>(
                     <button key={k} onClick={()=>setSidebarFilter(k)}
                       style={{ padding:"3px 8px", background:sidebarFilter===k?T.gold+"22":"transparent", border:`1px solid ${sidebarFilter===k?T.gold:T.border}`, borderRadius:20, color:sidebarFilter===k?T.gold:T.muted, fontSize:9.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}
                     >{l}</button>
@@ -6336,13 +6394,21 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                         const renderTaskRow = (t, isSubtask) => {
                           const tScheduled = isSubtask ? false : isScheduled;
                           const tId = isSubtask ? (task.id+"_sub_"+t.id) : task.id;
-                          const dragId = isSubtask ? null : task.id;
+                          const canDrag = !t.done || sidebarFilter === "today_done";
+                          const showAdd = (!tScheduled || sidebarFilter === "today_done");
                           return (
-                            <div key={tId} draggable={!isSubtask}
-                              onDragStart={!isSubtask ? (e=>{
-                                try{e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",String(dragId));}catch(_){}
+                            <div key={tId} draggable={canDrag}
+                              onDragStart={canDrag ? (e=>{
+                                if (isSubtask) {
+                                  setDrag({ taskId: task.id, subtaskId: t.id, durationMin: 30 });
+                                  try{e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",task.id+"_sub_"+t.id);}catch(_){}
+                                } else {
+                                  setDrag({ taskId: task.id, durationMin: 30 });
+                                  try{e.dataTransfer.effectAllowed="copy";e.dataTransfer.setData("text/plain",String(task.id));}catch(_){}
+                                }
                               }) : undefined}
-                              style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", paddingLeft:isSubtask?20:8, background:tScheduled?T.surface:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, marginBottom:4, cursor:isSubtask?"default":"grab", opacity:t.done?0.5:1 }}
+                              onDragEnd={() => setDrag(null)}
+                              style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", paddingLeft:isSubtask?20:8, background:tScheduled?T.surface:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, marginBottom:4, cursor:canDrag?"grab":"default", opacity:t.done&&sidebarFilter!=="today_done"?0.5:1 }}
                               onMouseEnter={e=>e.currentTarget.style.borderColor=ac+"60"}
                               onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
                             >
@@ -6356,13 +6422,17 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                                   {tScheduled&&<span style={{ fontSize:8, color:"#10B981", fontWeight:700 }}>✓ Scheduled</span>}
                                 </div>}
                               </div>
-                              {!tScheduled&&!isSubtask&&(
+                              {showAdd && (
                                 <button onClick={()=>{
                                   const o=task.owner||"oloka";
                                   const ownerBlocks=daySchedule[o]||[];
                                   const lastEnd=ownerBlocks.reduce((mx,b)=>Math.max(mx,(b.startMin||0)+(b.durationMin||30)),9*60);
                                   const slot=Math.min(lastEnd,(SCHED_END-1)*60);
-                                  addBlock(o,task.id,slot,30);
+                                  if (isSubtask) {
+                                    addBlock(o, task.id, slot, 30, t.id);
+                                  } else {
+                                    addBlock(o, task.id, slot, 30);
+                                  }
                                 }}
                                   title="Add to next free slot"
                                   style={{ width:20, height:20, borderRadius:4, background:T.surface, border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, padding:0, fontFamily:"inherit" }}
@@ -6624,7 +6694,22 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                       ...(activeUser !== "vanja" ? ((schedule[wdk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})) : []),
                     ];
                     return (
-                      <div key={wdk} style={{ position:"relative", height:colHeight, borderLeft:`1px solid ${T.border}`, background: isWeekend2 ? T.surface : isTodayW2 ? T.gold+"05" : T.cardBg }}>
+                      <div key={wdk}
+                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+                        onDrop={e => {
+                          e.preventDefault();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const y = e.clientY - rect.top;
+                          const startMin = Math.round((y / PX_PER_MIN + SCHED_START*60) / 15) * 15;
+                          const owner = activeUser === "both" ? "oloka" : activeUser;
+                          if (drag && drag.isBreak) {
+                            addBreakBlockForDate(wdk, owner, drag.breakLabel, startMin, drag.durationMin);
+                          } else if (drag && drag.taskId) {
+                            addBlockForDate(wdk, owner, drag.taskId, startMin, drag.durationMin || 30, drag.subtaskId);
+                          }
+                          setDrag(null);
+                        }}
+                        style={{ position:"relative", height:colHeight, borderLeft:`1px solid ${T.border}`, background: isWeekend2 ? T.surface : isTodayW2 ? T.gold+"05" : T.cardBg }}>
                         {Array.from({length:SCHED_END-SCHED_START+1}, (_,i) => (
                           <div key={i} style={{ position:"absolute", top:i*60*PX_PER_MIN, left:0, right:0, borderTop:`1px solid ${i===0?"transparent":T.border}` }} />
                         ))}
@@ -6637,7 +6722,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                           const topPx = (block.startMin - SCHED_START*60) * PX_PER_MIN;
                           const heightPx = Math.max(22, (block.durationMin||30)*PX_PER_MIN);
                           const task = tasksByIdRef[block.taskId];
-                          const label = block.isBreak ? block.breakLabel : (task?.text || block.qeTitle || "Event");
+                          const stLabel = block.subtaskId && task ? (task.subtasks||[]).find(s=>s.id===block.subtaskId)?.text : null;
+                          const label = block.isBreak ? block.breakLabel : stLabel ? ("↳ "+stLabel) : (task?.text || block.qeTitle || "Event");
                           const scheme = getBlockScheme(block, task);
                           if (topPx < 0 || topPx > colHeight) return null;
                           return (
@@ -7276,7 +7362,7 @@ function TimeColumn({
         onAddActual(owner, drag.taskId, startMin);
       } else {
         if (drag.fromCol === "sched" && drag.fromOwner !== owner) onRemove(drag.fromOwner, drag.taskId);
-        onAdd(owner, drag.taskId, startMin, drag.durationMin || 30);
+        onAdd(owner, drag.taskId, startMin, drag.durationMin || 30, drag.subtaskId);
       }
     }
     setDrag(null); setHoverMin(null);
@@ -7488,7 +7574,10 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
   const isQuickEvent = block.isQuickEvent;
   const BREAK_COLORS = { "Lunch": "#EF4444", "Break": "#F97316" };
   const blockAccent = isBreak ? (BREAK_COLORS[block.breakLabel] || "#888") : isQuickEvent ? "#E76F1B" : accent;
-  const label = isBreak ? block.breakLabel : isQuickEvent ? (block.qeTitle || "Event") : (block.title || task?.text || "");
+  const subtaskLabel = block.subtaskId && task
+    ? (task.subtasks||[]).find(s => s.id === block.subtaskId)?.text
+    : null;
+  const label = isBreak ? block.breakLabel : isQuickEvent ? (block.qeTitle || "Event") : subtaskLabel ? ("↳ " + subtaskLabel) : (block.title || task?.text || "");
   const icon = isBreak ? (block.breakLabel === "Lunch" ? "🍽 " : "☕ ") : isQuickEvent ? "📌 " : "";
 
   const bgBase = isActual
