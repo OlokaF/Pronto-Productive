@@ -12432,11 +12432,15 @@ function MobileSchedViewTabs({ view, setView }) {
 // ─── Day View ───────────────────────────────────────────────────────────────
 const MOBILE_PX = 1.5;
 const MOBILE_HOUR_H = 60 * MOBILE_PX;
+const MOBILE_SCHED_START = 0;
+const MOBILE_SCHED_END = 24;
 
 function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, todayUser }) {
   const [pickingMin, setPickingMin] = useS(null);
   const [pickDuration, setPickDuration] = useS(30);
   const [dragging, setDragging] = useS(null);
+  const [resizing, setResizing] = useS(null);
+  const [editingBlock, setEditingBlock] = useS(null);
   const timelineRef = useR(null);
 
   const dayBlocks = [
@@ -12451,7 +12455,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
   const tasksDayArr = (tasksByDate[dk]||[]).filter(t=>t.category!=="Event"&&!t.recurring);
   const done = tasksDayArr.filter(t=>t.done).length;
   const pct = tasksDayArr.length > 0 ? Math.round(done/tasksDayArr.length*100) : 0;
-  const dayLeft = isToday ? Math.max(0, SCHED_END*60 - nowMin) : 0;
+  const dayLeft = isToday ? Math.max(0, MOBILE_SCHED_END*60 - nowMin) : 0;
 
   const upcoming = [];
   for (let i = 1; i <= 14 && upcoming.length < 3; i++) {
@@ -12490,46 +12494,102 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
     });
   };
 
+  const updateBlockDuration = (block, newDuration) => {
+    if (!setSchedule) return;
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      const owner = block.owner;
+      day[owner] = (day[owner]||[]).map(b =>
+        (b.taskId===block.taskId && b.startMin===block.startMin) ? { ...b, durationMin: newDuration } : b
+      );
+      next[dk] = day;
+      return next;
+    });
+    setEditingBlock(null);
+  };
+
+  // --- Drag (move) handlers ---
   const handleBlockTouchStart = (e, block) => {
     if (!setSchedule || block.isBreak) return;
     const touch = e.touches[0];
     const timelineTop = timelineRef.current?.getBoundingClientRect().top || 0;
-    const blockTop = (block.startMin - SCHED_START*60) * MOBILE_PX;
-    setDragging({ block, owner: block.owner, offsetY: touch.clientY - timelineTop - blockTop, currentMin: block.startMin });
+    const blockTop = (block.startMin - MOBILE_SCHED_START*60) * MOBILE_PX;
+    setDragging({ block, owner: block.owner, offsetY: touch.clientY - timelineTop - blockTop, currentMin: block.startMin, startY: touch.clientY, startX: touch.clientX, moved: false });
     e.stopPropagation();
   };
 
+  // --- Resize handlers ---
+  const handleResizeTouchStart = (e, block) => {
+    if (!setSchedule || block.isBreak) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const touch = e.touches[0];
+    setResizing({ block, owner: block.owner, startY: touch.clientY, startDurationMin: block.durationMin||30, currentDurationMin: block.durationMin||30 });
+  };
+
+  // --- Combined touch move / end on timeline ---
   const handleTimelineTouchMove = (e) => {
+    if (resizing) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const deltaMin = (touch.clientY - resizing.startY) / MOBILE_PX;
+      const snapped = Math.round((resizing.startDurationMin + deltaMin) / 15) * 15;
+      const clamped = Math.max(15, Math.min(MOBILE_SCHED_END*60 - resizing.block.startMin, snapped));
+      setResizing(prev => prev ? { ...prev, currentDurationMin: clamped } : null);
+      return;
+    }
     if (!dragging) return;
     e.preventDefault();
     const touch = e.touches[0];
+    const moved = Math.abs(touch.clientY - dragging.startY) > 8 || Math.abs(touch.clientX - dragging.startX) > 8;
     const timelineTop = timelineRef.current?.getBoundingClientRect().top || 0;
-    const rawMin = SCHED_START*60 + (touch.clientY - timelineTop - dragging.offsetY) / MOBILE_PX;
+    const rawMin = MOBILE_SCHED_START*60 + (touch.clientY - timelineTop - dragging.offsetY) / MOBILE_PX;
     const snapped = Math.round(rawMin / 30) * 30;
-    const clamped = Math.max(SCHED_START*60, Math.min(SCHED_END*60 - (dragging.block.durationMin||30), snapped));
-    setDragging(prev => prev ? { ...prev, currentMin: clamped } : null);
+    const clamped = Math.max(MOBILE_SCHED_START*60, Math.min(MOBILE_SCHED_END*60 - (dragging.block.durationMin||30), snapped));
+    setDragging(prev => prev ? { ...prev, currentMin: clamped, moved: prev.moved || moved } : null);
   };
 
   const handleTimelineTouchEnd = () => {
+    if (resizing) {
+      const { block, owner, currentDurationMin } = resizing;
+      if (currentDurationMin !== (block.durationMin||30)) {
+        setSchedule(prev => {
+          const next = { ...prev };
+          const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+          day[owner] = (day[owner]||[]).map(b =>
+            (b.taskId===block.taskId && b.startMin===block.startMin) ? { ...b, durationMin: currentDurationMin } : b
+          );
+          next[dk] = day;
+          return next;
+        });
+      }
+      setResizing(null);
+      return;
+    }
     if (!dragging) return;
-    const { block, owner, currentMin } = dragging;
+    const { block, owner, currentMin, moved } = dragging;
+    setDragging(null);
+    if (!moved) {
+      // tap → open duration editor
+      setEditingBlock(block);
+      return;
+    }
     if (currentMin !== block.startMin) {
       setSchedule(prev => {
         const next = { ...prev };
         const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
         day[owner] = (day[owner]||[]).map(b =>
-          (b.taskId===block.taskId && b.startMin===block.startMin)
-            ? { ...b, startMin: currentMin } : b
+          (b.taskId===block.taskId && b.startMin===block.startMin) ? { ...b, startMin: currentMin } : b
         );
         day[owner].sort((a,b) => a.startMin - b.startMin);
         next[dk] = day;
         return next;
       });
     }
-    setDragging(null);
   };
 
-  const timelineH = (SCHED_END - SCHED_START) * MOBILE_HOUR_H;
+  const timelineH = (MOBILE_SCHED_END - MOBILE_SCHED_START) * MOBILE_HOUR_H;
 
   return (
     <div style={{ padding:"0 0 24px" }}>
@@ -12542,7 +12602,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
 
       <div style={{ display:"flex", gap:8, padding:"0 12px 12px", overflowX:"auto", scrollbarWidth:"none" }}>
         {[
-          { v:`${dayBlocks.filter(b=>!b.isBreak).length}`, l:"Planned", sub:`${Math.round(dayBlocks.filter(b=>!b.isBreak).length/(SCHED_END-SCHED_START)*100)}% of day`, c:T.navy, icon:"📅" },
+          { v:`${dayBlocks.filter(b=>!b.isBreak).length}`, l:"Planned", sub:`${Math.round(dayBlocks.filter(b=>!b.isBreak).length/(MOBILE_SCHED_END-MOBILE_SCHED_START)*100)}% of day`, c:T.navy, icon:"📅" },
           { v:`${tasksDayArr.length}`, l:"Tasks", sub:"Total", c:T.heading, icon:"✅" },
           { v:`${pct}%`, l:"Complete", sub:"Est. completion", c:"#10B981", icon:"🎯" },
           { v:`${Math.floor(totalMin/60)}h ${totalMin%60}m`, l:"Total Planned", sub:"Focused time", c:T.gold, icon:"⏱" },
@@ -12560,38 +12620,38 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
 
       {/* Pixel timeline */}
       <div style={{ padding:"0 12px" }}>
-        <div ref={timelineRef} style={{ position:"relative", height: timelineH, touchAction: dragging ? "none" : "pan-y" }}
+        <div ref={timelineRef} style={{ position:"relative", height: timelineH, touchAction: (dragging||resizing) ? "none" : "pan-y" }}
           onTouchMove={handleTimelineTouchMove}
           onTouchEnd={handleTimelineTouchEnd}
           onTouchCancel={handleTimelineTouchEnd}
         >
           {/* Hour grid lines */}
-          {Array.from({length: SCHED_END - SCHED_START + 1}, (_, i) => (
+          {Array.from({length: MOBILE_SCHED_END - MOBILE_SCHED_START + 1}, (_, i) => (
             <div key={i} style={{ position:"absolute", top: i * MOBILE_HOUR_H, left:0, right:0, display:"flex", pointerEvents:"none", zIndex:1 }}>
-              <span style={{ width:36, fontSize:10, fontWeight:700, color:T.muted, flexShrink:0, lineHeight:"1", paddingTop:2 }}>
-                {i < SCHED_END - SCHED_START ? fmtTime((SCHED_START+i)*60) : ""}
+              <span style={{ width:40, fontSize:10, fontWeight:700, color:T.muted, flexShrink:0, lineHeight:"1", paddingTop:2 }}>
+                {i < MOBILE_SCHED_END - MOBILE_SCHED_START ? fmtTime((MOBILE_SCHED_START+i)*60) : ""}
               </span>
               <div style={{ flex:1, borderTop:`1px solid ${T.border}` }}/>
             </div>
           ))}
 
           {/* Now line */}
-          {isToday && nowMin >= SCHED_START*60 && nowMin < SCHED_END*60 && (
-            <div style={{ position:"absolute", top:(nowMin-SCHED_START*60)*MOBILE_PX, left:36, right:0, height:2, background:"#EF4444", zIndex:10, pointerEvents:"none", display:"flex", alignItems:"center" }}>
+          {isToday && (
+            <div style={{ position:"absolute", top: nowMin*MOBILE_PX, left:40, right:0, height:2, background:"#EF4444", zIndex:10, pointerEvents:"none", display:"flex", alignItems:"center" }}>
               <div style={{ width:8, height:8, borderRadius:"50%", background:"#EF4444", marginLeft:-4 }}/>
               <span style={{ fontSize:9, color:"#EF4444", fontWeight:800, marginLeft:4 }}>{fmtTime(nowMin)}</span>
             </div>
           )}
 
           {/* Tap targets (empty 30-min slots) */}
-          {!dragging && Array.from({length:(SCHED_END-SCHED_START)*2}, (_,i) => {
-            const m = SCHED_START*60 + i*30;
+          {!(dragging||resizing) && Array.from({length: MOBILE_SCHED_END*2}, (_,i) => {
+            const m = i*30;
             const occupied = dayBlocks.some(b => m < b.startMin+(b.durationMin||30) && m+30 > b.startMin);
             if (occupied) return null;
             return (
               <div key={m} onClick={()=>{ setPickDuration(30); setPickingMin(m); }}
-                style={{ position:"absolute", top:(m-SCHED_START*60)*MOBILE_PX+1, left:40, right:0, height:30*MOBILE_PX-2, cursor:"pointer", zIndex:2, display:"flex", alignItems:"center", borderRadius:4 }}>
-                <span style={{ fontSize:10, color:T.faint, paddingLeft:8 }}>+ tap</span>
+                style={{ position:"absolute", top: m*MOBILE_PX+1, left:44, right:0, height:30*MOBILE_PX-2, cursor:"pointer", zIndex:2, display:"flex", alignItems:"center", borderRadius:4 }}>
+                <span style={{ fontSize:10, color:T.faint, paddingLeft:6 }}>+ tap</span>
               </div>
             );
           }).filter(Boolean)}
@@ -12604,32 +12664,37 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
             const ownerColor = block.owner==="vanja" ? T.vanja : T.oloka;
             const ownerInitial = block.owner==="vanja" ? "V" : "O";
             const isDrag = dragging && block.taskId===dragging.block.taskId && block.startMin===dragging.block.startMin && block.owner===dragging.owner;
+            const isResize = resizing && block.taskId===resizing.block.taskId && block.startMin===resizing.block.startMin && block.owner===resizing.owner;
             const displayMin = isDrag ? dragging.currentMin : block.startMin;
-            const blockH = Math.max(26, (block.durationMin||30)*MOBILE_PX - 2);
+            const displayDur = isResize ? resizing.currentDurationMin : (block.durationMin||30);
+            const blockH = Math.max(26, displayDur*MOBILE_PX - 2);
+            const isActive = isDrag || isResize;
             return (
               <div key={bi}
                 onTouchStart={e => handleBlockTouchStart(e, block)}
                 style={{
                   position:"absolute",
-                  top: (displayMin - SCHED_START*60)*MOBILE_PX,
-                  left:40, right:0, height:blockH,
+                  top: displayMin*MOBILE_PX,
+                  left:44, right:0, height:blockH,
                   background:scheme.bg,
                   border:`1px solid ${scheme.border}33`,
                   borderLeft:`3px solid ${scheme.border}`,
                   borderRadius:"0 10px 10px 0",
-                  padding:"3px 8px",
-                  zIndex: isDrag ? 20 : 5,
+                  padding:"3px 8px 16px",
+                  zIndex: isActive ? 20 : 5,
                   opacity: isDrag ? 0.9 : 1,
-                  boxShadow: isDrag ? "0 6px 20px rgba(0,0,0,0.25)" : "none",
+                  boxShadow: isActive ? "0 6px 20px rgba(0,0,0,0.25)" : "none",
                   cursor: block.isBreak ? "default" : "grab",
-                  display:"flex", alignItems:"center", justifyContent:"space-between",
+                  display:"flex", alignItems:"flex-start", justifyContent:"space-between",
                   touchAction:"none", userSelect:"none",
-                  transition: isDrag ? "none" : "top 0.12s ease",
+                  transition: isActive ? "none" : "top 0.12s ease, height 0.08s ease",
                   overflow:"hidden",
+                  boxSizing:"border-box",
                 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:9, fontWeight:700, color:scheme.border, lineHeight:1.2 }}>{fmtTime(displayMin)}</div>
+                  <div style={{ fontSize:9, fontWeight:700, color:scheme.border, lineHeight:1.2 }}>{fmtTime(displayMin)}{isResize ? ` – ${fmtTime(displayMin+displayDur)}` : ""}</div>
                   <div style={{ fontSize:12, fontWeight:800, color:T.heading, lineHeight:1.2, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</div>
+                  {displayDur >= 45 && <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0, marginLeft:6 }}>
                   <div style={{ width:16, height:16, borderRadius:"50%", background:ownerColor, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -12640,11 +12705,64 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                       style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, padding:"0 2px", lineHeight:1, touchAction:"auto" }}>×</button>
                   )}
                 </div>
+                {/* Resize handle */}
+                {!block.isBreak && (
+                  <div
+                    onTouchStart={e => handleResizeTouchStart(e, block)}
+                    style={{ position:"absolute", bottom:0, left:0, right:0, height:14, cursor:"ns-resize", display:"flex", justifyContent:"center", alignItems:"center", touchAction:"none", zIndex:10 }}>
+                    <div style={{ width:28, height:3, borderRadius:2, background:scheme.border+"88" }}/>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* Duration editor sheet */}
+      {editingBlock && (() => {
+        const eb = editingBlock;
+        const task = tasksByIdRef[eb.taskId];
+        const label = eb.isBreak ? eb.breakLabel : (task?.text||task?.title||eb.qeTitle||"Event");
+        const scheme = getMobileCatScheme(eb, task);
+        const cur = eb.durationMin||30;
+        const opts = [15,30,45,60,90,120,180,240];
+        return (
+          <div style={{ position:"fixed", inset:0, zIndex:400, background:"rgba(0,0,0,0.5)", display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
+            onClick={()=>setEditingBlock(null)}>
+            <div style={{ background:T.cardBg, borderRadius:"18px 18px 0 0", padding:"20px 20px 36px" }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}/>
+              <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 2px", fontFamily:"'ProximaNova Black',sans-serif" }}>Adjust Duration</p>
+              <p style={{ fontSize:12, color:T.muted, margin:"0 0 16px" }}>{label} · starts {fmtTime(eb.startMin)}</p>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
+                {opts.map(m => {
+                  const lbl = m < 60 ? `${m}m` : (m%60===0 ? `${m/60}h` : `${Math.floor(m/60)}h${m%60}m`);
+                  return (
+                    <button key={m} onClick={()=>updateBlockDuration(eb, m)} style={{
+                      flex:"1 0 calc(25% - 6px)", padding:"10px 0", borderRadius:10,
+                      border:`2px solid ${cur===m ? scheme.border : T.border}`,
+                      background: cur===m ? scheme.border : "transparent",
+                      color: cur===m ? "#fff" : T.ink,
+                      fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit"
+                    }}>{lbl}</button>
+                  );
+                })}
+              </div>
+              {/* Stepper for fine control */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16 }}>
+                <button onClick={()=>updateBlockDuration(eb, Math.max(15, cur-15))}
+                  style={{ width:44, height:44, borderRadius:"50%", border:`2px solid ${T.border}`, background:"transparent", fontSize:22, color:T.ink, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>−</button>
+                <span style={{ fontSize:18, fontWeight:900, color:T.heading, minWidth:60, textAlign:"center", fontFamily:"'ProximaNova Black',sans-serif" }}>
+                  {cur < 60 ? `${cur}m` : (cur%60===0 ? `${cur/60}h` : `${Math.floor(cur/60)}h ${cur%60}m`)}
+                </span>
+                <button onClick={()=>updateBlockDuration(eb, cur+15)}
+                  style={{ width:44, height:44, borderRadius:"50%", border:`2px solid ${T.border}`, background:"transparent", fontSize:22, color:T.ink, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>+</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Task picker sheet */}
       {pickingMin !== null && (() => {
