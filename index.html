@@ -12034,7 +12034,7 @@ function MobileTodayPage({ todayUser, tasksByDate, schedule, machinesToPush, set
   );
 }
 
-function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, todayUser, schedule, setSchedule, toBeCompleted, setToBeCompleted, categories }) {
+function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, todayUser, schedule, setSchedule, toBeCompleted, setToBeCompleted, categories, dayNotes, setDayNotes, content, setContent, staff }) {
   const cats = categories || window.prontoCats || CATS || [];
   const [userFilter, setUserFilter] = useS("all");
   const [priorityFilter, setPriorityFilter] = useS("all");
@@ -12054,6 +12054,9 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
   const [editSheet, setEditSheet] = useS(null); // { taskId, field:"category"|"priority" }
   const [addingSubFor, setAddingSubFor] = useS(null);
   const [newSubText, setNewSubText] = useS("");
+  const [addingRecurring, setAddingRecurring] = useS(false);
+  const [newRecurText, setNewRecurText] = useS("");
+  const [newRecurOwner, setNewRecurOwner] = useS("oloka");
 
   const toggleExpand = (id) => setExpandedTasks(prev => {
     const next = new Set(prev);
@@ -12102,6 +12105,43 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
   };
 
   const dk = isoDate(selDate instanceof Date ? selDate : new Date(selDate));
+
+  // ── Recurring templates computed values ──
+  const RECUR_ORANGE = "#F97316";
+  const recurringDone = ((dayNotes || {})[dk] || {}).recurringDone || {};
+  const setRecDone = (id, val) => { if (!setDayNotes) return; setDayNotes(prev => { const day = (prev||{})[dk]||{}; return { ...prev, [dk]: { ...day, recurringDone: { ...(day.recurringDone||{}), [id]: val } } }; }); };
+  const contentEntries = (content || {})[dk] || [];
+  const bestContentIdx = contentEntries.length - 1;
+  const bestContentEntry = bestContentIdx >= 0 ? contentEntries[bestContentIdx] : null;
+  const contentCalLabel = bestContentEntry ? (bestContentEntry.title || bestContentEntry.text || bestContentEntry.caption || "") : "";
+  const socialPostOverride = ((dayNotes || {})[dk] || {}).socialPostText;
+  const socialPostText = socialPostOverride !== undefined ? socialPostOverride : contentCalLabel;
+  const setSocialPostText = (val) => { if (!setDayNotes) return; setDayNotes(prev => { const day = (prev||{})[dk]||{}; return { ...prev, [dk]: { ...day, socialPostText: val } }; }); };
+  const socialPostDone = (bestContentEntry && !!bestContentEntry.posted) || !!recurringDone["__socialpost__"];
+  const toggleSocialPost = () => {
+    const newDone = !socialPostDone;
+    setRecDone("__socialpost__", newDone);
+    if (setContent && bestContentEntry && bestContentIdx >= 0) {
+      setContent(prev => { const dayArr = [...((prev||{})[dk]||[])]; dayArr[bestContentIdx] = { ...dayArr[bestContentIdx], posted: newDone, status: newDone ? "posted" : (dayArr[bestContentIdx].status==="posted"?"ready":dayArr[bestContentIdx].status), updatedAt: Date.now() }; return { ...prev, [dk]: dayArr }; });
+    }
+  };
+  const todayMMDD = dk ? dk.slice(5) : "";
+  const staffEventsRecur = [];
+  for (const s of staff || []) {
+    if (!s.name) continue;
+    const dobM = (s.dob||"").match(/^\d{4}-(\d{2}-\d{2})$/);
+    if (dobM && dobM[1]===todayMMDD) staffEventsRecur.push({ id:"bday_"+s.name, text:`🎂 ${s.name.split(" ")[0]}'s Birthday` });
+    const startM = (s.started||"").match(/^\d{4}-(\d{2}-\d{2})$/);
+    if (startM && startM[1]===todayMMDD) { const yrs = new Date().getFullYear()-parseInt((s.started||"").slice(0,4)); staffEventsRecur.push({ id:"anni_"+s.name, text:`🎉 ${s.name.split(" ")[0]}'s ${yrs>0?yrs+"yr ":""}Work Anniversary` }); }
+  }
+  const dowRecur = new Date(dk+"T12:00:00").getDay();
+  const BUILTIN_RECUR = [
+    { id:"__stories_casual__",   text:"Social Stories – Casual",          owner:"oloka", weekdays:[1,2,3,4,5] },
+    { id:"__stories_hire__",     text:"Social Stories – Machine Hire",     owner:"oloka", weekdays:[1,2,3,4,5] },
+    { id:"__stories_forsale__",  text:"Social Stories – Machine For Sale", owner:"oloka", weekdays:[2,4] },
+  ];
+  const todayBuiltins = BUILTIN_RECUR.filter(t => t.weekdays.includes(dowRecur));
+  const userRecurring = (recurringTasks||[]).filter(rt => !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text));
 
   const dateRange = Array.from({length:14}, (_, i) => {
     const d = new Date(today());
@@ -12431,40 +12471,100 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
           );
         })()}
 
-        <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, marginBottom:12 }}>
-          <button onClick={()=>setShowRecurring(v=>!v)}
-            style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", fontFamily:"inherit" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:16 }}>🔄</span>
-              <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>Recurring Templates</span>
-              <span style={{ fontSize:11, color:T.muted }}>Daily tasks you do every day.</span>
+        <div style={{ border:`1px solid ${RECUR_ORANGE}33`, borderLeft:`3px solid ${RECUR_ORANGE}`, borderRadius:10, marginBottom:12, overflow:"hidden", background:T.cardBg }}>
+          {/* Header */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
+            <button onClick={()=>setShowRecurring(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:8, fontFamily:"inherit", flex:1, textAlign:"left", padding:0 }}>
+              <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:RECUR_ORANGE }}>🔁 RECURRING TEMPLATES</span>
+              <span style={{ fontSize:10, color:T.muted }}>Tick off · press → to add</span>
+            </button>
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <button onClick={()=>setAddingRecurring(v=>!v)} style={{ padding:"3px 10px", background:"transparent", border:`1px solid ${RECUR_ORANGE}`, borderRadius:5, color:RECUR_ORANGE, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
+              <span onClick={()=>setShowRecurring(v=>!v)} style={{ color:T.muted, fontSize:14, cursor:"pointer" }}>{showRecurring?"▲":"▼"}</span>
             </div>
-            <span style={{ color:T.muted, fontSize:16 }}>{showRecurring?"▲":"▼"}</span>
-          </button>
+          </div>
           {showRecurring && (
-            <div style={{ padding:"0 16px 14px", borderTop:`1px solid ${T.border}` }}>
-              {["vanja","oloka","joint"].map(owner=>{
-                const ownerTasks = (recurringTasks||[]).filter(t=>t.owner===owner||(!t.owner&&owner==="joint"));
-                const doneTasks = ownerTasks.filter(t=>{
-                  const doneMap = t.doneByDate||{};
-                  return doneMap[dk];
-                });
+            <div style={{ padding:"8px 14px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+
+              {/* Social Post row */}
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:2 }}>
+                  <button onClick={toggleSocialPost} style={{ width:18, height:18, borderRadius:4, flexShrink:0, border:`2px solid ${RECUR_ORANGE}`, background:socialPostDone?RECUR_ORANGE:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, fontWeight:900 }}>{socialPostDone?"✓":""}</button>
+                  <span style={{ fontSize:11, fontWeight:700, color:RECUR_ORANGE, flexShrink:0 }}>Social Post —</span>
+                  <input value={socialPostText} onChange={e=>setSocialPostText(e.target.value)}
+                    placeholder={contentCalLabel||"Enter post title…"}
+                    style={{ flex:1, padding:"3px 7px", border:`1px solid ${socialPostDone?T.border:RECUR_ORANGE+"55"}`, borderRadius:4, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", textDecoration:socialPostDone?"line-through":"none", opacity:socialPostDone?0.6:1 }} />
+                  {onAdd && !socialPostDone && (
+                    <button onClick={()=>onAdd(dk,{text:"Social Post"+(socialPostText?" - "+socialPostText:""),owner:"oloka",category:"Social Post",priority:"Normal"})}
+                      style={{ padding:"2px 7px", background:RECUR_ORANGE+"22", border:`1px solid ${RECUR_ORANGE}55`, borderRadius:4, color:RECUR_ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                  )}
+                </div>
+                {!bestContentEntry && <div style={{ fontSize:9, color:T.faint, marginLeft:26 }}>No content calendar post for this day</div>}
+              </div>
+
+              {/* Built-in templates (day-of-week aware) */}
+              {todayBuiltins.map(tpl => {
+                const done = !!recurringDone[tpl.id];
                 return (
-                  <div key={owner} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:`1px solid ${T.border}` }}>
-                    <div style={{ width:36, height:36, borderRadius:"50%", border:`2px solid ${owner==="vanja"?T.vanja:owner==="oloka"?T.oloka:T.gold}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      <div style={{ textAlign:"center" }}>
-                        <div style={{ fontSize:9, color:owner==="vanja"?T.vanja:owner==="oloka"?T.oloka:T.gold, fontWeight:900 }}>{doneTasks.length}/{ownerTasks.length}</div>
-                        <div style={{ fontSize:7, color:T.muted, fontWeight:700 }}>done</div>
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize:12, fontWeight:800, color:T.heading }}>{owner.toUpperCase()}</div>
-                      <div style={{ fontSize:10, color:T.muted }}>{doneTasks.length}/{ownerTasks.length} COMPLETE</div>
-                    </div>
-                    <span style={{ fontSize:18, marginLeft:"auto", color:T.faint }}>›</span>
+                  <div key={tpl.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <button onClick={()=>setRecDone(tpl.id,!done)} style={{ width:18, height:18, borderRadius:4, flexShrink:0, border:`2px solid ${RECUR_ORANGE}`, background:done?RECUR_ORANGE:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, fontWeight:900 }}>{done?"✓":""}</button>
+                    <span style={{ fontSize:12, color:done?T.muted:T.ink, flex:1, textDecoration:done?"line-through":"none" }}>{tpl.text}</span>
+                    <span style={{ fontSize:9, fontWeight:700, color:RECUR_ORANGE, background:RECUR_ORANGE+"18", padding:"1px 5px", borderRadius:3 }}>TEMPLATE</span>
+                    {onAdd && !done && (
+                      <button onClick={()=>onAdd(dk,{text:tpl.text,owner:tpl.owner,category:"Social Post",priority:"Normal"})}
+                        style={{ padding:"2px 7px", background:RECUR_ORANGE+"22", border:`1px solid ${RECUR_ORANGE}55`, borderRadius:4, color:RECUR_ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                    )}
                   </div>
                 );
               })}
+
+              {/* Staff events */}
+              {staffEventsRecur.map(ev => (
+                <div key={ev.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <button onClick={()=>setRecDone(ev.id,!recurringDone[ev.id])} style={{ width:18, height:18, borderRadius:4, flexShrink:0, border:`2px solid ${RECUR_ORANGE}`, background:recurringDone[ev.id]?RECUR_ORANGE:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, fontWeight:900 }}>{recurringDone[ev.id]?"✓":""}</button>
+                  <span style={{ fontSize:12, color:T.ink, flex:1 }}>{ev.text}</span>
+                  <span style={{ fontSize:9, color:RECUR_ORANGE, fontWeight:700, letterSpacing:"0.06em" }}>TEAM</span>
+                </div>
+              ))}
+
+              {/* User-added recurring tasks */}
+              {userRecurring.map(rt => {
+                const done = !!recurringDone[rt.id];
+                return (
+                  <div key={rt.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <button onClick={()=>setRecDone(rt.id,!done)} style={{ width:18, height:18, borderRadius:4, flexShrink:0, border:`2px solid ${RECUR_ORANGE}`, background:done?RECUR_ORANGE:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, fontWeight:900 }}>{done?"✓":""}</button>
+                    <span style={{ fontSize:12, color:done?T.muted:T.ink, flex:1, textDecoration:done?"line-through":"none" }}>{rt.text}</span>
+                    <span style={{ fontSize:9, color:rt.owner==="oloka"?T.oloka:T.vanja, fontWeight:800, flexShrink:0 }}>{rt.owner==="oloka"?"O":"V"}</span>
+                    <span style={{ fontSize:9, fontWeight:700, color:RECUR_ORANGE, background:RECUR_ORANGE+"18", padding:"1px 5px", borderRadius:3, flexShrink:0 }}>TEMPLATE</span>
+                    {onAdd && !done && (
+                      <button onClick={()=>onAdd(dk,{text:rt.text,owner:rt.owner||"oloka",category:"Admin",priority:"Normal"})}
+                        style={{ padding:"2px 7px", background:RECUR_ORANGE+"22", border:`1px solid ${RECUR_ORANGE}55`, borderRadius:4, color:RECUR_ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                    )}
+                    <button onClick={()=>setRecurringTasks(prev=>prev.filter(x=>x.id!==rt.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 2px", flexShrink:0 }}>×</button>
+                  </div>
+                );
+              })}
+
+              {userRecurring.length===0 && staffEventsRecur.length===0 && todayBuiltins.length===0 && (
+                <p style={{ fontSize:10, color:T.faint, fontStyle:"italic", margin:0 }}>No user-added recurring tasks · use + Add above</p>
+              )}
+
+              {/* Add form */}
+              {addingRecurring && (
+                <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
+                  <div style={{ display:"flex", gap:0, border:`1px solid ${T.border}`, borderRadius:5, overflow:"hidden" }}>
+                    {[{k:"oloka",l:"O"},{k:"vanja",l:"V"}].map(o=>(
+                      <button key={o.k} onClick={()=>setNewRecurOwner(o.k)} style={{ padding:"4px 10px", fontSize:10, fontWeight:800, background:newRecurOwner===o.k?(o.k==="oloka"?T.oloka:T.vanja):T.surface, color:newRecurOwner===o.k?"#fff":T.muted, border:"none", cursor:"pointer", fontFamily:"inherit" }}>{o.l}</button>
+                    ))}
+                  </div>
+                  <input autoFocus value={newRecurText} onChange={e=>setNewRecurText(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Enter"&&newRecurText.trim()){ setRecurringTasks(prev=>[...prev,{id:"rt_"+Date.now(),text:newRecurText.trim(),owner:newRecurOwner}]); setNewRecurText(""); setAddingRecurring(false); } if(e.key==="Escape"){ setAddingRecurring(false); setNewRecurText(""); }}}
+                    placeholder="Recurring task name…"
+                    style={{ flex:1, minWidth:120, padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }} />
+                  <button onClick={()=>{ if(newRecurText.trim()){ setRecurringTasks(prev=>[...prev,{id:"rt_"+Date.now(),text:newRecurText.trim(),owner:newRecurOwner}]); setNewRecurText(""); setAddingRecurring(false); }}} style={{ padding:"5px 10px", background:RECUR_ORANGE, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
+                  <button onClick={()=>{ setAddingRecurring(false); setNewRecurText(""); }} style={{ padding:"5px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -14005,6 +14105,11 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
             toBeCompleted={toBeCompleted}
             setToBeCompleted={setToBeCompleted}
             categories={categories}
+            dayNotes={dayNotes}
+            setDayNotes={setDayNotes}
+            content={content}
+            setContent={setContent}
+            staff={staff}
           />
         )}
         {mobileTab === "schedule" && (
