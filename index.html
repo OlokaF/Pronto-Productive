@@ -12034,7 +12034,7 @@ function MobileTodayPage({ todayUser, tasksByDate, schedule, machinesToPush, set
   );
 }
 
-function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, todayUser, schedule, setSchedule, toBeCompleted, setToBeCompleted, categories, dayNotes, setDayNotes, content, setContent, staff }) {
+function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, todayUser, schedule, setSchedule, toBeCompleted, setToBeCompleted, ongoingJobs, setOngoingJobs, categories, dayNotes, setDayNotes, content, setContent, staff }) {
   const cats = categories || window.prontoCats || CATS || [];
   const [userFilter, setUserFilter] = useS("all");
   const [priorityFilter, setPriorityFilter] = useS("all");
@@ -12057,6 +12057,16 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
   const [addingRecurring, setAddingRecurring] = useS(false);
   const [newRecurText, setNewRecurText] = useS("");
   const [newRecurOwner, setNewRecurOwner] = useS("oloka");
+  const [showTBC, setShowTBC] = useS(true);
+  const [addingTBC, setAddingTBC] = useS(false);
+  const [newTBCText, setNewTBCText] = useS("");
+  const [newTBCOwner, setNewTBCOwner] = useS("oloka");
+  const [showOJ, setShowOJ] = useS(true);
+  const [addingOJ, setAddingOJ] = useS(false);
+  const [newOJText, setNewOJText] = useS("");
+  const [newOJOwner, setNewOJOwner] = useS("oloka");
+  const [sendingTask, setSendingTask] = useS(null);
+  const [sendDate, setSendDate] = useS("");
 
   const toggleExpand = (id) => setExpandedTasks(prev => {
     const next = new Set(prev);
@@ -12142,6 +12152,9 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
   ];
   const todayBuiltins = BUILTIN_RECUR.filter(t => t.weekdays.includes(dowRecur));
   const userRecurring = (recurringTasks||[]).filter(rt => !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text));
+
+  const ojDone = ((dayNotes || {})[dk] || {}).ojDone || {};
+  const setOJDone = (id, val) => { if (!setDayNotes) return; setDayNotes(prev => { const day = (prev||{})[dk]||{}; return { ...prev, [dk]: { ...day, ojDone: { ...(day.ojDone||{}), [id]: val } } }; }); };
 
   const dateRange = Array.from({length:14}, (_, i) => {
     const d = new Date(today());
@@ -12569,28 +12582,124 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
           )}
         </div>
 
-        <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, marginBottom:12 }}>
-          <button onClick={()=>setShowBacklog(v=>!v)}
-            style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", fontFamily:"inherit" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:16 }}>📥</span>
-              <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>Backlog</span>
-              <span style={{ fontSize:11, color:T.muted }}>Tasks to complete (not scheduled)</span>
+        {/* ── TO BE COMPLETED ── */}
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden", background:T.cardBg, marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:T.surface, borderBottom:(toBeCompleted||[]).filter(t=>!t.deleted).length > 0 || addingTBC ? `1px solid ${T.border}` : "none" }}>
+            <button onClick={()=>setShowTBC(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:6, fontFamily:"inherit", flex:1, textAlign:"left", padding:0 }}>
+              <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:T.muted }}>📋 TO BE COMPLETED</span>
+              <span style={{ fontSize:10, color:T.faint }}>Unscheduled tasks</span>
+              {(toBeCompleted||[]).filter(t=>!t.deleted).length > 0 && <span style={{ fontSize:10, fontWeight:800, color:T.navy }}>· {(toBeCompleted||[]).filter(t=>!t.deleted).length}</span>}
+            </button>
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <button onClick={()=>{ setAddingTBC(true); setShowTBC(true); }} style={{ padding:"3px 10px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
+              <span onClick={()=>setShowTBC(v=>!v)} style={{ color:T.muted, fontSize:14, cursor:"pointer" }}>{showTBC?"▲":"▼"}</span>
             </div>
-            <span style={{ color:T.muted, fontSize:16 }}>{showBacklog?"▲":"▼"}</span>
-          </button>
-          {showBacklog && (
-            <div style={{ padding:"0 16px 14px", borderTop:`1px solid ${T.border}` }}>
-              {Object.keys(tasksByDate||{}).flatMap(d => (tasksByDate[d]||[]).filter(t=>!t.done&&t.category!=="Event"&&!t.recurring)).slice(0,10).map(task=>(
-                <div key={task.id} style={{ padding:"8px 0", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", gap:10 }}>
-                  <div style={{ width:8, height:8, borderRadius:"50%", background:task.owner==="vanja"?T.vanja:T.oloka, flexShrink:0 }}/>
-                  <span style={{ fontSize:12, color:T.ink, flex:1 }}>{task.text||task.title}</span>
+          </div>
+          {showTBC && ((toBeCompleted||[]).filter(t=>!t.deleted).length > 0 || addingTBC) && (
+            <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:6 }}>
+              {(toBeCompleted||[]).filter(t=>!t.deleted).map(t => (
+                <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ width:18, height:18, borderRadius:4, border:`1.5px solid ${T.border}`, flexShrink:0 }} />
+                  <span style={{ fontSize:12, color:T.ink, flex:1 }}>{t.text}</span>
+                  <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                    <button onClick={()=>{ onAdd(dk,{text:t.text,owner:"oloka",category:"Admin",priority:"Normal",done:false}); setToBeCompleted(prev=>prev.filter(x=>x.id!==t.id)); }}
+                      style={{ background:T.oloka+"20", border:`1.5px solid ${T.oloka}`, borderRadius:5, color:T.oloka, cursor:"pointer", fontSize:10, fontWeight:800, padding:"2px 9px", fontFamily:"inherit" }}>O</button>
+                    <button onClick={()=>{ onAdd(dk,{text:t.text,owner:"vanja",category:"Admin",priority:"Normal",done:false}); setToBeCompleted(prev=>prev.filter(x=>x.id!==t.id)); }}
+                      style={{ background:T.vanja+"20", border:`1.5px solid ${T.vanja}`, borderRadius:5, color:T.vanja, cursor:"pointer", fontSize:10, fontWeight:800, padding:"2px 9px", fontFamily:"inherit" }}>V</button>
+                  </div>
+                  <button onClick={()=>setToBeCompleted(prev=>prev.map(x=>x.id===t.id?{...x,deleted:true,updatedAt:Date.now()}:x))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 2px" }}>×</button>
                 </div>
               ))}
+              {(toBeCompleted||[]).filter(t=>!t.deleted).length===0 && !addingTBC && (
+                <p style={{ fontSize:10, color:T.faint, fontStyle:"italic", margin:0 }}>No tasks waiting</p>
+              )}
+              {addingTBC && (
+                <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
+                  <div style={{ display:"flex", gap:0, border:`1px solid ${T.border}`, borderRadius:5, overflow:"hidden" }}>
+                    {[{k:"oloka",l:"O"},{k:"vanja",l:"V"}].map(o=>(
+                      <button key={o.k} onClick={()=>setNewTBCOwner(o.k)} style={{ padding:"4px 10px", fontSize:10, fontWeight:800, background:newTBCOwner===o.k?(o.k==="oloka"?T.oloka:T.vanja):T.surface, color:newTBCOwner===o.k?"#fff":T.muted, border:"none", cursor:"pointer", fontFamily:"inherit" }}>{o.l}</button>
+                    ))}
+                  </div>
+                  <input autoFocus value={newTBCText} onChange={e=>setNewTBCText(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Enter"&&newTBCText.trim()){ setToBeCompleted(prev=>[...prev,{id:"tbc_"+Date.now(),text:newTBCText.trim(),owner:newTBCOwner}]); setNewTBCText(""); setAddingTBC(false); } if(e.key==="Escape"){ setAddingTBC(false); setNewTBCText(""); }}}
+                    placeholder="Task to be completed…"
+                    style={{ flex:1, minWidth:120, padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }} />
+                  <button onClick={()=>{ if(newTBCText.trim()){ setToBeCompleted(prev=>[...prev,{id:"tbc_"+Date.now(),text:newTBCText.trim(),owner:newTBCOwner}]); setNewTBCText(""); setAddingTBC(false); }}} style={{ padding:"5px 10px", background:T.navy, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
+                  <button onClick={()=>{ setAddingTBC(false); setNewTBCText(""); }} style={{ padding:"5px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── ONGOING JOBS ── */}
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden", background:T.cardBg, marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:T.surface, borderBottom:(ongoingJobs||[]).length > 0 || addingOJ ? `1px solid ${T.border}` : "none" }}>
+            <button onClick={()=>setShowOJ(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:6, fontFamily:"inherit", flex:1, textAlign:"left", padding:0 }}>
+              <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:T.muted }}>🔧 ONGOING JOBS</span>
+              <span style={{ fontSize:10, color:T.faint }}>Long-running · tick daily</span>
+              {(ongoingJobs||[]).length > 0 && <span style={{ fontSize:10, fontWeight:800, color:T.navy }}>· {(ongoingJobs||[]).length}</span>}
+            </button>
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <button onClick={()=>{ setAddingOJ(true); setShowOJ(true); }} style={{ padding:"3px 10px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
+              <span onClick={()=>setShowOJ(v=>!v)} style={{ color:T.muted, fontSize:14, cursor:"pointer" }}>{showOJ?"▲":"▼"}</span>
+            </div>
+          </div>
+          {showOJ && ((ongoingJobs||[]).length > 0 || addingOJ) && (
+            <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:6 }}>
+              {(ongoingJobs||[]).map(oj => (
+                <div key={oj.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <button onClick={()=>setOJDone(oj.id,!ojDone[oj.id])} style={{ width:18, height:18, borderRadius:4, flexShrink:0, border:`2px solid ${T.navy}`, background:ojDone[oj.id]?T.navy:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, fontWeight:900 }}>{ojDone[oj.id]?"✓":""}</button>
+                  <span style={{ fontSize:12, color:ojDone[oj.id]?T.muted:T.ink, flex:1, textDecoration:ojDone[oj.id]?"line-through":"none" }}>{oj.text}</span>
+                  <span style={{ fontSize:9, color:oj.owner==="oloka"?T.oloka:T.vanja, fontWeight:800, flexShrink:0 }}>{oj.owner==="oloka"?"O":"V"}</span>
+                  {onAdd && <button onClick={()=>{ setSendingTask({id:oj.id,text:oj.text,owner:oj.owner,isOJ:true}); setSendDate(dk); }} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, color:T.muted, cursor:"pointer", fontSize:9, fontWeight:800, padding:"2px 6px", fontFamily:"inherit", flexShrink:0 }}>→ Day</button>}
+                  <button onClick={()=>setOngoingJobs(prev=>prev.filter(x=>x.id!==oj.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 2px" }}>×</button>
+                </div>
+              ))}
+              {(ongoingJobs||[]).length===0 && !addingOJ && (
+                <p style={{ fontSize:10, color:T.faint, fontStyle:"italic", margin:0 }}>No ongoing jobs</p>
+              )}
+              {addingOJ && (
+                <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
+                  <div style={{ display:"flex", gap:0, border:`1px solid ${T.border}`, borderRadius:5, overflow:"hidden" }}>
+                    {[{k:"oloka",l:"O"},{k:"vanja",l:"V"}].map(o=>(
+                      <button key={o.k} onClick={()=>setNewOJOwner(o.k)} style={{ padding:"4px 10px", fontSize:10, fontWeight:800, background:newOJOwner===o.k?(o.k==="oloka"?T.oloka:T.vanja):T.surface, color:newOJOwner===o.k?"#fff":T.muted, border:"none", cursor:"pointer", fontFamily:"inherit" }}>{o.l}</button>
+                    ))}
+                  </div>
+                  <input autoFocus value={newOJText} onChange={e=>setNewOJText(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Enter"&&newOJText.trim()){ setOngoingJobs(prev=>[...prev,{id:"oj_"+Date.now(),text:newOJText.trim(),owner:newOJOwner}]); setNewOJText(""); setAddingOJ(false); } if(e.key==="Escape"){ setAddingOJ(false); setNewOJText(""); }}}
+                    placeholder="Ongoing job…"
+                    style={{ flex:1, minWidth:120, padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }} />
+                  <button onClick={()=>{ if(newOJText.trim()){ setOngoingJobs(prev=>[...prev,{id:"oj_"+Date.now(),text:newOJText.trim(),owner:newOJOwner}]); setNewOJText(""); setAddingOJ(false); }}} style={{ padding:"5px 10px", background:T.navy, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
+                  <button onClick={()=>{ setAddingOJ(false); setNewOJText(""); }} style={{ padding:"5px 8px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Send to Day modal */}
+      {sendingTask && onAdd && (
+        <div onClick={()=>setSendingTask(null)} style={{ position:"fixed", inset:0, zIndex:3000, background:"rgba(15,27,58,0.5)", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:320, boxShadow:"0 20px 50px rgba(0,0,0,0.3)", borderTop:`3px solid ${T.navy}` }}>
+            <div style={{ padding:"14px 18px 10px", borderBottom:`1px solid ${T.border}` }}>
+              <p style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:T.navy, marginBottom:4 }}>SEND TO DAY</p>
+              <p style={{ fontSize:12, color:T.ink, fontWeight:600, lineHeight:1.4, margin:0 }}>{sendingTask.text}</p>
+              {sendingTask.isOJ && <p style={{ fontSize:10, color:T.muted, marginTop:2, marginBottom:0 }}>Stays in Ongoing Jobs · adds a copy to the day's task list</p>}
+            </div>
+            <div style={{ padding:"14px 18px" }}>
+              <p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:6 }}>WHICH DAY?</p>
+              <input type="date" value={sendDate} onChange={e=>setSendDate(e.target.value)}
+                style={{ width:"100%", padding:"9px 10px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:13, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }} />
+            </div>
+            <div style={{ padding:"0 18px 14px", display:"flex", gap:8 }}>
+              <button onClick={()=>setSendingTask(null)} style={{ flex:1, padding:"9px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={()=>{ if(!sendDate) return; onAdd(sendDate,{text:sendingTask.text,owner:sendingTask.owner,done:false}); if(!sendingTask.isOJ) setToBeCompleted(prev=>prev.filter(x=>x.id!==sendingTask.id)); setSendingTask(null); }} style={{ flex:1, padding:"9px", background:T.navy, border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add to Day</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -14104,6 +14213,8 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
             setSchedule={setSchedule}
             toBeCompleted={toBeCompleted}
             setToBeCompleted={setToBeCompleted}
+            ongoingJobs={ongoingJobs}
+            setOngoingJobs={setOngoingJobs}
             categories={categories}
             dayNotes={dayNotes}
             setDayNotes={setDayNotes}
