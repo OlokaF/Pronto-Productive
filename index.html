@@ -11910,6 +11910,951 @@ const DEFAULT_TABS = [
 ];
 const TABS = DEFAULT_TABS; // alias used elsewhere
 
+function MobileBottomNav({ mobileTab, setMobileTab }) {
+  const tabs = [
+    { key:"today", icon:"🏠", label:"Home" },
+    { key:"tasks", icon:"✅", label:"Tasks" },
+    { key:"add", icon:"+", label:"", isAdd:true },
+    { key:"schedule", icon:"📅", label:"Schedule" },
+    { key:"more", icon:"···", label:"More" },
+  ];
+  return (
+    <div style={{ position:"fixed", bottom:0, left:0, right:0, maxWidth:480, margin:"0 auto", height:60, background:T.cardBg, borderTop:`1px solid ${T.border}`, display:"flex", alignItems:"stretch", zIndex:200 }}>
+      {tabs.map(t => (
+        <button key={t.key} onClick={() => !t.isAdd && setMobileTab(t.key)}
+          style={{ flex:1, border:"none", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, color: t.isAdd ? "#fff" : mobileTab===t.key ? T.gold : T.muted, fontFamily:"inherit" }}>
+          {t.isAdd
+            ? <div style={{ width:44, height:44, borderRadius:"50%", background:T.navy, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:"#fff", fontWeight:300, marginTop:-16, boxShadow:"0 4px 12px rgba(0,0,0,0.3)" }}>+</div>
+            : <span style={{ fontSize:18 }}>{t.icon}</span>
+          }
+          {!t.isAdd && <span style={{ fontSize:9, fontWeight:700, letterSpacing:"0.05em" }}>{t.label}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MobileTodayPage({ todayUser, tasksByDate, schedule, machinesToPush, setMachinesToPush, setMobileTab, content, postApprovals }) {
+  const dk = isoDate(today());
+  const todayTasks = (tasksByDate[dk]||[]).filter(t => t.category!=="Event" && t.owner!=="event" && !t.recurring);
+  const myTasks = todayTasks.filter(t => t.owner === todayUser || todayUser === "both");
+  const done = myTasks.filter(t => t.done).length;
+  const open = myTasks.filter(t => !t.done).length;
+  const urgent = myTasks.filter(t => !t.done && t.priority === "Urgent").length;
+  const totalMin = ((schedule[dk]||{})[todayUser]||[]).reduce((s,b) => s+(b.durationMin||30), 0);
+  const pct = myTasks.length > 0 ? Math.round(done/myTasks.length*100) : 0;
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good Morning";
+    if (h < 17) return "Good Afternoon";
+    return "Good Evening";
+  })();
+  const name = todayUser === "vanja" ? "Vanja" : "Oloka";
+
+  return (
+    <div style={{ padding:"16px 16px 8px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <div>
+          <div style={{ fontSize:11, color:T.gold, fontWeight:700, letterSpacing:"0.1em" }}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"}).toUpperCase()}</div>
+          <h1 style={{ fontSize:26, fontWeight:900, color:T.heading, margin:"4px 0", fontFamily:"'ProximaNova Black',sans-serif" }}>{greeting}, {name} 👋</h1>
+          <p style={{ fontSize:12, color:T.muted, margin:0 }}>Let's make today count.</p>
+        </div>
+        <div style={{ position:"relative", width:72, height:72 }}>
+          <svg width="72" height="72" style={{ transform:"rotate(-90deg)" }}>
+            <circle cx="36" cy="36" r="28" fill="none" stroke={T.border} strokeWidth="6"/>
+            <circle cx="36" cy="36" r="28" fill="none" stroke={pct>0?"#10B981":T.border} strokeWidth="6" strokeDasharray={`${pct*1.759} 175.9`} strokeLinecap="round"/>
+          </svg>
+          <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+            <span style={{ fontSize:18, fontWeight:900, color:T.heading }}>{pct}</span>
+            <span style={{ fontSize:8, color:T.muted, fontWeight:700 }}>%</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:16 }}>
+        {[
+          { label:"Done", val:done, color:"#10B981", icon:"✅" },
+          { label:"Scheduled", val:`${Math.floor(totalMin/60)}h`, color:T.navy, icon:"🕐" },
+          { label:"Urgent", val:urgent, color:"#EF4444", icon:"🚩" },
+          { label:"Open", val:open, color:T.gold, icon:"📋" },
+        ].map(s => (
+          <div key={s.label} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"12px 8px", textAlign:"center" }}>
+            <div style={{ fontSize:18 }}>{s.icon}</div>
+            <div style={{ fontSize:20, fontWeight:900, color:s.color, fontFamily:"'ProximaNova Black',sans-serif", lineHeight:1 }}>{s.val}</div>
+            <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {machinesToPush && machinesToPush.filter(m=>!m._deleted).length > 0 && (
+        <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, padding:"14px 16px", marginBottom:16 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>🚜</span>
+              <span style={{ fontSize:13, fontWeight:800, color:T.heading, letterSpacing:"0.05em" }}>MACHINES TO PUSH</span>
+            </div>
+            <span style={{ fontSize:11, color:T.gold, fontWeight:700 }}>View all</span>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            {machinesToPush.filter(m=>!m._deleted).slice(0,8).map(m => (
+              <div key={m.id} style={{ background:T.surface, borderRadius:8, padding:"8px 10px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:"#EF4444", flexShrink:0 }}/>
+                  <span style={{ fontSize:11, color:T.ink, fontWeight:600 }}>{m.text||m.name}</span>
+                </div>
+                <button onClick={()=>setMachinesToPush(prev=>prev.map(x=>x.id===m.id?{...x,_deleted:true,updatedAt:Date.now()}:x))}
+                  style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, padding:"0 2px", fontFamily:"inherit" }}>×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginBottom:16 }}>
+        <div style={{ fontSize:13, fontWeight:800, color:T.heading, marginBottom:10 }}>Quick Actions</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
+          {[
+            { icon:"➕", label:"Add Task", action:()=>setMobileTab("tasks") },
+            { icon:"📝", label:"Add Post", action:()=>setMobileTab("content") },
+            { icon:"📅", label:"Open Schedule", action:()=>setMobileTab("schedule") },
+            { icon:"🧠", label:"Brain Dump", action:()=>{} },
+            { icon:"🚀", label:"Start Planning", action:()=>setMobileTab("schedule") },
+          ].map(a => (
+            <button key={a.label} onClick={a.action}
+              style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 8px", display:"flex", flexDirection:"column", alignItems:"center", gap:6, cursor:"pointer", fontFamily:"inherit" }}>
+              <span style={{ fontSize:22 }}>{a.icon}</span>
+              <span style={{ fontSize:10, fontWeight:700, color:T.ink, textAlign:"center", lineHeight:1.2 }}>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, todayUser, schedule, toBeCompleted, setToBeCompleted }) {
+  const [userFilter, setUserFilter] = useS("all");
+  const [showRecurring, setShowRecurring] = useS(false);
+  const [showBacklog, setShowBacklog] = useS(false);
+  const [addingTask, setAddingTask] = useS(false);
+  const [newTaskText, setNewTaskText] = useS("");
+
+  const dk = isoDate(selDate instanceof Date ? selDate : new Date(selDate));
+
+  const dateRange = Array.from({length:14}, (_, i) => {
+    const d = new Date(today());
+    d.setDate(d.getDate() - 3 + i);
+    return d;
+  });
+
+  const allTasks = (tasksByDate[dk]||[]).filter(t => t.category!=="Event" && t.owner!=="event" && !t.recurring);
+  const filtered = userFilter==="all" ? allTasks : allTasks.filter(t => t.owner === (userFilter==="me" ? todayUser : (todayUser==="vanja"?"oloka":"vanja")));
+  const done = filtered.filter(t=>t.done).length;
+  const open = filtered.filter(t=>!t.done).length;
+  const urgent = filtered.filter(t=>!t.done&&t.priority==="Urgent").length;
+  const scheduled = ((schedule[dk]||{})[todayUser]||[]).filter(b=>!b.isBreak).length;
+  const overdue = Object.keys(tasksByDate||{}).filter(d=>d<dk).reduce((s,d)=>{
+    return s + (tasksByDate[d]||[]).filter(t=>!t.done&&t.category!=="Event"&&!t.recurring).length;
+  }, 0);
+
+  return (
+    <div>
+      <div style={{ background:T.cardBg, borderBottom:`1px solid ${T.border}`, padding:"12px 0 8px" }}>
+        <div style={{ overflowX:"auto", display:"flex", gap:4, padding:"0 12px", scrollbarWidth:"none" }}>
+          {dateRange.map(d => {
+            const dk2 = isoDate(d);
+            const isSelected = dk2 === dk;
+            const isToday = dk2 === isoDate(today());
+            const dayNames = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
+            const hasTasks = (tasksByDate[dk2]||[]).filter(t=>!t.done&&t.category!=="Event"&&!t.recurring).length > 0;
+            return (
+              <button key={dk2} onClick={()=>setSelDate(new Date(dk2+"T12:00:00"))}
+                style={{ flexShrink:0, width:52, padding:"8px 0", borderRadius:12, border:`2px solid ${isSelected?T.navy:"transparent"}`, background:isSelected?T.navy:"transparent", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, fontFamily:"inherit" }}>
+                <span style={{ fontSize:9, fontWeight:700, color:isSelected?"rgba(255,255,255,0.7)":T.muted }}>{dayNames[d.getDay()]}</span>
+                <span style={{ width:32, height:32, borderRadius:"50%", background:isSelected?"rgba(255,255,255,0.15)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:900, color:isSelected?"#fff":isToday?T.gold:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{d.getDate()}</span>
+                {hasTasks && <div style={{ width:5, height:5, borderRadius:"50%", background:isSelected?"rgba(255,255,255,0.5)":T.gold }}/>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ padding:"16px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <div>
+            <h1 style={{ fontSize:22, fontWeight:900, color:T.heading, margin:0, fontFamily:"'ProximaNova Black',sans-serif" }}>Today's Tasks</h1>
+            <p style={{ fontSize:11, color:T.muted, margin:"2px 0 0" }}>Plan, prioritise and get things done.</p>
+          </div>
+          <button onClick={()=>setAddingTask(true)}
+            style={{ width:40, height:40, borderRadius:"50%", background:T.navy, border:"none", color:"#fff", fontSize:22, fontWeight:300, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"inherit" }}>+</button>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", background:T.surface, borderRadius:10, padding:3, marginBottom:16, border:`1px solid ${T.border}` }}>
+          {[["all","All"],["me","Me"],["vanja","Vanja"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setUserFilter(k)}
+              style={{ padding:"8px 0", borderRadius:8, border:"none", background:userFilter===k?T.cardBg:"transparent", color:userFilter===k?T.heading:T.muted, fontWeight:userFilter===k?800:500, fontSize:12, cursor:"pointer", fontFamily:"inherit", boxShadow:userFilter===k?"0 1px 4px rgba(0,0,0,0.1)":"none" }}>{l}</button>
+          ))}
+        </div>
+
+        <div style={{ display:"flex", gap:8, overflowX:"auto", marginBottom:16, paddingBottom:4, scrollbarWidth:"none" }}>
+          {[
+            { l:"Total", v:filtered.length, c:T.heading },
+            { l:"Completed", v:done, c:"#10B981" },
+            { l:"Urgent", v:urgent, c:"#EF4444" },
+            { l:"Scheduled", v:scheduled, c:T.navy },
+            { l:"Overdue", v:overdue, c:"#F59E0B" },
+          ].map(s=>(
+            <div key={s.l} style={{ flexShrink:0, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"10px 14px", textAlign:"center", minWidth:70 }}>
+              <div style={{ fontSize:20, fontWeight:900, color:s.c, fontFamily:"'ProximaNova Black',sans-serif" }}>{s.v}</div>
+              <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2, whiteSpace:"nowrap" }}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {addingTask && (
+          <div style={{ background:T.cardBg, border:`1px solid ${T.gold}`, borderRadius:12, padding:"12px", marginBottom:12, display:"flex", gap:8 }}>
+            <input value={newTaskText} onChange={e=>setNewTaskText(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter"&&newTaskText.trim()){ onAdd(dk,{text:newTaskText.trim(),owner:todayUser}); setNewTaskText(""); setAddingTask(false); }}}
+              placeholder="New task…" autoFocus
+              style={{ flex:1, border:"none", background:"transparent", fontSize:14, color:T.ink, outline:"none", fontFamily:"inherit" }}/>
+            <button onClick={()=>{ if(newTaskText.trim()){ onAdd(dk,{text:newTaskText.trim(),owner:todayUser}); setNewTaskText(""); } setAddingTask(false); }}
+              style={{ background:T.navy, border:"none", borderRadius:8, color:"#fff", padding:"6px 12px", cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>Add</button>
+          </div>
+        )}
+
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>Tasks <span style={{ background:T.navy, color:"#fff", borderRadius:20, padding:"1px 8px", fontSize:11 }}>{filtered.length}</span></span>
+          <button style={{ background:T.navy, border:"none", borderRadius:8, color:"#fff", padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:12, fontFamily:"inherit" }} onClick={()=>setAddingTask(true)}>+ Add Task</button>
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
+          {filtered.map(task => {
+            const ac = task.owner==="vanja" ? T.vanja : T.oloka;
+            const catColor = (window.prontoCatColors||CAT_COLOR)[task.category]||T.muted;
+            return (
+              <div key={task.id} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, padding:"14px 16px", display:"flex", gap:12, alignItems:"flex-start", opacity:task.done?0.65:1 }}>
+                <button onClick={()=>onToggle(task.id)}
+                  style={{ width:24, height:24, borderRadius:6, border:`2px solid ${task.done?"#10B981":T.border}`, background:task.done?"#10B981":"transparent", flexShrink:0, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", marginTop:1 }}>
+                  {task.done && <span style={{ color:"#fff", fontSize:14, fontWeight:700 }}>✓</span>}
+                </button>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:task.done?T.muted:T.heading, textDecoration:task.done?"line-through":"none", marginBottom:4, lineHeight:1.3 }}>{task.text||task.title}</div>
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+                    <div style={{ width:16, height:16, borderRadius:"50%", background:ac, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <span style={{ fontSize:8, color:"#fff", fontWeight:700 }}>{task.owner==="vanja"?"V":"O"}</span>
+                    </div>
+                    {task.category && <span style={{ fontSize:10, color:catColor, background:catColor+"18", padding:"1px 7px", borderRadius:20, fontWeight:700 }}>{task.category}</span>}
+                    {task.priority && task.priority!=="Normal" && <span style={{ fontSize:10, fontWeight:700, color:task.priority==="Urgent"?"#EF4444":"#F59E0B" }}>{task.priority}</span>}
+                    <span style={{ fontSize:10, color:T.gold, fontWeight:600 }}>Due today</span>
+                  </div>
+                </div>
+                <button style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:18, padding:"0 2px", fontFamily:"inherit" }}>⋮</button>
+              </div>
+            );
+          })}
+          {filtered.length===0 && (
+            <div style={{ textAlign:"center", padding:"24px", color:T.faint, fontSize:13 }}>No tasks for this day ✓</div>
+          )}
+        </div>
+
+        <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, marginBottom:12 }}>
+          <button onClick={()=>setShowRecurring(v=>!v)}
+            style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", fontFamily:"inherit" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:16 }}>🔄</span>
+              <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>Recurring Templates</span>
+              <span style={{ fontSize:11, color:T.muted }}>Daily tasks you do every day.</span>
+            </div>
+            <span style={{ color:T.muted, fontSize:16 }}>{showRecurring?"▲":"▼"}</span>
+          </button>
+          {showRecurring && (
+            <div style={{ padding:"0 16px 14px", borderTop:`1px solid ${T.border}` }}>
+              {["vanja","oloka","joint"].map(owner=>{
+                const ownerTasks = (recurringTasks||[]).filter(t=>t.owner===owner||(!t.owner&&owner==="joint"));
+                const doneTasks = ownerTasks.filter(t=>{
+                  const doneMap = t.doneByDate||{};
+                  return doneMap[dk];
+                });
+                return (
+                  <div key={owner} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:`1px solid ${T.border}` }}>
+                    <div style={{ width:36, height:36, borderRadius:"50%", border:`2px solid ${owner==="vanja"?T.vanja:owner==="oloka"?T.oloka:T.gold}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ fontSize:9, color:owner==="vanja"?T.vanja:owner==="oloka"?T.oloka:T.gold, fontWeight:900 }}>{doneTasks.length}/{ownerTasks.length}</div>
+                        <div style={{ fontSize:7, color:T.muted, fontWeight:700 }}>done</div>
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize:12, fontWeight:800, color:T.heading }}>{owner.toUpperCase()}</div>
+                      <div style={{ fontSize:10, color:T.muted }}>{doneTasks.length}/{ownerTasks.length} COMPLETE</div>
+                    </div>
+                    <span style={{ fontSize:18, marginLeft:"auto", color:T.faint }}>›</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, marginBottom:12 }}>
+          <button onClick={()=>setShowBacklog(v=>!v)}
+            style={{ width:"100%", padding:"14px 16px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", fontFamily:"inherit" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:16 }}>📥</span>
+              <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>Backlog</span>
+              <span style={{ fontSize:11, color:T.muted }}>Tasks to complete (not scheduled)</span>
+            </div>
+            <span style={{ color:T.muted, fontSize:16 }}>{showBacklog?"▲":"▼"}</span>
+          </button>
+          {showBacklog && (
+            <div style={{ padding:"0 16px 14px", borderTop:`1px solid ${T.border}` }}>
+              {Object.keys(tasksByDate||{}).flatMap(d => (tasksByDate[d]||[]).filter(t=>!t.done&&t.category!=="Event"&&!t.recurring)).slice(0,10).map(task=>(
+                <div key={task.id} style={{ padding:"8px 0", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:task.owner==="vanja"?T.vanja:T.oloka, flexShrink:0 }}/>
+                  <span style={{ fontSize:12, color:T.ink, flex:1 }}>{task.text||task.title}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Mobile Schedule helpers ───────────────────────────────────────────────
+function getMobileCatScheme(block, task) {
+  if (!block) return { bg:"#F3F4F6", border:"#9CA3AF", text:"#374151", label:"Event" };
+  if (block.isBreak) {
+    const l = (block.breakLabel||"").toLowerCase();
+    if (l.includes("lunch")||l.includes("dinner")) return { bg:"#FEE2E2", border:"#EF4444", text:"#991B1B", label:"Lunch" };
+    return { bg:"#FFF7ED", border:"#F97316", text:"#9A3412", label:"Break" };
+  }
+  if (block.isQuickEvent) return { bg:"#DBEAFE", border:"#3B82F6", text:"#1E40AF", label:block.qeTitle||"Event" };
+  const cat = (task?.category||"").toLowerCase();
+  const title = (task?.text||task?.title||"").toLowerCase();
+  const combined = cat + " " + title;
+  if (cat==="social post"||cat==="content capture"||combined.includes("content")||combined.includes("social")||combined.includes("post")||combined.includes("carousel")||combined.includes("caption"))
+    return { bg:"#EDE9FE", border:"#8B5CF6", text:"#4C1D95", label:"Content" };
+  if (cat==="video"||combined.includes("video")||combined.includes("shoot")||combined.includes("edit"))
+    return { bg:"#CCFBF1", border:"#14B8A6", text:"#134E4A", label:"Video" };
+  if (cat==="meeting"||combined.includes("meeting")||combined.includes("standup")||combined.includes("client")||combined.includes("team"))
+    return { bg:"#DBEAFE", border:"#3B82F6", text:"#1E40AF", label:"Meeting" };
+  if (combined.includes("approval")||cat==="approvals")
+    return { bg:"#F3E8FF", border:"#A855F7", text:"#6B21A8", label:"Approvals" };
+  if (combined.includes("lunch")||combined.includes("personal")||combined.includes("break"))
+    return { bg:"#FEE2E2", border:"#EF4444", text:"#991B1B", label:"Personal" };
+  if (combined.includes("plan")||combined.includes("review")||combined.includes("brain")||combined.includes("calendar"))
+    return { bg:"#DCFCE7", border:"#22C55E", text:"#14532D", label:"Planning" };
+  if (cat==="admin"||cat==="ai"||cat==="website"||combined.includes("admin"))
+    return { bg:"#FEF3C7", border:"#F59E0B", text:"#92400E", label:"Admin" };
+  const oc = block.owner==="vanja" ? "#8B5CF6" : "#10B981";
+  return { bg:oc+"22", border:oc, text:oc, label:"Task" };
+}
+
+function buildTasksById(tasksByDate) {
+  const m = {};
+  for (const date of Object.keys(tasksByDate||{})) {
+    for (const t of (tasksByDate[date]||[])) m[t.id] = t;
+  }
+  return m;
+}
+
+// ─── Sticky date bar ────────────────────────────────────────────────────────
+function MobileStickyDateBar({ selDateKey, setSelDateKey, schedule, tasksByDate }) {
+  const todayKey = isoDate(today());
+  // Show 14 days: 3 before today up to 10 after
+  const days = Array.from({length:14}, (_,i) => {
+    const d = new Date(todayKey+"T12:00:00");
+    d.setDate(d.getDate() - 3 + i);
+    return d;
+  });
+  const DAY_NAMES = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
+  const scrollRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!scrollRef.current) return;
+    const idx = days.findIndex(d => isoDate(d) === selDateKey);
+    if (idx >= 0) scrollRef.current.scrollLeft = Math.max(0, idx*60 - 120);
+  }, [selDateKey]);
+  return (
+    <div style={{ background:T.cardBg, borderBottom:`1px solid ${T.border}`, position:"sticky", top:0, zIndex:50 }}>
+      <div ref={scrollRef} style={{ overflowX:"auto", display:"flex", gap:4, padding:"10px 12px 8px", scrollbarWidth:"none", WebkitOverflowScrolling:"touch" }}>
+        {days.map(d => {
+          const dk = isoDate(d);
+          const isSel = dk === selDateKey;
+          const isToday = dk === todayKey;
+          const hasBlocks = Object.keys((schedule[dk]||{})).some(owner => ((schedule[dk]||{})[owner]||[]).length > 0);
+          return (
+            <button key={dk} onClick={()=>setSelDateKey(dk)}
+              style={{ flexShrink:0, width:54, padding:"6px 0 8px", borderRadius:12, border:`2px solid ${isSel?T.navy:"transparent"}`, background:isSel?T.navy:"transparent", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, fontFamily:"inherit" }}>
+              <span style={{ fontSize:9, fontWeight:700, letterSpacing:"0.05em", color:isSel?"rgba(255,255,255,0.65)":T.muted }}>{DAY_NAMES[d.getDay()]}</span>
+              <span style={{ width:34, height:34, borderRadius:"50%", background:isSel?"rgba(255,255,255,0.15)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:isSel?"#fff":isToday?T.gold:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{d.getDate()}</span>
+              <div style={{ width:6, height:6, borderRadius:"50%", background:hasBlocks?(isSel?"rgba(255,255,255,0.5)":T.gold):"transparent" }}/>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── View tabs ───────────────────────────────────────────────────────────────
+function MobileSchedViewTabs({ view, setView }) {
+  return (
+    <div style={{ display:"flex", gap:6, padding:"10px 12px 8px", background:T.cardBg, borderBottom:`1px solid ${T.border}` }}>
+      {[["day","Day"],["week","Week"],["month","Month"],["agenda","Agenda"]].map(([k,l])=>(
+        <button key={k} onClick={()=>setView(k)}
+          style={{ flex:1, padding:"9px 0", borderRadius:10, border:`1.5px solid ${view===k?T.navy:"transparent"}`, background:view===k?T.navy:"transparent", color:view===k?"#fff":T.muted, fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Day View ───────────────────────────────────────────────────────────────
+function MobileDayView({ dk, schedule, tasksByDate, tasksByIdRef, todayUser }) {
+  const dayBlocks = [
+    ...((schedule[dk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})),
+    ...((schedule[dk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})),
+  ].sort((a,b)=>(a.startMin||0)-(b.startMin||0));
+
+  const todayKey = isoDate(today());
+  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+  const isToday = dk === todayKey;
+  const totalMin = dayBlocks.reduce((s,b)=>s+(b.durationMin||30),0);
+  const tasksDayArr = (tasksByDate[dk]||[]).filter(t=>t.category!=="Event"&&!t.recurring);
+  const done = tasksDayArr.filter(t=>t.done).length;
+  const pct = tasksDayArr.length > 0 ? Math.round(done/tasksDayArr.length*100) : 0;
+  const dayLeft = isToday ? Math.max(0, SCHED_END*60 - nowMin) : 0;
+
+  // group blocks by hour
+  const byHour = {};
+  for (let h = SCHED_START; h < SCHED_END; h++) {
+    byHour[h] = dayBlocks.filter(b => {
+      const bh = Math.floor((b.startMin||0)/60);
+      return bh === h;
+    });
+  }
+
+  // upcoming: next 3 days with blocks
+  const upcoming = [];
+  for (let i = 1; i <= 14 && upcoming.length < 3; i++) {
+    const nd = addDays(new Date(dk+"T12:00:00"), i);
+    const ndk = isoDate(nd);
+    const nBlocks = [
+      ...((schedule[ndk]||{}).vanja||[]),
+      ...((schedule[ndk]||{}).oloka||[]),
+    ].sort((a,b)=>(a.startMin||0)-(b.startMin||0));
+    if (nBlocks.length > 0) {
+      upcoming.push({ dk:ndk, d:nd, block:nBlocks[0] });
+    }
+  }
+
+  return (
+    <div style={{ padding:"0 0 24px" }}>
+      {/* Day header */}
+      <div style={{ padding:"12px 16px 8px", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>
+            {new Date(dk+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+          </div>
+          {isToday && <div style={{ fontSize:11, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeft/60)}h {dayLeft%60}m left in day</div>}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display:"flex", gap:8, padding:"0 12px 12px", overflowX:"auto", scrollbarWidth:"none" }}>
+        {[
+          { v:`${dayBlocks.filter(b=>!b.isBreak).length}`, l:"Planned", sub:`${Math.round(dayBlocks.filter(b=>!b.isBreak).length/(SCHED_END-SCHED_START)*100)}% of day`, c:T.navy, icon:"📅" },
+          { v:`${tasksDayArr.length}`, l:"Tasks", sub:"Total", c:T.heading, icon:"✅" },
+          { v:`${pct}%`, l:"Complete", sub:"Est. completion", c:"#10B981", icon:"🎯" },
+          { v:`${Math.floor(totalMin/60)}h ${totalMin%60}m`, l:"Total Planned", sub:"Focused time", c:T.gold, icon:"⏱" },
+        ].map(s=>(
+          <div key={s.l} style={{ flexShrink:0, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, padding:"12px 14px", minWidth:100 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+              <span style={{ fontSize:16 }}>{s.icon}</span>
+              <span style={{ fontSize:20, fontWeight:900, color:s.c, fontFamily:"'ProximaNova Black',sans-serif" }}>{s.v}</span>
+            </div>
+            <div style={{ fontSize:11, fontWeight:800, color:T.ink }}>{s.l}</div>
+            <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Timeline */}
+      <div style={{ padding:"0 12px" }}>
+        {Array.from({length: SCHED_END - SCHED_START}, (_,i) => {
+          const h = SCHED_START + i;
+          const blocks = byHour[h] || [];
+          const showNowLine = isToday && nowMin >= h*60 && nowMin < (h+1)*60;
+          return (
+            <div key={h} style={{ display:"flex", gap:10, minHeight: blocks.length > 0 ? "auto" : 40 }}>
+              {/* Hour label */}
+              <div style={{ width:36, flexShrink:0, paddingTop:4 }}>
+                <span style={{ fontSize:10, fontWeight:700, color:T.muted }}>{fmtTime(h*60)}</span>
+              </div>
+              {/* Events + now line */}
+              <div style={{ flex:1, borderLeft:`1px solid ${T.border}`, paddingLeft:10, paddingBottom:4, position:"relative" }}>
+                {showNowLine && (
+                  <div style={{ position:"absolute", top:`${((nowMin - h*60)/60)*100}%`, left:-1, right:0, height:2, background:"#EF4444", zIndex:5, display:"flex", alignItems:"center" }}>
+                    <div style={{ width:8, height:8, borderRadius:"50%", background:"#EF4444", marginLeft:-4 }}/>
+                    <span style={{ fontSize:9, color:"#EF4444", fontWeight:800, marginLeft:4 }}>{fmtTime(nowMin)}</span>
+                  </div>
+                )}
+                {blocks.map((block, bi) => {
+                  const task = tasksByIdRef[block.taskId];
+                  const scheme = getMobileCatScheme(block, task);
+                  const label = block.isBreak ? block.breakLabel : (task?.text || task?.title || block.qeTitle || "Event");
+                  const ownerInitial = block.owner === "vanja" ? "V" : "O";
+                  const ownerColor = block.owner === "vanja" ? T.vanja : T.oloka;
+                  return (
+                    <div key={bi} style={{ background:scheme.bg, border:`1px solid ${scheme.border}22`, borderLeft:`3px solid ${scheme.border}`, borderRadius:"0 10px 10px 0", padding:"8px 10px", marginBottom:4, marginTop: bi===0 && showNowLine ? 12 : 0 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:11, fontWeight:700, color:scheme.border, marginBottom:2 }}>{fmtTime(block.startMin)}</div>
+                          <div style={{ fontSize:13, fontWeight:800, color:T.heading, lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{label}</div>
+                        </div>
+                        <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, marginLeft:8, flexShrink:0 }}>
+                          <span style={{ fontSize:9, fontWeight:800, color:scheme.border, background:scheme.border+"18", padding:"2px 7px", borderRadius:20, whiteSpace:"nowrap" }}>{scheme.label.toUpperCase()}</span>
+                          <div style={{ width:20, height:20, borderRadius:"50%", background:ownerColor, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                            <span style={{ fontSize:9, color:"#fff", fontWeight:800 }}>{ownerInitial}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {blocks.length === 0 && <div style={{ height:8 }}/>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Upcoming */}
+      {upcoming.length > 0 && (
+        <div style={{ margin:"16px 12px 0" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <span style={{ fontSize:14, fontWeight:800, color:T.heading }}>Upcoming</span>
+            <span style={{ fontSize:11, color:T.gold, fontWeight:700 }}>View all</span>
+          </div>
+          <div style={{ display:"flex", gap:8, overflowX:"auto", scrollbarWidth:"none" }}>
+            {upcoming.map(({dk:udk, d:ud, block:ub},i) => {
+              const task = tasksByIdRef[ub.taskId];
+              const scheme = getMobileCatScheme(ub, task);
+              const label = ub.isBreak ? ub.breakLabel : (task?.text || task?.title || ub.qeTitle || "Event");
+              const isNext = i===0;
+              const dayLabel = (() => {
+                const diff = Math.round((new Date(udk+"T12:00:00") - new Date(dk+"T12:00:00"))/(1000*60*60*24));
+                if (diff===1) return "Tomorrow";
+                return ud.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"});
+              })();
+              return (
+                <div key={udk} style={{ flexShrink:0, width:160, background:T.cardBg, border:`1px solid ${scheme.border}44`, borderLeft:`3px solid ${scheme.border}`, borderRadius:"0 12px 12px 0", padding:"10px 12px" }}>
+                  <div style={{ fontSize:10, color:T.muted, fontWeight:600, marginBottom:4 }}>{dayLabel}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+                    <span style={{ fontSize:16 }}>🕐</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:scheme.border }}>{fmtTime(ub.startMin)}</span>
+                  </div>
+                  <div style={{ fontSize:12, fontWeight:800, color:T.heading, lineHeight:1.3 }}>{label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Week View ───────────────────────────────────────────────────────────────
+function MobileWeekView({ dk, setSelDateKey, setView, schedule, tasksByDate }) {
+  // Get Monday of the week containing dk
+  const base = new Date(dk+"T12:00:00");
+  const dow = (base.getDay() + 6) % 7; // 0=Mon
+  const monday = addDays(base, -dow);
+  const weekDays = Array.from({length:7}, (_,i) => addDays(monday, i));
+  const todayKey = isoDate(today());
+
+  const weekTotal = weekDays.reduce((s,d)=>{
+    const wdk = isoDate(d);
+    const blocks = [...((schedule[wdk]||{}).vanja||[]),...((schedule[wdk]||{}).oloka||[])];
+    return s + blocks.reduce((ss,b)=>ss+(b.durationMin||30),0);
+  },0);
+
+  return (
+    <div style={{ padding:"12px 12px 24px" }}>
+      {/* Week stats */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0 16px" }}>
+        <div>
+          <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{Math.floor(weekTotal/60)}h {weekTotal%60}m planned</div>
+          <div style={{ fontSize:11, color:T.muted }}>{monday.getDate()} – {addDays(monday,6).getDate()} {MONTHS[addDays(monday,6).getMonth()].slice(0,3)} {addDays(monday,6).getFullYear()}</div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={()=>setSelDateKey(isoDate(addDays(monday,-7)))}
+            style={{ width:32, height:32, borderRadius:"50%", border:`1px solid ${T.border}`, background:T.cardBg, cursor:"pointer", fontFamily:"inherit", fontSize:14 }}>‹</button>
+          <button onClick={()=>setSelDateKey(isoDate(addDays(monday,7)))}
+            style={{ width:32, height:32, borderRadius:"50%", border:`1px solid ${T.border}`, background:T.cardBg, cursor:"pointer", fontFamily:"inherit", fontSize:14 }}>›</button>
+        </div>
+      </div>
+
+      {/* Day cards */}
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {weekDays.map(d => {
+          const wdk = isoDate(d);
+          const isToday = wdk === todayKey;
+          const isSel = wdk === dk;
+          const blocks = [
+            ...((schedule[wdk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})),
+            ...((schedule[wdk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})),
+          ].sort((a,b)=>(a.startMin||0)-(b.startMin||0));
+          const taskCount = (tasksByDate[wdk]||[]).filter(t=>t.category!=="Event"&&!t.recurring).length;
+          const totalMin = blocks.reduce((s,b)=>s+(b.durationMin||30),0);
+          const DAY_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+          const dayIdx = (d.getDay()+6)%7;
+          return (
+            <button key={wdk} onClick={()=>{ setSelDateKey(wdk); setView("day"); }}
+              style={{ background:isSel?T.navy:T.cardBg, border:`1.5px solid ${isSel?T.navy:isToday?T.gold:T.border}`, borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left", fontFamily:"inherit", display:"flex", alignItems:"center", gap:12 }}>
+              {/* Day label */}
+              <div style={{ width:44, textAlign:"center", flexShrink:0 }}>
+                <div style={{ fontSize:10, fontWeight:700, color:isSel?"rgba(255,255,255,0.65)":T.muted, marginBottom:2 }}>{DAY_NAMES[dayIdx].toUpperCase()}</div>
+                <div style={{ width:36, height:36, borderRadius:"50%", background:isToday&&!isSel?T.gold:isSel?"rgba(255,255,255,0.15)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:900, color:isSel?"#fff":isToday?"#fff":T.heading, fontFamily:"'ProximaNova Black',sans-serif", margin:"0 auto" }}>{d.getDate()}</div>
+              </div>
+              {/* Day stats */}
+              <div style={{ flex:1 }}>
+                {blocks.length > 0 ? (
+                  <>
+                    <div style={{ fontSize:13, fontWeight:800, color:isSel?"#fff":T.heading, marginBottom:4 }}>{blocks.filter(b=>!b.isBreak).length} Tasks · {Math.floor(totalMin/60)}h{totalMin%60>0?` ${totalMin%60}m`:""} Planned</div>
+                    <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                      {blocks.slice(0,3).map((b,i) => {
+                        const scheme = getMobileCatScheme(b, null);
+                        return <span key={i} style={{ fontSize:9, fontWeight:700, color:isSel?scheme.border+"CC":scheme.border, background:isSel?"rgba(255,255,255,0.1)":scheme.bg, padding:"2px 6px", borderRadius:20 }}>{fmtTime(b.startMin)}</span>;
+                      })}
+                      {blocks.length > 3 && <span style={{ fontSize:9, color:isSel?"rgba(255,255,255,0.5)":T.muted }}>+{blocks.length-3} more</span>}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize:12, color:isSel?"rgba(255,255,255,0.5)":T.faint, fontStyle:"italic" }}>Nothing planned</div>
+                )}
+              </div>
+              <span style={{ fontSize:18, color:isSel?"rgba(255,255,255,0.5)":T.faint }}>›</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Month View ───────────────────────────────────────────────────────────────
+function MobileMonthView({ dk, setSelDateKey, setView, schedule, tasksByDate }) {
+  const baseDate = new Date(dk+"T12:00:00");
+  const [monthOffset, setMonthOffset] = useSh(0);
+  const year = baseDate.getFullYear();
+  const month = (baseDate.getMonth() + monthOffset + 12) % 12;
+  const yearAdj = year + Math.floor((baseDate.getMonth() + monthOffset) / 12);
+  const firstDay = new Date(yearAdj, month, 1);
+  const startDow = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(yearAdj, month+1, 0).getDate();
+  const todayKey = isoDate(today());
+
+  // Build cells
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  // Month stats
+  let monthBlocks = 0, monthMin = 0, monthDone = 0, monthTotal = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const mdk = isoDate(new Date(yearAdj,month,d));
+    const blocks = [...((schedule[mdk]||{}).vanja||[]),...((schedule[mdk]||{}).oloka||[])];
+    monthBlocks += blocks.length;
+    monthMin += blocks.reduce((s,b)=>s+(b.durationMin||30),0);
+    const tasks = (tasksByDate[mdk]||[]).filter(t=>t.category!=="Event"&&!t.recurring);
+    monthTotal += tasks.length;
+    monthDone += tasks.filter(t=>t.done).length;
+  }
+  const monthPct = monthTotal > 0 ? Math.round(monthDone/monthTotal*100) : 0;
+
+  return (
+    <div style={{ padding:"0 8px 24px" }}>
+      {/* Month header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 4px 12px" }}>
+        <button onClick={()=>setMonthOffset(o=>o-1)} style={{ width:32,height:32,borderRadius:"50%",border:`1px solid ${T.border}`,background:T.cardBg,cursor:"pointer",fontFamily:"inherit",fontSize:14 }}>‹</button>
+        <span style={{ fontSize:17, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{MONTHS[month]} {yearAdj}</span>
+        <button onClick={()=>setMonthOffset(o=>o+1)} style={{ width:32,height:32,borderRadius:"50%",border:`1px solid ${T.border}`,background:T.cardBg,cursor:"pointer",fontFamily:"inherit",fontSize:14 }}>›</button>
+      </div>
+
+      {/* Day headers */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2, marginBottom:4 }}>
+        {["M","T","W","T","F","S","S"].map((d,i)=>(
+          <div key={i} style={{ textAlign:"center", fontSize:10, fontWeight:700, color:T.muted, padding:"4px 0" }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2 }}>
+        {cells.map((d, i) => {
+          if (!d) return <div key={i}/>;
+          const mdk = isoDate(new Date(yearAdj,month,d));
+          const isToday = mdk === todayKey;
+          const isSel = mdk === dk;
+          const blocks = [...((schedule[mdk]||{}).vanja||[]),...((schedule[mdk]||{}).oloka||[])].sort((a,b)=>(a.startMin||0)-(b.startMin||0));
+          const tasks = (tasksByDate[mdk]||[]).filter(t=>t.category!=="Event"&&!t.recurring);
+          const donePct = tasks.length>0 ? Math.round(tasks.filter(t=>t.done).length/tasks.length*100) : 0;
+          return (
+            <button key={i} onClick={()=>{ setSelDateKey(mdk); setView("day"); }}
+              style={{ background:isSel?T.navy:T.cardBg, border:`1.5px solid ${isSel?T.navy:isToday?T.gold:T.border}`, borderRadius:10, padding:"6px 4px", cursor:"pointer", fontFamily:"inherit", minHeight:72, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+              <span style={{ fontSize:13, fontWeight:900, color:isSel?"#fff":isToday?T.gold:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{d}</span>
+              {blocks.length>0 && (
+                <>
+                  <div style={{ display:"flex", gap:2, justifyContent:"center", flexWrap:"wrap" }}>
+                    {blocks.slice(0,3).map((b,bi)=>{
+                      const scheme = getMobileCatScheme(b,null);
+                      return <div key={bi} style={{ width:5, height:5, borderRadius:"50%", background:isSel?"rgba(255,255,255,0.6)":scheme.border }}/>;
+                    })}
+                  </div>
+                  <span style={{ fontSize:8, fontWeight:700, color:isSel?"rgba(255,255,255,0.7)":T.muted, lineHeight:1 }}>{blocks.length} task{blocks.length!==1?"s":""}</span>
+                  {donePct>0 && <span style={{ fontSize:8, fontWeight:700, color:isSel?"rgba(255,255,255,0.6)":"#10B981" }}>{donePct}%</span>}
+                </>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Month summary */}
+      <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, padding:"16px", marginTop:16 }}>
+        <div style={{ fontSize:13, fontWeight:800, color:T.heading, marginBottom:12 }}>{MONTHS[month]} Overview</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          {[
+            { l:"Tasks Planned", v:monthBlocks },
+            { l:"Avg Daily Hours", v:`${Math.floor((monthMin/daysInMonth)/60)}h ${Math.round((monthMin/daysInMonth)%60)}m` },
+            { l:"Completion Rate", v:`${monthPct}%`, c:"#10B981" },
+            { l:"Total Hours", v:`${Math.floor(monthMin/60)}h ${monthMin%60}m`, c:T.gold },
+          ].map(s=>(
+            <div key={s.l}>
+              <div style={{ fontSize:18, fontWeight:900, color:s.c||T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{s.v}</div>
+              <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Agenda View ─────────────────────────────────────────────────────────────
+function MobileAgendaView({ dk, schedule, tasksByDate, tasksByIdRef }) {
+  // Show 14 days from dk
+  const days = Array.from({length:14}, (_,i) => {
+    const d = addDays(new Date(dk+"T12:00:00"), i);
+    return d;
+  });
+  const todayKey = isoDate(today());
+
+  const agendaDays = days.map(d => {
+    const adk = isoDate(d);
+    const blocks = [
+      ...((schedule[adk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})),
+      ...((schedule[adk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})),
+    ].sort((a,b)=>(a.startMin||0)-(b.startMin||0)).filter(b => b.startMin !== undefined);
+    return { d, dk:adk, blocks };
+  }).filter(x => x.blocks.length > 0);
+
+  if (agendaDays.length === 0) return (
+    <div style={{ padding:32, textAlign:"center" }}>
+      <div style={{ fontSize:32, marginBottom:12 }}>📅</div>
+      <div style={{ fontSize:14, color:T.muted }}>Nothing scheduled in the next 2 weeks</div>
+    </div>
+  );
+
+  return (
+    <div style={{ padding:"8px 12px 24px" }}>
+      {agendaDays.map(({d, dk:adk, blocks}) => {
+        const isToday = adk === todayKey;
+        const isTomorrow = adk === isoDate(addDays(new Date(todayKey+"T12:00:00"),1));
+        const dayLabel = isToday ? "TODAY" : isTomorrow ? "TOMORROW" : d.toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"}).toUpperCase();
+        return (
+          <div key={adk} style={{ marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+              <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:isToday?T.gold:T.muted }}>{dayLabel}</span>
+              <div style={{ flex:1, height:1, background:T.border }}/>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {blocks.map((block,bi) => {
+                const task = tasksByIdRef[block.taskId];
+                const scheme = getMobileCatScheme(block, task);
+                const label = block.isBreak ? block.breakLabel : (task?.text || task?.title || block.qeTitle || "Event");
+                return (
+                  <div key={bi} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+                    <div style={{ width:48, flexShrink:0, paddingTop:10, textAlign:"right" }}>
+                      <span style={{ fontSize:11, fontWeight:700, color:T.muted }}>{fmtTime(block.startMin)}</span>
+                    </div>
+                    <div style={{ flex:1, background:scheme.bg, borderLeft:`3px solid ${scheme.border}`, borderRadius:"0 10px 10px 0", padding:"10px 12px" }}>
+                      <div style={{ fontSize:13, fontWeight:800, color:T.heading, marginBottom:3 }}>{label}</div>
+                      <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                        <span style={{ fontSize:9, fontWeight:700, color:scheme.border, background:scheme.border+"18", padding:"1px 6px", borderRadius:20 }}>{scheme.label.toUpperCase()}</span>
+                        <span style={{ fontSize:9, color:T.muted }}>{block.durationMin||30}m</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main MobileSchedulePage ─────────────────────────────────────────────────
+function MobileSchedulePage({ selDate, setSelDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans, setSchedSpans, todayUser }) {
+  const [view, setView] = useSh("day");
+  const todayKey = isoDate(today());
+  const [selDateKey, setSelDateKeyRaw] = useSh(() => selDate ? isoDate(selDate instanceof Date ? selDate : new Date(selDate)) : todayKey);
+
+  const setSelDateKey = (dk) => {
+    setSelDateKeyRaw(dk);
+    if (setSelDate) setSelDate(new Date(dk+"T12:00:00"));
+  };
+
+  const tasksByIdRef = useMh(() => buildTasksById(tasksByDate), [tasksByDate]);
+
+  return (
+    <div style={{ background:T.bg, minHeight:"100%" }}>
+      <MobileStickyDateBar selDateKey={selDateKey} setSelDateKey={setSelDateKey} schedule={schedule} tasksByDate={tasksByDate} />
+      <MobileSchedViewTabs view={view} setView={setView} />
+      {view === "day" && <MobileDayView dk={selDateKey} schedule={schedule} tasksByDate={tasksByDate} tasksByIdRef={tasksByIdRef} todayUser={todayUser} />}
+      {view === "week" && <MobileWeekView dk={selDateKey} setSelDateKey={setSelDateKey} setView={setView} schedule={schedule} tasksByDate={tasksByDate} />}
+      {view === "month" && <MobileMonthView dk={selDateKey} setSelDateKey={setSelDateKey} setView={setView} schedule={schedule} tasksByDate={tasksByDate} />}
+      {view === "agenda" && <MobileAgendaView dk={selDateKey} schedule={schedule} tasksByDate={tasksByDate} tasksByIdRef={tasksByIdRef} />}
+    </div>
+  );
+}
+
+function MobileContentPage({ content, setContent, todayUser, toPostList, setToPostList, ideas, setIdeas }) {
+  return (
+    <div style={{ padding:16 }}>
+      <h2 style={{ fontSize:20, fontWeight:900, color:T.heading, margin:"0 0 16px", fontFamily:"'ProximaNova Black',sans-serif" }}>Content</h2>
+      <p style={{ color:T.muted, fontSize:13 }}>Open desktop mode for full content calendar editing.</p>
+    </div>
+  );
+}
+
+function MobileMorePage({ setForceMobile }) {
+  const items = [
+    { icon:"📧", label:"Emails", desc:"Email templates & campaigns" },
+    { icon:"🎬", label:"Video Schedule", desc:"Video content planning" },
+    { icon:"📊", label:"Plan 2026", desc:"Annual goals & milestones" },
+    { icon:"👥", label:"Team", desc:"Team management" },
+    { icon:"👕", label:"Uniform", desc:"Stock tracking" },
+    { icon:"📚", label:"Resources", desc:"Documents & links" },
+    { icon:"📈", label:"Activity", desc:"Usage & history" },
+    { icon:"🧠", label:"Brain Dump", desc:"Quick capture" },
+    { icon:"✅", label:"Approvals", desc:"Post approvals" },
+  ];
+  return (
+    <div style={{ padding:16 }}>
+      <h2 style={{ fontSize:20, fontWeight:900, color:T.heading, margin:"0 0 16px", fontFamily:"'ProximaNova Black',sans-serif" }}>More</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:2, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
+        {items.map((item,i) => (
+          <div key={item.label} style={{ display:"flex", alignItems:"center", gap:14, padding:"14px 16px", borderBottom:i<items.length-1?`1px solid ${T.border}`:"none" }}>
+            <span style={{ fontSize:20, width:32, textAlign:"center" }}>{item.icon}</span>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:T.heading }}>{item.label}</div>
+              <div style={{ fontSize:11, color:T.muted }}>{item.desc}</div>
+            </div>
+            <span style={{ color:T.faint, fontSize:16 }}>›</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop:20, padding:"14px 16px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14 }}>
+        <button onClick={()=>setForceMobile(false)}
+          style={{ width:"100%", background:T.navy, border:"none", borderRadius:10, color:"#fff", padding:"12px", fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>
+          Switch to Desktop Mode
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, schedule, setSchedule, actualSchedule, setActualSchedule, schedSpans, setSchedSpans, dayNotes, setDayNotes, content, setContent, machinesToPush, setMachinesToPush, toBeCompleted, setToBeCompleted, ongoingJobs, setOngoingJobs, postApprovals, setPostApprovals, toPostList, setToPostList, ideas, setIdeas, staff, avatars, forceMobile, setForceMobile, categories }) {
+  const [mobileTab, setMobileTab] = useS("today");
+
+  return (
+    <div style={{ minHeight:"100vh", background:T.bg, display:"flex", flexDirection:"column", fontFamily:"'Inter', sans-serif", maxWidth:480, margin:"0 auto" }}>
+      <div style={{ flex:1, overflowY:"auto", paddingBottom:70 }}>
+        {mobileTab === "today" && (
+          <MobileTodayPage
+            todayUser={todayUser}
+            tasksByDate={tasksByDate}
+            schedule={schedule}
+            machinesToPush={machinesToPush}
+            setMachinesToPush={setMachinesToPush}
+            setMobileTab={setMobileTab}
+            content={content}
+            postApprovals={postApprovals}
+          />
+        )}
+        {mobileTab === "tasks" && (
+          <MobileTasksPage
+            tasksByDate={tasksByDate}
+            selDate={selDate}
+            setSelDate={setSelDate}
+            onToggle={onToggle}
+            onAdd={onAdd}
+            onDelete={onDelete}
+            onChangePriority={onChangePriority}
+            onChangeOwner={onChangeOwner}
+            onChangeText={onChangeText}
+            onChangeCategory={onChangeCategory}
+            onChangeSubtasks={onChangeSubtasks}
+            onChangeNotes={onChangeNotes}
+            recurringTasks={recurringTasks}
+            setRecurringTasks={setRecurringTasks}
+            todayUser={todayUser}
+            schedule={schedule}
+            toBeCompleted={toBeCompleted}
+            setToBeCompleted={setToBeCompleted}
+          />
+        )}
+        {mobileTab === "schedule" && (
+          <MobileSchedulePage
+            selDate={selDate}
+            setSelDate={setSelDate}
+            tasksByDate={tasksByDate}
+            schedule={schedule}
+            setSchedule={setSchedule}
+            dayNotes={dayNotes}
+            setDayNotes={setDayNotes}
+            actualSchedule={actualSchedule}
+            setActualSchedule={setActualSchedule}
+            schedSpans={schedSpans}
+            setSchedSpans={setSchedSpans}
+            todayUser={todayUser}
+          />
+        )}
+        {mobileTab === "content" && (
+          <MobileContentPage
+            content={content}
+            setContent={setContent}
+            todayUser={todayUser}
+            toPostList={toPostList}
+            setToPostList={setToPostList}
+            ideas={ideas}
+            setIdeas={setIdeas}
+          />
+        )}
+        {mobileTab === "more" && (
+          <MobileMorePage setForceMobile={setForceMobile} />
+        )}
+      </div>
+      <MobileBottomNav mobileTab={mobileTab} setMobileTab={setMobileTab} />
+    </div>
+  );
+}
+
 function App({ onSwitchWorkspace = () => {} }) {
   // ── Persistence: load from localStorage once, save on every change ──
   const LS_KEY = "prontoHQ.state.v1";
@@ -12553,6 +13498,55 @@ function App({ onSwitchWorkspace = () => {} }) {
 
   // Whether the top date strip is shown
   const showDateStrip = tab === "tasks" || tab === "schedule" || tab === "content" || tab === "video";
+
+  if (isMobile) {
+    return (
+      <MobileApp
+        todayUser={todayUser}
+        tasksByDate={tasksByDate}
+        selDate={selDate}
+        setSelDate={setSelDate}
+        onToggle={onToggle}
+        onAdd={onAdd}
+        onDelete={onDeleteTask}
+        onChangePriority={onChangePriority}
+        onChangeOwner={onChangeOwner}
+        onChangeText={onChangeText}
+        onChangeCategory={onChangeCategory}
+        onChangeSubtasks={onChangeSubtasks}
+        onChangeNotes={onChangeNotes}
+        recurringTasks={recurringTasks}
+        setRecurringTasks={setRecurringTasks}
+        schedule={schedule}
+        setSchedule={setSchedule}
+        actualSchedule={actualSchedule}
+        setActualSchedule={setActualSchedule}
+        schedSpans={schedSpans}
+        setSchedSpans={setSchedSpans}
+        dayNotes={dayNotes}
+        setDayNotes={setDayNotes}
+        content={content}
+        setContent={setContent}
+        machinesToPush={machinesToPush}
+        setMachinesToPush={setMachinesToPush}
+        toBeCompleted={toBeCompleted}
+        setToBeCompleted={setToBeCompleted}
+        ongoingJobs={ongoingJobs}
+        setOngoingJobs={setOngoingJobs}
+        postApprovals={postApprovals}
+        setPostApprovals={setPostApprovals}
+        toPostList={toPostList}
+        setToPostList={setToPostList}
+        ideas={ideas}
+        setIdeas={setIdeas}
+        staff={staff}
+        avatars={avatars}
+        forceMobile={forceMobile}
+        setForceMobile={setForceMobile}
+        categories={categories}
+      />
+    );
+  }
 
   return (
     <div style={{ background:T.bg, color:T.ink, minHeight:"100vh", display:"flex", flexDirection:"column", fontFamily:"'Outfit', system-ui, sans-serif" }}>
