@@ -1751,34 +1751,41 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
           <button onClick={() => setAddingRecurring(true)} style={{ padding:"3px 10px", background:"transparent", border:`1px solid ${ORANGE}`, borderRadius:5, color:ORANGE, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
         </div>
         <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:6 }}>
-          {/* Social Post entries — one per content calendar post for this day, fully synced */}
-          {contentEntries.length > 0 ? contentEntries.map((post, idx) => {
-            const postTitle = post.title || post.text || post.caption || "";
-            const isDone = !!post.posted;
-            const toggleDone = () => {
-              const newDone = !isDone;
-              if (setContent) {
-                setContent(prev => {
-                  const dayArr = [...(prev[dateKey] || [])];
-                  dayArr[idx] = { ...dayArr[idx], posted: newDone, status: newDone ? "posted" : (dayArr[idx].status === "posted" ? "ready" : dayArr[idx].status), updatedAt: Date.now() };
-                  return { ...prev, [dateKey]: dayArr };
-                });
-              }
-              if (idx === 0) setRecDone("__socialpost__", newDone);
-            };
-            return (
-              <div key={idx} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-                <OrangeCheckbox done={isDone} onToggle={toggleDone} />
-                <span style={{ fontSize:11, fontWeight:700, color:ORANGE, flexShrink:0 }}>Social Post —</span>
-                <span style={{ fontSize:12, color: isDone ? T.muted : T.ink, flex:1, textDecoration: isDone ? "line-through" : "none", lineHeight:1.3 }}>{postTitle || <em style={{ color:T.faint }}>Untitled post</em>}</span>
-                {!isDone && onAdd && (
-                  <button onClick={() => onAdd(dateKey, { text:"Social Post" + (postTitle?" - "+postTitle:""), owner:"oloka", category:"Social Post", priority:"Normal" })}
-                    title="Add as a task for today"
-                    style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
-                )}
-              </div>
-            );
-          }) : (
+          {/* Social Post — always a single row, pulls from content calendar */}
+          {(() => {
+            // Find the first unposted entry; fall back to the first entry overall
+            const activeIdx = contentEntries.findIndex(p => !p.posted);
+            const idx = activeIdx >= 0 ? activeIdx : 0;
+            const post = contentEntries[idx];
+            if (post) {
+              const postTitle = post.title || post.text || post.caption || "";
+              const isDone = !!post.posted;
+              const toggleDone = () => {
+                const newDone = !isDone;
+                if (setContent) {
+                  setContent(prev => {
+                    const dayArr = [...(prev[dateKey] || [])];
+                    dayArr[idx] = { ...dayArr[idx], posted: newDone, status: newDone ? "posted" : (dayArr[idx].status === "posted" ? "ready" : dayArr[idx].status), updatedAt: Date.now() };
+                    return { ...prev, [dateKey]: dayArr };
+                  });
+                }
+                setRecDone("__socialpost__", newDone);
+              };
+              return (
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+                  <OrangeCheckbox done={isDone} onToggle={toggleDone} />
+                  <span style={{ fontSize:11, fontWeight:700, color:ORANGE, flexShrink:0 }}>Social Post —</span>
+                  <span style={{ fontSize:12, color: isDone ? T.muted : T.ink, flex:1, textDecoration: isDone ? "line-through" : "none", lineHeight:1.3 }}>{postTitle || <em style={{ color:T.faint }}>Untitled post</em>}</span>
+                  {!isDone && onAdd && (
+                    <button onClick={() => onAdd(dateKey, { text:"Social Post" + (postTitle?" - "+postTitle:""), owner:"oloka", category:"Social Post", priority:"Normal" })}
+                      title="Add as a task for today"
+                      style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                  )}
+                </div>
+              );
+            }
+          })()}
+          {contentEntries.length === 0 && (
             <div style={{ marginBottom:6 }}>
               <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:3 }}>
                 <OrangeCheckbox done={socialPostDone} onToggle={() => setRecDone("__socialpost__", !socialPostDone)} />
@@ -12231,7 +12238,6 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
           <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>Tasks <span style={{ background:T.navy, color:"#fff", borderRadius:20, padding:"1px 8px", fontSize:11 }}>{filtered.length}</span></span>
           <div style={{ display:"flex", gap:6 }}>
-            <button onClick={()=>{ setSchedMode("break"); setSchedulingTask({}); }} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, padding:"6px 12px", cursor:"pointer", fontWeight:700, fontSize:12, fontFamily:"inherit" }}>☕ Break</button>
             <button style={{ background:T.navy, border:"none", borderRadius:8, color:"#fff", padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:12, fontFamily:"inherit" }} onClick={()=>setAddingTask(true)}>+ Task</button>
           </div>
         </div>
@@ -12610,12 +12616,41 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
   const [dragging, setDragging] = useS(null);
   const [resizing, setResizing] = useS(null);
   const [editingBlock, setEditingBlock] = useS(null);
+  const [breakSheet, setBreakSheet] = useS(false);
+  const [breakType, setBreakType] = useS("Coffee");
+  const [breakDur, setBreakDur] = useS(30);
+  const [breakStartMin, setBreakStartMin] = useS(null);
   const timelineRef = useR(null);
 
   const dayBlocks = [
     ...((schedule[dk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})),
     ...((schedule[dk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})),
   ].sort((a,b)=>(a.startMin||0)-(b.startMin||0));
+
+  // Compute side-by-side column layout for overlapping blocks (Google Calendar style)
+  const blockLayouts = (() => {
+    if (dayBlocks.length === 0) return [];
+    const colEnds = [];
+    const assignments = dayBlocks.map(block => {
+      const s = block.startMin || 0;
+      const e = s + (block.durationMin || 30);
+      let col = 0;
+      while (col < colEnds.length && colEnds[col] > s) col++;
+      colEnds[col] = e;
+      return { block, col };
+    });
+    return assignments.map(({ block, col }) => {
+      const s = block.startMin || 0;
+      const e = s + (block.durationMin || 30);
+      let maxCol = col;
+      assignments.forEach(({ block: b2, col: c2 }) => {
+        const s2 = b2.startMin || 0;
+        const e2 = s2 + (b2.durationMin || 30);
+        if (s < e2 && e > s2) maxCol = Math.max(maxCol, c2);
+      });
+      return { block, col, totalCols: maxCol + 1 };
+    });
+  })();
 
   const todayKey = isoDate(today());
   const nowMin = new Date().getHours()*60 + new Date().getMinutes();
@@ -12676,6 +12711,35 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
       return next;
     });
     setEditingBlock(null);
+  };
+
+  const updateBlockStartTime = (block, newStartMin) => {
+    if (!setSchedule) return;
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      const owner = block.owner;
+      day[owner] = (day[owner]||[]).map(b =>
+        (b.taskId===block.taskId && b.startMin===block.startMin) ? { ...b, startMin: newStartMin } : b
+      );
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day;
+      return next;
+    });
+    setEditingBlock(null);
+  };
+
+  const addBreakAtTime = (startMin, type, dur) => {
+    if (!setSchedule) return;
+    const breakId = "break_" + Date.now();
+    setSchedule(prev => {
+      const next = { ...prev };
+      const owner = todayUser || "oloka";
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      day[owner] = [...(day[owner]||[]), { breakId, isBreak:true, breakLabel:type, startMin, durationMin:dur, taskId:`break_${startMin}` }].sort((a,b)=>a.startMin-b.startMin);
+      next[dk] = day;
+      return next;
+    });
   };
 
   // --- Drag (move) handlers ---
@@ -12762,11 +12826,14 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
 
   return (
     <div style={{ padding:"0 0 24px" }}>
-      <div style={{ padding:"12px 16px 8px" }}>
-        <div style={{ fontSize:16, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>
-          {new Date(dk+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+      <div style={{ padding:"12px 16px 8px", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>
+            {new Date(dk+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+          </div>
+          {isToday && <div style={{ fontSize:11, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeft/60)}h {dayLeft%60}m left in day</div>}
         </div>
-        {isToday && <div style={{ fontSize:11, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeft/60)}h {dayLeft%60}m left in day</div>}
+        <button onClick={()=>{ setBreakStartMin(null); setBreakSheet(true); }} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, padding:"6px 12px", cursor:"pointer", fontWeight:700, fontSize:12, fontFamily:"inherit", flexShrink:0, marginTop:2 }}>☕ Break</button>
       </div>
 
       <div style={{ display:"flex", gap:8, padding:"0 12px 12px", overflowX:"auto", scrollbarWidth:"none" }}>
@@ -12826,7 +12893,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
           }).filter(Boolean)}
 
           {/* Blocks */}
-          {dayBlocks.map((block, bi) => {
+          {blockLayouts.map(({ block, col, totalCols }, bi) => {
             const task = tasksByIdRef[block.taskId];
             const scheme = getMobileCatScheme(block, task);
             const label = block.isBreak ? block.breakLabel : (task?.text||task?.title||block.qeTitle||"Event");
@@ -12838,18 +12905,28 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
             const displayDur = isResize ? resizing.currentDurationMin : (block.durationMin||30);
             const blockH = Math.max(26, displayDur*MOBILE_PX - 2);
             const isActive = isDrag || isResize;
+            const isOverlapping = totalCols > 1;
+            // Overlap positioning: split the content area (after 44px label) into n equal columns
+            const blockLeft = isOverlapping
+              ? `calc(44px + ${col / totalCols} * (100% - 44px) + ${col > 0 ? 2 : 0}px)`
+              : 44;
+            const blockWidth = isOverlapping
+              ? `calc(${100 / totalCols}% - ${44 / totalCols}px - 4px)`
+              : undefined;
             return (
               <div key={bi}
                 onTouchStart={e => handleBlockTouchStart(e, block)}
                 style={{
                   position:"absolute",
                   top: displayMin*MOBILE_PX,
-                  left:44, right:0, height:blockH,
+                  left: blockLeft,
+                  ...(isOverlapping ? { width: blockWidth } : { right: 0 }),
+                  height:blockH,
                   background:scheme.bg,
                   border:`1px solid ${scheme.border}33`,
                   borderLeft:`3px solid ${scheme.border}`,
                   borderRadius:"0 10px 10px 0",
-                  padding:"3px 8px 16px",
+                  padding:"3px 6px 16px",
                   zIndex: isActive ? 20 : 5,
                   opacity: isDrag ? 0.9 : 1,
                   boxShadow: isActive ? "0 6px 20px rgba(0,0,0,0.25)" : "none",
@@ -12862,8 +12939,9 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                 }}>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:9, fontWeight:700, color:scheme.border, lineHeight:1.2 }}>{fmtTime(displayMin)}{isResize ? ` – ${fmtTime(displayMin+displayDur)}` : ""}</div>
-                  <div style={{ fontSize:12, fontWeight:800, color:T.heading, lineHeight:1.2, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</div>
-                  {displayDur >= 45 && <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
+                  <div style={{ fontSize:isOverlapping ? 11 : 12, fontWeight:800, color:T.heading, lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", textOverflow:"ellipsis" }}>{label}</div>
+                  {displayDur >= 45 && !isOverlapping && <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
+                  {displayDur >= 60 && isOverlapping && <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0, marginLeft:6 }}>
                   <div style={{ width:16, height:16, borderRadius:"50%", background:ownerColor, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -12919,7 +12997,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                 })}
               </div>
               {/* Stepper for fine control */}
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, marginBottom:20 }}>
                 <button onClick={()=>updateBlockDuration(eb, Math.max(15, cur-15))}
                   style={{ width:44, height:44, borderRadius:"50%", border:`2px solid ${T.border}`, background:"transparent", fontSize:22, color:T.ink, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>−</button>
                 <span style={{ fontSize:18, fontWeight:900, color:T.heading, minWidth:60, textAlign:"center", fontFamily:"'ProximaNova Black',sans-serif" }}>
@@ -12928,10 +13006,92 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                 <button onClick={()=>updateBlockDuration(eb, cur+15)}
                   style={{ width:44, height:44, borderRadius:"50%", border:`2px solid ${T.border}`, background:"transparent", fontSize:22, color:T.ink, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>+</button>
               </div>
+              {/* Time picker */}
+              <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>MOVE TO TIME</p>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                {Array.from({length:36}, (_,i) => {
+                  const min = 6*60 + i*30;
+                  const isSel = min === eb.startMin;
+                  return (
+                    <button key={min} onClick={()=>updateBlockStartTime(eb, min)} style={{
+                      flex:"1 0 calc(25% - 4px)", padding:"9px 0", borderRadius:8,
+                      border:`1.5px solid ${isSel ? scheme.border : T.border}`,
+                      background: isSel ? scheme.border : "transparent",
+                      color: isSel ? "#fff" : T.ink,
+                      fontWeight: isSel ? 700 : 400, fontSize:12, cursor:"pointer", fontFamily:"inherit"
+                    }}>{fmtTime(min)}</button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         );
       })()}
+
+      {/* Break sheet */}
+      {breakSheet && (
+        <div style={{ position:"fixed", inset:0, zIndex:400, background:"rgba(0,0,0,0.5)", display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
+          onClick={()=>setBreakSheet(false)}>
+          <div style={{ background:T.cardBg, borderRadius:"18px 18px 0 0", padding:"20px 20px 36px", maxHeight:"85vh", overflowY:"auto" }}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}/>
+            <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 16px", fontFamily:"'ProximaNova Black',sans-serif" }}>Add a Break</p>
+            <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>TYPE</p>
+            <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
+              {[["☕","Coffee"],["🍽","Lunch"],["🚶","Walk"],["😴","Rest"],["📞","Call"]].map(([icon,type])=>(
+                <button key={type} onClick={()=>setBreakType(type)} style={{
+                  flex:"1 0 calc(30% - 6px)", padding:"10px 6px", borderRadius:10,
+                  border:`2px solid ${breakType===type?"#F97316":T.border}`,
+                  background: breakType===type?"#F9731615":"transparent",
+                  color: breakType===type?"#F97316":T.ink,
+                  fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit", textAlign:"center"
+                }}>{icon} {type}</button>
+              ))}
+            </div>
+            <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>DURATION</p>
+            <div style={{ display:"flex", gap:6, marginBottom:16 }}>
+              {[[15,"15m"],[20,"20m"],[30,"30m"],[45,"45m"],[60,"1h"]].map(([m,l])=>(
+                <button key={m} onClick={()=>setBreakDur(m)} style={{
+                  flex:1, padding:"9px 0", borderRadius:10,
+                  border:`2px solid ${breakDur===m?"#F97316":T.border}`,
+                  background: breakDur===m?"#F9731615":"transparent",
+                  color: breakDur===m?"#F97316":T.ink,
+                  fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"
+                }}>{l}</button>
+              ))}
+            </div>
+            <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>START TIME</p>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:20 }}>
+              {Array.from({length:36}, (_,i) => {
+                const min = 6*60 + i*30;
+                const isSel = breakStartMin === min;
+                return (
+                  <button key={min} onClick={()=>setBreakStartMin(min)} style={{
+                    flex:"1 0 calc(25% - 4px)", padding:"9px 0", borderRadius:8,
+                    border:`1.5px solid ${isSel?"#F97316":T.border}`,
+                    background: isSel?"#F9731615":"transparent",
+                    color: isSel?"#F97316":T.ink,
+                    fontWeight: isSel?700:400, fontSize:12, cursor:"pointer", fontFamily:"inherit"
+                  }}>{fmtTime(min)}</button>
+                );
+              })}
+            </div>
+            <button onClick={()=>{
+              if (breakStartMin !== null) {
+                addBreakAtTime(breakStartMin, breakType, breakDur);
+                setBreakSheet(false);
+                setBreakStartMin(null);
+              }
+            }} style={{
+              width:"100%", padding:"14px 0", borderRadius:12, border:"none",
+              background: breakStartMin !== null ? "#F97316" : T.border,
+              color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", fontFamily:"inherit"
+            }}>
+              {breakStartMin !== null ? `Add ${breakDur}m ${breakType} at ${fmtTime(breakStartMin)}` : "Pick a time above"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Task picker sheet */}
       {pickingMin !== null && (() => {
@@ -13591,6 +13751,23 @@ function MobileMorePage({ setForceMobile }) {
 
 function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, schedule, setSchedule, actualSchedule, setActualSchedule, schedSpans, setSchedSpans, dayNotes, setDayNotes, content, setContent, machinesToPush, setMachinesToPush, toBeCompleted, setToBeCompleted, ongoingJobs, setOngoingJobs, postApprovals, setPostApprovals, toPostList, setToPostList, ideas, setIdeas, staff, avatars, forceMobile, setForceMobile, categories, getState, applyState, syncRef, chatAs, setOnlineUsers }) {
   const [mobileTab, setMobileTab] = useS("today");
+  const popstateRef = useR(false);
+
+  useE(() => {
+    window.history.replaceState({ mTab: "today" }, '');
+    window.history.pushState({ mTab: "today" }, '');
+    const handler = (e) => {
+      popstateRef.current = true;
+      setMobileTab(e.state?.mTab || "today");
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, []);
+
+  useE(() => {
+    if (popstateRef.current) { popstateRef.current = false; return; }
+    window.history.pushState({ mTab: mobileTab }, '');
+  }, [mobileTab]);
 
   return (
     <div style={{ minHeight:"100vh", background:T.bg, display:"flex", flexDirection:"column", fontFamily:"'Inter', sans-serif", maxWidth:480, margin:"0 auto" }}>
