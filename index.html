@@ -1658,7 +1658,7 @@ Object.assign(window, { SyncButton, PresenceAvatars });
 const { useState: useStateV, useRef: useRefV, useEffect: useEffectV, useMemo: useMemoV } = React;
 
 // ── ONGOING SECTION: recurring tasks, to-be-completed, ongoing jobs ──
-function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, dayNotes, setDayNotes, dateKey, staff, content, onAdd }) {
+function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, dayNotes, setDayNotes, dateKey, staff, content, setContent, onAdd }) {
   const [addingRecurring, setAddingRecurring] = useStateV(false);
   const [newRecurText, setNewRecurText] = useStateV("");
   const [newRecurOwner, setNewRecurOwner] = useStateV("oloka");
@@ -1751,34 +1751,50 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
           <button onClick={() => setAddingRecurring(true)} style={{ padding:"3px 10px", background:"transparent", border:`1px solid ${ORANGE}`, borderRadius:5, color:ORANGE, fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
         </div>
         <div style={{ padding:"8px 14px", display:"flex", flexDirection:"column", gap:6 }}>
-          {/* Social Post — links to content calendar */}
-          <div style={{ marginBottom:6 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:3 }}>
-              <OrangeCheckbox done={socialPostDone} onToggle={() => setRecDone("__socialpost__", !socialPostDone)} />
-              <span style={{ fontSize:11, fontWeight:700, color:ORANGE, flexShrink:0 }}>Social Post —</span>
-              <input
-                value={socialPostText}
-                onChange={e => setSocialPostText(e.target.value)}
-                placeholder={contentCalLabel || "Enter post content…"}
-                style={{
-                  flex:1, padding:"3px 7px",
-                  border:`1px solid ${socialPostDone ? T.border : ORANGE+"55"}`,
-                  borderRadius:4, fontSize:11, color:T.ink, background:T.bg,
-                  outline:"none", fontFamily:"inherit",
-                  textDecoration: socialPostDone ? "line-through" : "none",
-                  opacity: socialPostDone ? 0.6 : 1,
-                }}
-              />
-              {onAdd && !socialPostDone && (
-                <button onClick={() => onAdd(dateKey, { text:"Social Post" + (socialPostText?" - "+socialPostText:""), owner:"oloka", category:"Social Post", priority:"Normal" })}
-                  title="Add as a task for today"
-                  style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
-              )}
+          {/* Social Post entries — one per content calendar post for this day, fully synced */}
+          {contentEntries.length > 0 ? contentEntries.map((post, idx) => {
+            const postTitle = post.title || post.text || post.caption || "";
+            const isDone = !!post.posted;
+            const toggleDone = () => {
+              const newDone = !isDone;
+              if (setContent) {
+                setContent(prev => {
+                  const dayArr = [...(prev[dateKey] || [])];
+                  dayArr[idx] = { ...dayArr[idx], posted: newDone, status: newDone ? "posted" : (dayArr[idx].status === "posted" ? "ready" : dayArr[idx].status), updatedAt: Date.now() };
+                  return { ...prev, [dateKey]: dayArr };
+                });
+              }
+              if (idx === 0) setRecDone("__socialpost__", newDone);
+            };
+            return (
+              <div key={idx} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+                <OrangeCheckbox done={isDone} onToggle={toggleDone} />
+                <span style={{ fontSize:11, fontWeight:700, color:ORANGE, flexShrink:0 }}>Social Post —</span>
+                <span style={{ fontSize:12, color: isDone ? T.muted : T.ink, flex:1, textDecoration: isDone ? "line-through" : "none", lineHeight:1.3 }}>{postTitle || <em style={{ color:T.faint }}>Untitled post</em>}</span>
+                {!isDone && onAdd && (
+                  <button onClick={() => onAdd(dateKey, { text:"Social Post" + (postTitle?" - "+postTitle:""), owner:"oloka", category:"Social Post", priority:"Normal" })}
+                    title="Add as a task for today"
+                    style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                )}
+              </div>
+            );
+          }) : (
+            <div style={{ marginBottom:6 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:3 }}>
+                <OrangeCheckbox done={socialPostDone} onToggle={() => setRecDone("__socialpost__", !socialPostDone)} />
+                <span style={{ fontSize:11, fontWeight:700, color:ORANGE, flexShrink:0 }}>Social Post —</span>
+                <input value={socialPostText} onChange={e => setSocialPostText(e.target.value)}
+                  placeholder="Enter post content…"
+                  style={{ flex:1, padding:"3px 7px", border:`1px solid ${socialPostDone?T.border:ORANGE+"55"}`, borderRadius:4, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", textDecoration:socialPostDone?"line-through":"none", opacity:socialPostDone?0.6:1 }}
+                />
+                {onAdd && !socialPostDone && (
+                  <button onClick={() => onAdd(dateKey, { text:"Social Post" + (socialPostText?" - "+socialPostText:""), owner:"oloka", category:"Social Post", priority:"Normal" })}
+                    style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
+                )}
+              </div>
+              <div style={{ fontSize:9, color:T.faint, marginLeft:28 }}>No content calendar post for this day</div>
             </div>
-            {contentCalLabel && socialPostOverride === undefined && (
-              <div style={{ fontSize:9, color:T.faint, marginLeft:28 }}>📅 From content calendar · click to edit</div>
-            )}
-          </div>
+          )}
           {/* Built-in RECURRING templates — day-of-week aware */}
           {(() => {
             const dow = new Date(dateKey + "T12:00:00").getDay(); // 0=Sun,1=Mon...
@@ -2099,7 +2115,7 @@ function TaskInspector({ task, dateKey, onClose, onToggle, onChangePriority, onC
 }
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, schedule, onPickDate, avatars }) {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars }) {
   const [personView, setPersonView] = useStateV("both"); // "both"|"vanja"|"oloka"
   const [viewFilter, setViewFilter] = useStateV("all");
   const [activeTag, setActiveTag] = useStateV(null);
@@ -2422,7 +2438,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
             toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
             dayNotes={dayNotes} setDayNotes={setDayNotes}
             dateKey={dateKey} staff={staff || []}
-            content={content} onAdd={onAdd}
+            content={content} setContent={setContent} onAdd={onAdd}
           />
         </div>
         )}
@@ -14624,7 +14640,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             recurringTasks={recurringTasks} setRecurringTasks={setRecurringTasks}
             ongoingJobs={ongoingJobs} setOngoingJobs={setOngoingJobs}
             toBeCompleted={toBeCompleted} setToBeCompleted={setToBeCompleted}
-            content={content}
+            content={content} setContent={setContent}
             schedule={schedule}
             onPickDate={onPickDate}
             avatars={avatars}
