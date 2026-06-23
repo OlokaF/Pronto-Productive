@@ -16170,8 +16170,35 @@ function WorkspaceRouter() {
   return <App onSwitchWorkspace={switchWorkspace} />;
 }
 
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null, info: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { this.setState({ error, info }); console.error("App crash:", error, info); }
+  render() {
+    if (this.state.error) {
+      const T2 = window.__currentTheme || {};
+      return (
+        <div style={{ padding:32, fontFamily:"'ProximaNova',sans-serif", background: T2.bg||"#fff", minHeight:"100vh" }}>
+          <div style={{ maxWidth:600, margin:"0 auto" }}>
+            <div style={{ fontSize:32, marginBottom:8 }}>⚠️</div>
+            <h2 style={{ color:"#EF4444", fontWeight:900, margin:"0 0 8px" }}>Something went wrong</h2>
+            <p style={{ color:"#555", marginBottom:16 }}>The app hit an unexpected error. Copy the message below and share it to get it fixed.</p>
+            <pre style={{ background:"#f4f4f4", border:"1px solid #ddd", borderRadius:8, padding:16, fontSize:11, whiteSpace:"pre-wrap", wordBreak:"break-all", color:"#333", maxHeight:300, overflowY:"auto" }}>
+              {this.state.error?.toString()}{"\n"}{this.state.info?.componentStack}
+            </pre>
+            <button onClick={()=>window.location.reload()} style={{ marginTop:16, padding:"10px 24px", background:"#1E3A5F", color:"#fff", border:"none", borderRadius:8, fontWeight:700, fontSize:14, cursor:"pointer" }}>
+              Reload App
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<PasswordGate><WorkspaceRouter /></PasswordGate>);
+root.render(<AppErrorBoundary><PasswordGate><WorkspaceRouter /></PasswordGate></AppErrorBoundary>);
 
 </script>
 
