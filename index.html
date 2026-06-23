@@ -12742,6 +12742,253 @@ function MobileContentPage({ content, setContent, todayUser, toPostList, setToPo
   );
 }
 
+function MobileHeader({ setForceMobile, getState, applyState, syncRef, chatAs, setOnlineUsers }) {
+  const [showSheet, setShowSheet] = useS(false);
+  const [conf, setConf]         = useS(loadFbConf);
+  const [apiKey, setApiKey]     = useS(() => loadFbConf()?.apiKey || "");
+  const [dbUrl, setDbUrl]       = useS(() => loadFbConf()?.databaseURL || "");
+  const [status, setStatus]     = useS("disconnected");
+  const [lastSync, setLastSync] = useS(null);
+  const [errMsg, setErrMsg]     = useS("");
+
+  const dbRef               = useR(null);
+  const myListenerRef       = useR(null);
+  const theirListenerRef    = useR(null);
+  const presListRef         = useR(null);
+  const myPresRef           = useR(null);
+  const writeTimerRef       = useR(null);
+  const pendingState        = useR(null);
+  const localWriteAt        = useR(0);
+  const theirSnapRef        = useR(null);
+  const hasReceivedInitialData = useR(false);
+
+  useE(() => {
+    if (myListenerRef.current) { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
+    if (presListRef.current) { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current) { myPresRef.current.remove(); myPresRef.current = null; }
+    theirSnapRef.current = null;
+    if (!conf || !conf.apiKey || !conf.databaseURL) {
+      setStatus("disconnected"); dbRef.current = null;
+      if (setOnlineUsers) setOnlineUsers([]);
+      return;
+    }
+    hasReceivedInitialData.current = false;
+    setStatus("connecting");
+    const db = tryInitFb(conf);
+    if (!db) { setStatus("error"); setErrMsg("Could not initialise Firebase."); return; }
+    dbRef.current = db;
+    db.ref(".info/connected").on("value", snap => setStatus(snap.val() ? "live" : "connecting"));
+    const identity = chatAs || "vanja";
+    const otherIdentity = identity === "oloka" ? "vanja" : "oloka";
+    const meRef = db.ref(`${FB_PRES_PATH}/${identity}`);
+    myPresRef.current = meRef;
+    meRef.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:identity==="vanja"?T.vanja:T.oloka, online:true, lastSeen:Date.now() });
+    meRef.onDisconnect().remove();
+    const presRef = db.ref(FB_PRES_PATH);
+    const presHandler = snap => { if (setOnlineUsers) setOnlineUsers(Object.values(snap.val() || {})); };
+    presRef.on("value", presHandler);
+    presListRef.current = { ref:presRef, handler:presHandler };
+    const myPath = `${FB_STATE_PATH}/${identity}`;
+    const theirPath = `${FB_STATE_PATH}/${otherIdentity}`;
+    const myRef = db.ref(myPath);
+    const myHandler = snap => {
+      const data = snap.val();
+      if (!data) {
+        if (pendingState.current && dbRef.current) {
+          localWriteAt.current = Date.now();
+          dbRef.current.ref(myPath).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } });
+        }
+        return;
+      }
+      if (Date.now() - localWriteAt.current < 2000) return;
+      const { _meta, ...incoming } = data;
+      if (!hasReceivedInitialData.current) {
+        hasReceivedInitialData.current = true;
+        if (applyState) applyState(_mergeState(incoming, theirSnapRef.current, identity));
+        setLastSync(new Date());
+        return;
+      }
+      if (applyState) applyState(_mergeState(incoming, theirSnapRef.current, identity));
+      setLastSync(new Date());
+    };
+    myRef.on("value", myHandler, err => { setStatus("error"); setErrMsg(err.message || "Firebase error."); });
+    myListenerRef.current = { ref:myRef, handler:myHandler };
+    const theirRef = db.ref(theirPath);
+    const theirHandler = snap => {
+      const data = snap.val();
+      if (!data) return;
+      const { _meta, ...incoming } = data;
+      theirSnapRef.current = { ...incoming, _meta };
+      if (!hasReceivedInitialData.current) return;
+      if (applyState) applyState(_mergeState(pendingState.current, theirSnapRef.current, identity));
+      setLastSync(new Date());
+    };
+    theirRef.on("value", theirHandler, err => console.warn("[Pronto Mobile] Other user path error:", err.message));
+    theirListenerRef.current = { ref:theirRef, handler:theirHandler };
+    return () => {
+      myRef.off("value", myHandler);
+      theirRef.off("value", theirHandler);
+      presRef.off("value", presHandler);
+      try { db.ref(".info/connected").off(); } catch(_) {}
+    };
+  }, [conf, chatAs]);
+
+  useE(() => {
+    if (!syncRef) return;
+    syncRef.current = {
+      scheduleWrite(state) {
+        pendingState.current = state;
+        if (!dbRef.current) return;
+        clearTimeout(writeTimerRef.current);
+        writeTimerRef.current = setTimeout(() => {
+          const s = pendingState.current;
+          if (!s || !dbRef.current || !hasReceivedInitialData.current) return;
+          const identity = chatAs || "vanja";
+          localWriteAt.current = Date.now();
+          dbRef.current.ref(`${FB_STATE_PATH}/${identity}`)
+            .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
+            .then(() => setLastSync(new Date()))
+            .catch(err => console.error("Firebase write:", err));
+        }, 1500);
+      }
+    };
+    return () => clearTimeout(writeTimerRef.current);
+  });
+
+  const connect = () => {
+    const trimmed = { apiKey:apiKey.trim(), databaseURL:dbUrl.trim().replace(/\/$/, "") };
+    if (!trimmed.apiKey || !trimmed.databaseURL) { setErrMsg("Both fields are required."); return; }
+    setErrMsg(""); saveFbConf(trimmed); setConf(trimmed);
+  };
+
+  const disconnect = () => {
+    if (!confirm("Disconnect Firebase? Changes won't sync until reconnected.")) return;
+    if (myListenerRef.current) { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
+    if (presListRef.current) { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current) { myPresRef.current.remove(); myPresRef.current = null; }
+    try { if (dbRef.current) dbRef.current.ref(".info/connected").off(); } catch(_) {}
+    dbRef.current = null;
+    clearTimeout(writeTimerRef.current);
+    saveFbConf(null); setConf(null); setApiKey(""); setDbUrl("");
+    setStatus("disconnected"); setErrMsg("");
+    if (syncRef) syncRef.current = null;
+    if (setOnlineUsers) setOnlineUsers([]);
+  };
+
+  const dotColor = { live:"#0E9F6E", connecting:"#DC9F09", error:"#C8261A", disconnected:"#9AA0AE" }[status];
+
+  return (
+    <>
+      <div style={{
+        position:"sticky", top:0, zIndex:100,
+        background:T.cardBg, borderBottom:`1px solid ${T.border}`,
+        display:"flex", alignItems:"center", justifyContent:"space-between",
+        padding:"10px 16px", gap:8,
+      }}>
+        <button onClick={() => setForceMobile(false)} style={{
+          display:"flex", alignItems:"center", gap:5,
+          padding:"6px 10px", borderRadius:8,
+          background:T.surface, border:`1px solid ${T.border}`,
+          color:T.ink, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
+        }}>
+          <span style={{ fontSize:14 }}>🖥</span> Desktop
+        </button>
+
+        <span style={{ fontSize:13, fontWeight:900, color:T.navy, letterSpacing:"0.05em", fontFamily:"'ProximaNova Black',sans-serif" }}>PRONTO HQ</span>
+
+        <button onClick={() => setShowSheet(true)} style={{
+          display:"flex", alignItems:"center", gap:5,
+          padding:"6px 10px", borderRadius:8,
+          background: status==="live" ? "#E4F7EF" : T.surface,
+          border:`1px solid ${status==="live" ? "#0E9F6E44" : T.border}`,
+          color: status==="live" ? "#0E9F6E" : T.muted,
+          fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
+        }}>
+          <span style={{ width:7, height:7, borderRadius:"50%", background:dotColor, flexShrink:0, display:"inline-block" }}></span>
+          {status==="live" ? "LIVE" : status==="connecting" ? "…" : "SYNC"}
+        </button>
+      </div>
+
+      {showSheet && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:300,
+          background:"rgba(0,0,0,0.45)",
+          display:"flex", flexDirection:"column", justifyContent:"flex-end",
+        }} onClick={() => setShowSheet(false)}>
+          <div style={{
+            background:T.cardBg, borderRadius:"18px 18px 0 0",
+            padding:20, maxHeight:"85vh", overflowY:"auto",
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}></div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+              <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:16, color:T.navy }}>LIVE SYNC</p>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ width:8, height:8, borderRadius:"50%", background:dotColor }}></span>
+                <span style={{ fontSize:12, fontWeight:700, color:dotColor }}>
+                  { {live:"Connected", connecting:"Connecting…", error:"Error", disconnected:"Offline"}[status] }
+                </span>
+              </div>
+            </div>
+
+            {status==="live" && (
+              <div style={{ padding:"12px 14px", background:"#E4F7EF", border:"1px solid #0E9F6E22", borderRadius:10, marginBottom:16 }}>
+                <p style={{ fontSize:13, color:"#0E9F6E", fontWeight:700, marginBottom:4 }}>Connected — changes sync automatically</p>
+                {lastSync && <p style={{ fontSize:11, color:"#6B7280" }}>Last synced: {lastSync.toLocaleTimeString()}</p>}
+                <button onClick={disconnect} style={{
+                  marginTop:10, fontSize:11, fontWeight:800, letterSpacing:"0.06em",
+                  background:"transparent", color:"#6B7280", border:"1px solid #E5E5E0",
+                  borderRadius:6, padding:"6px 14px", cursor:"pointer", fontFamily:"inherit",
+                }}>DISCONNECT</button>
+              </div>
+            )}
+
+            {status==="connecting" && (
+              <div style={{ padding:"12px 14px", background:"#FCF3DE", border:"1px solid #DC9F0933", borderRadius:10, marginBottom:16 }}>
+                <p style={{ fontSize:13, color:"#DC9F09", fontWeight:700 }}>Connecting to Firebase…</p>
+              </div>
+            )}
+
+            {(status==="disconnected"||status==="error") && (
+              <>
+                <p style={{ fontSize:12, color:T.muted, marginBottom:14, lineHeight:1.5 }}>
+                  Connect to <strong>Firebase Realtime Database</strong> to sync changes live between you and Vanja.
+                </p>
+                <label style={{ display:"block", fontSize:10, color:T.muted, fontWeight:800, letterSpacing:"0.1em", marginBottom:4 }}>API KEY</label>
+                <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="AIzaSy…"
+                  style={{ width:"100%", padding:"10px 12px", border:`1px solid ${T.border}`, borderRadius:8, fontSize:12, fontFamily:"monospace", outline:"none", marginBottom:12, color:T.ink, background:T.bg, boxSizing:"border-box" }}
+                />
+                <label style={{ display:"block", fontSize:10, color:T.muted, fontWeight:800, letterSpacing:"0.1em", marginBottom:4 }}>DATABASE URL</label>
+                <input value={dbUrl} onChange={e => setDbUrl(e.target.value)} placeholder="https://your-project-default-rtdb.firebaseio.com"
+                  style={{ width:"100%", padding:"10px 12px", border:`1px solid ${T.border}`, borderRadius:8, fontSize:12, fontFamily:"monospace", outline:"none", marginBottom:16, color:T.ink, background:T.bg, boxSizing:"border-box" }}
+                />
+                <button onClick={connect} style={{
+                  width:"100%", padding:"12px 16px", background:T.navy, color:"#fff",
+                  border:"none", borderRadius:10, fontSize:14, fontWeight:800,
+                  letterSpacing:"0.05em", cursor:"pointer", fontFamily:"inherit",
+                }}>CONNECT</button>
+                {errMsg && <p style={{ marginTop:10, fontSize:12, color:"#C8261A", fontWeight:600 }}>{errMsg}</p>}
+              </>
+            )}
+
+            <div style={{ marginTop:20, paddingTop:16, borderTop:`1px solid ${T.border}` }}>
+              <button onClick={() => { setShowSheet(false); setForceMobile(false); }} style={{
+                width:"100%", padding:"12px 16px", background:T.surface,
+                border:`1px solid ${T.border}`, borderRadius:10, color:T.ink,
+                fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+              }}>
+                <span style={{ fontSize:16 }}>🖥</span> Switch to Desktop Mode
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function MobileMorePage({ setForceMobile }) {
   const items = [
     { icon:"📧", label:"Emails", desc:"Email templates & campaigns" },
@@ -12779,11 +13026,12 @@ function MobileMorePage({ setForceMobile }) {
   );
 }
 
-function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, schedule, setSchedule, actualSchedule, setActualSchedule, schedSpans, setSchedSpans, dayNotes, setDayNotes, content, setContent, machinesToPush, setMachinesToPush, toBeCompleted, setToBeCompleted, ongoingJobs, setOngoingJobs, postApprovals, setPostApprovals, toPostList, setToPostList, ideas, setIdeas, staff, avatars, forceMobile, setForceMobile, categories }) {
+function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, schedule, setSchedule, actualSchedule, setActualSchedule, schedSpans, setSchedSpans, dayNotes, setDayNotes, content, setContent, machinesToPush, setMachinesToPush, toBeCompleted, setToBeCompleted, ongoingJobs, setOngoingJobs, postApprovals, setPostApprovals, toPostList, setToPostList, ideas, setIdeas, staff, avatars, forceMobile, setForceMobile, categories, getState, applyState, syncRef, chatAs, setOnlineUsers }) {
   const [mobileTab, setMobileTab] = useS("today");
 
   return (
     <div style={{ minHeight:"100vh", background:T.bg, display:"flex", flexDirection:"column", fontFamily:"'Inter', sans-serif", maxWidth:480, margin:"0 auto" }}>
+      <MobileHeader setForceMobile={setForceMobile} getState={getState} applyState={applyState} syncRef={syncRef} chatAs={chatAs} setOnlineUsers={setOnlineUsers} />
       <div style={{ flex:1, overflowY:"auto", paddingBottom:70 }}>
         {mobileTab === "today" && (
           <MobileTodayPage
@@ -13544,6 +13792,11 @@ function App({ onSwitchWorkspace = () => {} }) {
         forceMobile={forceMobile}
         setForceMobile={setForceMobile}
         categories={categories}
+        getState={fullState}
+        applyState={applyState}
+        syncRef={syncRef}
+        chatAs={chatAs}
+        setOnlineUsers={setOnlineUsers}
       />
     );
   }
