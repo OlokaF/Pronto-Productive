@@ -12141,10 +12141,10 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
         {addingTask && (
           <div style={{ background:T.cardBg, border:`1px solid ${T.gold}`, borderRadius:12, padding:"12px", marginBottom:12, display:"flex", gap:8 }}>
             <input value={newTaskText} onChange={e=>setNewTaskText(e.target.value)}
-              onKeyDown={e=>{ if(e.key==="Enter"&&newTaskText.trim()){ onAdd(dk,{text:newTaskText.trim(),owner:todayUser}); setNewTaskText(""); setAddingTask(false); }}}
+              onKeyDown={e=>{ if(e.key==="Enter"&&newTaskText.trim()){ onAdd(dk,{text:newTaskText.trim(),owner:todayUser,priority:"Normal",category:"Admin"}); setNewTaskText(""); setAddingTask(false); }}}
               placeholder="New task…" autoFocus
               style={{ flex:1, border:"none", background:"transparent", fontSize:14, color:T.ink, outline:"none", fontFamily:"inherit" }}/>
-            <button onClick={()=>{ if(newTaskText.trim()){ onAdd(dk,{text:newTaskText.trim(),owner:todayUser}); setNewTaskText(""); } setAddingTask(false); }}
+            <button onClick={()=>{ if(newTaskText.trim()){ onAdd(dk,{text:newTaskText.trim(),owner:todayUser,priority:"Normal",category:"Admin"}); setNewTaskText(""); } setAddingTask(false); }}
               style={{ background:T.navy, border:"none", borderRadius:8, color:"#fff", padding:"6px 12px", cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>Add</button>
           </div>
         )}
