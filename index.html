@@ -491,7 +491,7 @@ function Chev({ dir }) {
 function PriorityBadge({ priority, onChange, compact=false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const pc = PR[priority];
+  const pc = PR[priority] || PR["Normal"];
   useEffect(() => {
     const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", h);
