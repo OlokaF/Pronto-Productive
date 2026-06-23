@@ -13863,11 +13863,48 @@ function MobileSchedulePage({ selDate, setSelDate, tasksByDate, schedule, setSch
   );
 }
 
-function MobileContentPage({ content, setContent, todayUser, toPostList, setToPostList, ideas, setIdeas }) {
+function MobileContentPage({ content, setContent, todayUser, toPostList, setToPostList, ideas, setIdeas, dayNotes, setDayNotes }) {
+  const [selDate, setSelDate] = useS(() => today());
+
+  const prevMonth = () => setSelDate(d => {
+    const n = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    return n;
+  });
+  const nextMonth = () => setSelDate(d => {
+    const n = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return n;
+  });
+  const goToday = () => setSelDate(today());
+  const isCurrentMonth = selDate.getMonth() === today().getMonth() && selDate.getFullYear() === today().getFullYear();
+
   return (
-    <div style={{ padding:16 }}>
-      <h2 style={{ fontSize:20, fontWeight:900, color:T.heading, margin:"0 0 16px", fontFamily:"'ProximaNova Black',sans-serif" }}>Content</h2>
-      <p style={{ color:T.muted, fontSize:13 }}>Open desktop mode for full content calendar editing.</p>
+    <div style={{ paddingBottom:80 }}>
+      {/* Mobile nav header */}
+      <div style={{ background:T.cardBg, borderBottom:`1px solid ${T.border}`, padding:"10px 16px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+          <button onClick={prevMonth} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:18, width:34, height:34, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"inherit" }}>‹</button>
+          <div style={{ textAlign:"center" }}>
+            <p style={{ fontSize:9, fontWeight:800, letterSpacing:"0.18em", color:T.gold, margin:0 }}>CONTENT CALENDAR</p>
+            <button onClick={goToday} style={{ background:"none", border:"none", cursor:isCurrentMonth?"default":"pointer", fontFamily:"inherit", padding:0 }}>
+              <p style={{ fontSize:18, fontWeight:900, fontFamily:"'ProximaNova Black',sans-serif", color:isCurrentMonth?T.heading:T.navy, margin:0, letterSpacing:"-0.02em" }}>{MONTHS[selDate.getMonth()]} {selDate.getFullYear()}</p>
+            </button>
+          </div>
+          <button onClick={nextMonth} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:18, width:34, height:34, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"inherit" }}>›</button>
+        </div>
+      </div>
+
+      {/* Full ContentCalendar — has its own mobile detection (window.innerWidth < 768) */}
+      <div style={{ padding:"16px 12px" }}>
+        <ContentCalendar
+          selDate={selDate}
+          content={content}
+          onSetContent={setContent}
+          toPostList={toPostList || []}
+          setToPostList={setToPostList || (() => {})}
+          dayNotes={dayNotes || {}}
+          setDayNotes={setDayNotes || (() => {})}
+        />
+      </div>
     </div>
   );
 }
@@ -14248,6 +14285,8 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
             setToPostList={setToPostList}
             ideas={ideas}
             setIdeas={setIdeas}
+            dayNotes={dayNotes}
+            setDayNotes={setDayNotes}
           />
         )}
         {mobileTab === "more" && (
