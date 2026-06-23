@@ -12032,12 +12032,39 @@ function MobileTodayPage({ todayUser, tasksByDate, schedule, machinesToPush, set
   );
 }
 
-function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, todayUser, schedule, toBeCompleted, setToBeCompleted }) {
+function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, todayUser, schedule, setSchedule, toBeCompleted, setToBeCompleted }) {
   const [userFilter, setUserFilter] = useS("all");
   const [showRecurring, setShowRecurring] = useS(false);
   const [showBacklog, setShowBacklog] = useS(false);
   const [addingTask, setAddingTask] = useS(false);
   const [newTaskText, setNewTaskText] = useS("");
+  const [expandedTasks, setExpandedTasks] = useS(new Set());
+  const [schedulingTask, setSchedulingTask] = useS(null);
+  const [schedDuration, setSchedDuration] = useS(30);
+
+  const toggleExpand = (id) => setExpandedTasks(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const addToSchedule = (startMin) => {
+    if (!schedulingTask || !setSchedule) return;
+    const { id: taskId, subtaskId } = schedulingTask;
+    setSchedule(prev => {
+      const next = { ...prev };
+      const owner = todayUser || "oloka";
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      day[owner] = [
+        ...(day[owner]||[]).filter(b => !(b.taskId===taskId && (subtaskId ? b.subtaskId===subtaskId : !b.subtaskId))),
+        { taskId, startMin, durationMin: schedDuration, ...(subtaskId ? { subtaskId } : {}) }
+      ];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day;
+      return next;
+    });
+    setSchedulingTask(null);
+  };
 
   const dk = isoDate(selDate instanceof Date ? selDate : new Date(selDate));
 
@@ -12131,24 +12158,68 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
           {filtered.map(task => {
             const ac = task.owner==="vanja" ? T.vanja : T.oloka;
             const catColor = (window.prontoCatColors||CAT_COLOR)[task.category]||T.muted;
+            const subs = task.subtasks || [];
+            const isExpanded = expandedTasks.has(task.id);
+            const doneSubs = subs.filter(s=>s.done).length;
+            const isScheduled = ((schedule[dk]||{})[todayUser||"oloka"]||[]).some(b=>b.taskId===task.id&&!b.subtaskId);
             return (
-              <div key={task.id} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, padding:"14px 16px", display:"flex", gap:12, alignItems:"flex-start", opacity:task.done?0.65:1 }}>
-                <button onClick={()=>onToggle(task.id)}
-                  style={{ width:24, height:24, borderRadius:6, border:`2px solid ${task.done?"#10B981":T.border}`, background:task.done?"#10B981":"transparent", flexShrink:0, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", marginTop:1 }}>
-                  {task.done && <span style={{ color:"#fff", fontSize:14, fontWeight:700 }}>✓</span>}
-                </button>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:task.done?T.muted:T.heading, textDecoration:task.done?"line-through":"none", marginBottom:4, lineHeight:1.3 }}>{task.text||task.title}</div>
-                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-                    <div style={{ width:16, height:16, borderRadius:"50%", background:ac, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      <span style={{ fontSize:8, color:"#fff", fontWeight:700 }}>{task.owner==="vanja"?"V":"O"}</span>
+              <div key={task.id} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden", opacity:task.done?0.65:1 }}>
+                <div style={{ padding:"14px 16px", display:"flex", gap:12, alignItems:"flex-start" }}>
+                  <button onClick={()=>onToggle(task.id)}
+                    style={{ width:24, height:24, borderRadius:6, border:`2px solid ${task.done?"#10B981":T.border}`, background:task.done?"#10B981":"transparent", flexShrink:0, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", marginTop:1 }}>
+                    {task.done && <span style={{ color:"#fff", fontSize:14, fontWeight:700 }}>✓</span>}
+                  </button>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:task.done?T.muted:T.heading, textDecoration:task.done?"line-through":"none", marginBottom:4, lineHeight:1.3 }}>{task.text||task.title}</div>
+                    <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+                      <div style={{ width:16, height:16, borderRadius:"50%", background:ac, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <span style={{ fontSize:8, color:"#fff", fontWeight:700 }}>{task.owner==="vanja"?"V":"O"}</span>
+                      </div>
+                      {task.category && <span style={{ fontSize:10, color:catColor, background:catColor+"18", padding:"1px 7px", borderRadius:20, fontWeight:700 }}>{task.category}</span>}
+                      {task.priority && task.priority!=="Normal" && <span style={{ fontSize:10, fontWeight:700, color:task.priority==="Urgent"?"#EF4444":"#F59E0B" }}>{task.priority}</span>}
+                      {subs.length > 0 && <span style={{ fontSize:10, color:T.muted }}>{doneSubs}/{subs.length} subtasks</span>}
                     </div>
-                    {task.category && <span style={{ fontSize:10, color:catColor, background:catColor+"18", padding:"1px 7px", borderRadius:20, fontWeight:700 }}>{task.category}</span>}
-                    {task.priority && task.priority!=="Normal" && <span style={{ fontSize:10, fontWeight:700, color:task.priority==="Urgent"?"#EF4444":"#F59E0B" }}>{task.priority}</span>}
-                    <span style={{ fontSize:10, color:T.gold, fontWeight:600 }}>Due today</span>
+                  </div>
+                  <div style={{ display:"flex", gap:4, alignItems:"center", flexShrink:0 }}>
+                    {!task.done && (
+                      <button onClick={()=>{ setSchedDuration(30); setSchedulingTask({ id:task.id, text:task.text||task.title, subtaskId:null }); }}
+                        style={{ background:isScheduled?T.navy:"none", border:`1px solid ${isScheduled?T.navy:T.border}`, borderRadius:6, color:isScheduled?"#fff":T.muted, cursor:"pointer", fontSize:12, padding:"3px 7px", fontFamily:"inherit", fontWeight:700 }}>
+                        {isScheduled ? "📅✓" : "📅"}
+                      </button>
+                    )}
+                    {subs.length > 0 && (
+                      <button onClick={()=>toggleExpand(task.id)}
+                        style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:13, padding:"2px 4px", fontFamily:"inherit" }}>
+                        {isExpanded ? "▲" : "▼"}
+                      </button>
+                    )}
                   </div>
                 </div>
-                <button style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:18, padding:"0 2px", fontFamily:"inherit" }}>⋮</button>
+
+                {isExpanded && subs.length > 0 && (
+                  <div style={{ borderTop:`1px solid ${T.border}`, background:T.surface }}>
+                    {subs.map((sub, si) => {
+                      const subScheduled = ((schedule[dk]||{})[todayUser||"oloka"]||[]).some(b=>b.taskId===task.id&&b.subtaskId===sub.id);
+                      return (
+                        <div key={sub.id||si} style={{ display:"flex", gap:10, alignItems:"center", padding:"9px 16px 9px 52px", borderBottom:si<subs.length-1?`1px solid ${T.border}`:"none" }}>
+                          <button onClick={()=>{
+                            const next = subs.map((s,i)=>i===si?{...s,done:!s.done}:s);
+                            onChangeSubtasks(task.id, next);
+                          }} style={{ width:18, height:18, borderRadius:4, border:`2px solid ${sub.done?"#10B981":T.border}`, background:sub.done?"#10B981":"transparent", flexShrink:0, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                            {sub.done && <span style={{ color:"#fff", fontSize:10, fontWeight:700 }}>✓</span>}
+                          </button>
+                          <span style={{ fontSize:13, color:sub.done?T.muted:T.ink, textDecoration:sub.done?"line-through":"none", flex:1, lineHeight:1.3 }}>↳ {sub.text}</span>
+                          {!sub.done && (
+                            <button onClick={()=>{ setSchedDuration(30); setSchedulingTask({ id:task.id, text:sub.text, subtaskId:sub.id||null }); }}
+                              style={{ background:subScheduled?T.navy:"none", border:`1px solid ${subScheduled?T.navy:T.border}`, borderRadius:6, color:subScheduled?"#fff":T.muted, cursor:"pointer", fontSize:11, padding:"2px 6px", fontFamily:"inherit", fontWeight:700, flexShrink:0 }}>
+                              {subScheduled?"📅✓":"📅"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -12156,6 +12227,55 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
             <div style={{ textAlign:"center", padding:"24px", color:T.faint, fontSize:13 }}>No tasks for this day ✓</div>
           )}
         </div>
+
+        {schedulingTask && (
+          <div style={{ position:"fixed", inset:0, zIndex:300, background:"rgba(0,0,0,0.45)", display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
+            onClick={()=>setSchedulingTask(null)}>
+            <div style={{ background:T.cardBg, borderRadius:"18px 18px 0 0", padding:"20px 20px 32px", maxHeight:"80vh", overflowY:"auto" }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}></div>
+              <p style={{ fontWeight:900, fontSize:16, color:T.navy, margin:"0 0 4px", fontFamily:"'ProximaNova Black',sans-serif" }}>Add to Schedule</p>
+              <p style={{ fontSize:12, color:T.muted, margin:"0 0 18px", lineHeight:1.4 }}>{schedulingTask.text}</p>
+
+              <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>DURATION</p>
+              <div style={{ display:"flex", gap:6, marginBottom:18 }}>
+                {[[30,"30m"],[60,"1h"],[90,"1.5h"],[120,"2h"]].map(([m,l])=>(
+                  <button key={m} onClick={()=>setSchedDuration(m)} style={{
+                    flex:1, padding:"9px 0", borderRadius:8,
+                    border:`2px solid ${schedDuration===m?T.navy:T.border}`,
+                    background:schedDuration===m?T.navy:"transparent",
+                    color:schedDuration===m?"#fff":T.muted,
+                    fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"
+                  }}>{l}</button>
+                ))}
+              </div>
+
+              <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>PICK A TIME SLOT</p>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6 }}>
+                {Array.from({length:22}, (_,i) => {
+                  const totalMin = 7*60 + i*30;
+                  if (totalMin >= 18*60) return null;
+                  const h = Math.floor(totalMin/60);
+                  const m = totalMin%60;
+                  const ampm = h>=12 ? "PM" : "AM";
+                  const h12 = h>12 ? h-12 : h===0 ? 12 : h;
+                  const label = `${h12}:${m===0?"00":"30"} ${ampm}`;
+                  const already = ((schedule[dk]||{})[todayUser||"oloka"]||[]).some(b=>b.startMin===totalMin&&!b.isBreak);
+                  return (
+                    <button key={totalMin} onClick={()=>addToSchedule(totalMin)} style={{
+                      padding:"9px 0", borderRadius:8,
+                      border:`1px solid ${already?T.navy:T.border}`,
+                      background:already?T.navy+"22":"transparent",
+                      color:already?T.navy:T.ink,
+                      fontWeight:already?800:400, fontSize:12,
+                      cursor:"pointer", fontFamily:"inherit"
+                    }}>{label}</button>
+                  );
+                }).filter(Boolean)}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, marginBottom:12 }}>
           <button onClick={()=>setShowRecurring(v=>!v)}
@@ -13063,6 +13183,7 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
             setRecurringTasks={setRecurringTasks}
             todayUser={todayUser}
             schedule={schedule}
+            setSchedule={setSchedule}
             toBeCompleted={toBeCompleted}
             setToBeCompleted={setToBeCompleted}
           />
