@@ -6398,7 +6398,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                           const tScheduled = isSubtask ? false : isScheduled;
                           const tId = isSubtask ? (task.id+"_sub_"+t.id) : task.id;
                           const canDrag = !t.done || sidebarFilter === "today_done";
-                          const showAdd = (!tScheduled || sidebarFilter === "today_done");
+                          const showAdd = !t.done || sidebarFilter === "today_done";
                           return (
                             <div key={tId} draggable={canDrag}
                               onDragStart={canDrag ? (e=>{
@@ -13394,7 +13394,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                           <div style={{ display:"flex", gap:5, marginTop:3, flexWrap:"wrap" }}>
                             {task.category && <span style={{ fontSize:10, color:catColor, background:catColor+"18", padding:"1px 6px", borderRadius:20, fontWeight:700 }}>{task.category}</span>}
                             {task.priority&&task.priority!=="Normal"&&<span style={{ fontSize:10, fontWeight:700, color:task.priority==="Urgent"?"#EF4444":"#F59E0B" }}>{task.priority}</span>}
-                            {alreadySched && <span style={{ fontSize:10, color:T.navy, fontWeight:700 }}>already scheduled</span>}
+                            {alreadySched && <span style={{ fontSize:10, color:T.navy, fontWeight:700 }}>already scheduled · tap to add again</span>}
                           </div>
                         </div>
                         <span style={{ fontSize:18, color:T.navy, fontWeight:700 }}>+</span>
