@@ -5516,7 +5516,8 @@ function fmtTime(totalMin) {
 const newBreakId = () => `__brk_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
 const newQeId   = () => `__qe_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
 // Canonical key for any block
-const blockUid = (b) => b.isBreak ? b.breakId : b.isQuickEvent ? b.qeId : String(b.taskId);
+const blockUid = (b) => b.isBreak ? b.breakId : b.isQuickEvent ? b.qeId : (b.blockId || String(b.taskId) + "_" + (b.startMin||0));
+const newBlockId = () => "blk_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
 
 const AI_KEY_LS = "prontoHQ.aiKey";
 
@@ -5995,9 +5996,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     setSchedule(prev => {
       const next = { ...prev };
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
-      day.vanja = (day.vanja || []).filter(b => b.taskId !== taskId);
-      day.oloka = (day.oloka || []).filter(b => b.taskId !== taskId);
-      const block = { taskId, startMin, durationMin };
+      const block = { blockId: newBlockId(), taskId, startMin, durationMin };
       if (subtaskId) block.subtaskId = subtaskId;
       day[owner] = [...(day[owner] || []), block];
       day[owner].sort((a,b) => a.startMin - b.startMin);
@@ -6023,9 +6022,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     setSchedule(prev => {
       const next = { ...prev };
       const day = { ...(next[dateKey] || { vanja:[], oloka:[] }) };
-      day.vanja = (day.vanja || []).filter(b => b.taskId !== taskId);
-      day.oloka = (day.oloka || []).filter(b => b.taskId !== taskId);
-      const block = { taskId, startMin, durationMin };
+      const block = { blockId: newBlockId(), taskId, startMin, durationMin };
       if (subtaskId) block.subtaskId = subtaskId;
       day[owner] = [...(day[owner] || []), block];
       day[owner].sort((a,b) => a.startMin - b.startMin);
@@ -6046,7 +6043,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     });
   };
 
-  const removeBlock = (owner, taskId, breakId, qeId) => {
+  const removeBlock = (owner, taskId, breakId, qeId, blockId) => {
     setSchedule(prev => {
       const next = { ...prev };
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
@@ -6054,6 +6051,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         day[owner] = (day[owner] || []).filter(b => b.breakId !== breakId);
       } else if (qeId) {
         day[owner] = (day[owner] || []).filter(b => b.qeId !== qeId);
+      } else if (blockId) {
+        day[owner] = (day[owner] || []).filter(b => b.blockId !== blockId);
       } else {
         day[owner] = (day[owner] || []).filter(b => b.taskId !== taskId);
       }
@@ -6062,7 +6061,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
     });
   };
 
-  const updateBlock = (owner, taskId, patch, breakId, qeId) => {
+  const updateBlock = (owner, taskId, patch, breakId, qeId, blockId) => {
     setSchedule(prev => {
       const next = { ...prev };
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
@@ -6070,6 +6069,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         day[owner] = (day[owner] || []).map(b => b.breakId === breakId ? { ...b, ...patch } : b);
       } else if (qeId) {
         day[owner] = (day[owner] || []).map(b => b.qeId === qeId ? { ...b, ...patch } : b);
+      } else if (blockId) {
+        day[owner] = (day[owner] || []).map(b => b.blockId === blockId ? { ...b, ...patch } : b);
       } else {
         day[owner] = (day[owner] || []).map(b => b.taskId === taskId ? { ...b, ...patch } : b);
       }
@@ -7363,7 +7364,10 @@ function TimeColumn({
       if (actualMode) {
         onAddActual(owner, drag.taskId, startMin);
       } else {
-        if (drag.fromCol === "sched" && drag.fromOwner !== owner) onRemove(drag.fromOwner, drag.taskId);
+        if (drag.fromCol === "sched") {
+          // Remove the specific old block so the drag is a move, not a copy
+          onRemove(drag.fromOwner, drag.taskId, null, null, drag.blockId);
+        }
         onAdd(owner, drag.taskId, startMin, drag.durationMin || 30, drag.subtaskId);
       }
     }
@@ -7484,11 +7488,11 @@ function TimeColumn({
               owner={owner}
               isGhost={actualMode}
               lane={li.lane} totalLanes={li.totalLanes}
-              onResize={(dur) => onUpdate(owner, b.taskId, { durationMin: dur }, b.breakId)}
-              onMoveStart={(min) => onUpdate(owner, b.taskId, { startMin: min }, b.breakId)}
-              onRemove={() => onRemove(owner, b.taskId, b.breakId)}
+              onResize={(dur) => onUpdate(owner, b.taskId, { durationMin: dur }, b.breakId, b.qeId, b.blockId)}
+              onMoveStart={(min) => onUpdate(owner, b.taskId, { startMin: min }, b.breakId, b.qeId, b.blockId)}
+              onRemove={() => onRemove(owner, b.taskId, b.breakId, b.qeId, b.blockId)}
               onOpen={() => !b.isBreak && onOpenEdit && onOpenEdit(b.taskId)}
-              onDragStart={() => setDrag({ taskId: b.taskId, breakId: b.breakId, isBreak: b.isBreak, breakLabel: b.breakLabel, qeId: b.qeId, isQuickEvent: b.isQuickEvent, qeTitle: b.qeTitle, durationMin: b.durationMin, fromOwner: owner, fromCol: "sched" })}
+              onDragStart={() => setDrag({ taskId: b.taskId, blockId: b.blockId, breakId: b.breakId, isBreak: b.isBreak, breakLabel: b.breakLabel, qeId: b.qeId, isQuickEvent: b.isQuickEvent, qeTitle: b.qeTitle, durationMin: b.durationMin, fromOwner: owner, fromCol: "sched" })}
               onDragEnd={() => setDrag(null)}
             />
           );
@@ -12168,8 +12172,8 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
       const owner = todayUser || "oloka";
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
       day[owner] = [
-        ...(day[owner]||[]).filter(b => !(b.taskId===taskId && (subtaskId ? b.subtaskId===subtaskId : !b.subtaskId))),
-        { taskId, startMin, durationMin: schedDuration, ...(subtaskId ? { subtaskId } : {}) }
+        ...(day[owner]||[]),
+        { blockId: "blk_"+Date.now()+"_"+Math.random().toString(36).slice(2,6), taskId, startMin, durationMin: schedDuration, ...(subtaskId ? { subtaskId } : {}) }
       ];
       day[owner].sort((a,b) => a.startMin - b.startMin);
       next[dk] = day;
@@ -12928,8 +12932,8 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
       const owner = todayUser || "oloka";
       const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
       day[owner] = [
-        ...(day[owner]||[]).filter(b => !(b.taskId===taskId && (subtaskId ? b.subtaskId===subtaskId : !b.subtaskId))),
-        { taskId, startMin: pickingMin, durationMin: pickDuration, ...(subtaskId ? { subtaskId } : {}) }
+        ...(day[owner]||[]),
+        { blockId: "blk_"+Date.now()+"_"+Math.random().toString(36).slice(2,6), taskId, startMin: pickingMin, durationMin: pickDuration, ...(subtaskId ? { subtaskId } : {}) }
       ];
       day[owner].sort((a,b) => a.startMin - b.startMin);
       next[dk] = day;
