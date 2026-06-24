@@ -9635,11 +9635,16 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
   const [filter, setFilter] = useSt("All");
   const filters = ["All", "Male", "Female"];
 
+  const [newStaffIdx, setNewStaffIdx] = useSt(null); // index of most-recently-added member
   const updateStaff = (i, next) => setStaff(prev => prev.map((s, idx) => idx === i ? next : s));
-  const delStaff = (i) => setStaff(prev => prev.filter((_, idx) => idx !== i));
-  const addStaff = () => setStaff(prev => [...prev, {
-    gender:"", name:"New team member", dob:"", started:"", about:"", personality:"",
-  }]);
+  const delStaff = (i) => { setStaff(prev => prev.filter((_, idx) => idx !== i)); if (newStaffIdx === i) setNewStaffIdx(null); };
+  const addStaff = () => {
+    setFilter("All");
+    setStaff(prev => {
+      setNewStaffIdx(prev.length);
+      return [...prev, { gender:"", name:"New team member", dob:"", started:"", about:"", personality:"", _addedAt: Date.now() }];
+    });
+  };
 
   const updateLunch = (i, patch) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch } : l));
   const delLunch = (i) => setLunches(prev => prev.filter((_, idx) => idx !== i));
@@ -9648,7 +9653,14 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
   const filtered = staff.map((s, i) => ({ s, i })).filter(({ s }) => {
     if (filter === "All") return true;
     return (s.gender || "").toLowerCase() === filter.toLowerCase();
-  }).sort((a, b) => (a.s.name || "").localeCompare(b.s.name || ""));
+  }).sort((a, b) => {
+    // New members (added in last 60s) float to top
+    const aNew = a.s._addedAt && (Date.now() - a.s._addedAt) < 60000;
+    const bNew = b.s._addedAt && (Date.now() - b.s._addedAt) < 60000;
+    if (aNew && !bNew) return -1;
+    if (bNew && !aNew) return 1;
+    return (a.s.name || "").localeCompare(b.s.name || "");
+  });
 
   // Upcoming birthdays
   const todayD = today();
@@ -9695,7 +9707,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
 
       {/* Upcoming birthdays */}
       {upcoming.length > 0 && (
-        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"14px 18px", marginBottom:20 }}>
+        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"14px 18px", marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
             <span style={{ width:4, height:16, background:T.gold }}></span>
             <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13, letterSpacing:"0.02em", color:T.heading }}>NEXT 5 BIRTHDAYS</p>
@@ -9711,7 +9723,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
                 <div>
                   <p style={{ fontSize:13, fontWeight:700, color:T.ink, lineHeight:1.1 }}>{s.name}</p>
                   <p style={{ fontSize:10.5, color:T.muted, marginTop:2, letterSpacing:"0.04em" }}>
-                    {s.nextBday.toLocaleDateString("en-NZ", { day:"numeric", month:"short" })} · {s.daysAway === 0 ? "TODAY" : s.daysAway === 1 ? "TOMORROW" : `${s.daysAway} days`}
+                    {s.nextBday.toLocaleDateString("en-NZ", { day:"numeric", month:"short" })} · {s.daysAway === 0 ? "TODAY 🎂" : s.daysAway === 1 ? "TOMORROW" : `${s.daysAway} days`}
                   </p>
                 </div>
               </div>
@@ -9720,13 +9732,65 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
         </div>
       )}
 
+      {/* Upcoming start date anniversaries */}
+      {(() => {
+        const upcomingStarts = [];
+        for (const s of staff) {
+          if (!s.started) continue;
+          const m = s.started.match(/^\d{4}-(\d{2})-(\d{2})$/);
+          if (!m) continue;
+          const month = parseInt(m[1]), day = parseInt(m[2]);
+          const startYear = parseInt(s.started.slice(0, 4));
+          const thisYear = new Date().getFullYear();
+          const thisYearDate = new Date(thisYear, month - 1, day);
+          let next = thisYearDate;
+          if (thisYearDate < todayD) next = new Date(thisYear + 1, month - 1, day);
+          const years = next.getFullYear() - startYear;
+          const daysAway = Math.ceil((next - todayD) / (1000 * 60 * 60 * 24));
+          upcomingStarts.push({ ...s, nextAnniv: next, daysAway, years });
+        }
+        upcomingStarts.sort((a, b) => a.daysAway - b.daysAway);
+        if (upcomingStarts.length === 0) return null;
+        const NAVY = T.navy;
+        return (
+          <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"14px 18px", marginBottom:20 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+              <span style={{ width:4, height:16, background:NAVY }}></span>
+              <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13, letterSpacing:"0.02em", color:T.heading }}>NEXT 5 START DATE ANNIVERSARIES</p>
+            </div>
+            <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+              {upcomingStarts.slice(0, 5).map((s, i) => (
+                <div key={i} style={{
+                  background:T.cardBg, border:`1px solid ${T.border}`,
+                  borderRadius:6, padding:"8px 14px",
+                  display:"flex", alignItems:"center", gap:10,
+                }}>
+                  <div style={{ width:32, height:32, borderRadius:"50%", background:NAVY+"20", border:`1.5px solid ${NAVY}`, display:"flex", alignItems:"center", justifyContent:"center", color:NAVY, fontWeight:800, fontSize:13, fontFamily:"'ProximaNova Black', sans-serif" }}>{(s.name || "?")[0].toUpperCase()}</div>
+                  <div>
+                    <p style={{ fontSize:13, fontWeight:700, color:T.ink, lineHeight:1.1 }}>{s.name}</p>
+                    <p style={{ fontSize:10.5, color:T.muted, marginTop:2, letterSpacing:"0.04em" }}>
+                      {s.nextAnniv.toLocaleDateString("en-NZ", { day:"numeric", month:"short" })} · {s.years} yr{s.years !== 1 ? "s" : ""} · {s.daysAway === 0 ? "TODAY 🎉" : s.daysAway === 1 ? "TOMORROW" : `${s.daysAway} days`}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Staff grid */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(300px, 1fr))", gap:12 }}>
-        {filtered.map(({ s, i }) => (
-          <StaffCard key={i} staff={s} idx={i}
-            onChange={(ns) => updateStaff(i, ns)}
-            onDelete={() => delStaff(i)}/>
-        ))}
+        {filtered.map(({ s, i }) => {
+          const isNew = s._addedAt && (Date.now() - s._addedAt) < 60000;
+          return (
+            <div key={i} style={{ outline: isNew ? `2px solid ${T.gold}` : "none", borderRadius:8, animation: isNew ? "fadeIn 0.3s ease" : "none" }}>
+              <StaffCard staff={s} idx={i}
+                onChange={(ns) => updateStaff(i, ns)}
+                onDelete={() => delStaff(i)}/>
+            </div>
+          );
+        })}
         <button onClick={addStaff} style={{
           background:"transparent", border:`1px dashed ${T.borderStrong}`,
           borderRadius:8, padding:"30px 14px",
