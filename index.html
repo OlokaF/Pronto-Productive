@@ -1662,6 +1662,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
   const [addingRecurring, setAddingRecurring] = useStateV(false);
   const [newRecurText, setNewRecurText] = useStateV("");
   const [newRecurOwner, setNewRecurOwner] = useStateV("oloka");
+  const [newRecurStartDate, setNewRecurStartDate] = useStateV(dateKey);
   const [addingTBC, setAddingTBC] = useStateV(false);
   const [newTBCText, setNewTBCText] = useStateV("");
   const [newTBCOwner, setNewTBCOwner] = useStateV("oloka");
@@ -1820,6 +1821,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
             <div key={rt.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
               <OrangeCheckbox done={!!recurringDone[rt.id]} onToggle={() => setRecDone(rt.id, !recurringDone[rt.id])} />
               <span style={{ fontSize:12, color: recurringDone[rt.id] ? T.muted : T.ink, flex:1, textDecoration: recurringDone[rt.id] ? "line-through" : "none" }}>{rt.text}</span>
+              {rt.startDate && <span style={{ fontSize:9, color:T.muted, fontWeight:600, whiteSpace:"nowrap" }}>{new Date(rt.startDate+"T12:00:00").toLocaleDateString("en-NZ",{day:"numeric",month:"short"})}</span>}
               <span style={{ fontSize:9, color: rt.owner==="oloka" ? T.oloka : T.vanja, fontWeight:800 }}>{rt.owner==="oloka"?"O":"V"}</span>
               <span style={{ fontSize:9, fontWeight:700, color:ORANGE, background:ORANGE+"18", padding:"1px 5px", borderRadius:3 }}>TEMPLATE</span>
               {onAdd && !recurringDone[rt.id] && (
@@ -1835,14 +1837,17 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
           )}
           {/* Add form */}
           {addingRecurring && (
-            <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4 }}>
+            <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
               {ownerToggle(newRecurOwner, setNewRecurOwner)}
               <input autoFocus value={newRecurText} onChange={e => setNewRecurText(e.target.value)}
-                onKeyDown={e => { if(e.key==="Enter" && newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner }]); setNewRecurText(""); setAddingRecurring(false); } if(e.key==="Escape") { setAddingRecurring(false); setNewRecurText(""); }}}
+                onKeyDown={e => { if(e.key==="Enter" && newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner, startDate:newRecurStartDate }]); setNewRecurText(""); setAddingRecurring(false); } if(e.key==="Escape") { setAddingRecurring(false); setNewRecurText(""); }}}
                 placeholder="Recurring task…"
-                style={{ flex:1, padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }}
+                style={{ flex:1, minWidth:120, padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }}
               />
-              <button onClick={() => { if(newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner }]); setNewRecurText(""); setAddingRecurring(false); }}} style={{ padding:"5px 10px", background:ORANGE, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
+              <input type="date" value={newRecurStartDate} onChange={e => setNewRecurStartDate(e.target.value)}
+                style={{ padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.muted, background:T.bg, outline:"none", fontFamily:"inherit", cursor:"pointer" }}
+              />
+              <button onClick={() => { if(newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner, startDate:newRecurStartDate }]); setNewRecurText(""); setAddingRecurring(false); }}} style={{ padding:"5px 10px", background:ORANGE, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
               <button onClick={() => { setAddingRecurring(false); setNewRecurText(""); }} style={{ padding:"5px 8px", background:T.surface2, border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
             </div>
           )}
