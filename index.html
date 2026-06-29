@@ -14683,6 +14683,19 @@ function App({ onSwitchWorkspace = () => {} }) {
   const fileInputRef = useR(null);
   const syncRef = useR(null);
   const importState = () => fileInputRef.current && fileInputRef.current.click();
+  // Firebase stores arrays as {0:..., 1:...} objects — convert them back
+  const fbToArr = (val) => {
+    if (Array.isArray(val)) return val.map(fbToArr);
+    if (val && typeof val === "object") {
+      const keys = Object.keys(val);
+      const allNumeric = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
+      if (allNumeric) return keys.sort((a,b)=>Number(a)-Number(b)).map(k => fbToArr(val[k]));
+      const out = {};
+      keys.forEach(k => { out[k] = fbToArr(val[k]); });
+      return out;
+    }
+    return val;
+  };
   const handleImportFile = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -14692,18 +14705,32 @@ function App({ onSwitchWorkspace = () => {} }) {
         const data = JSON.parse(ev.target.result);
         if (!data || typeof data !== "object") throw new Error("Invalid file");
         if (!confirm("Replace ALL current data with the contents of this file? Your local edits will be overwritten.")) return;
-        if (data.tasksByDate) setTasksByDate(data.tasksByDate);
-        if (data.content) setContent(data.content);
-        if (data.ideas) setIdeas(data.ideas);
-        if (data.suppliers) setSuppliers(data.suppliers);
-        if (data.budget) setBudget(data.budget);
-        if (data.onboarding) setOnboarding(data.onboarding);
-        if (data.courses) setCourses(data.courses);
-        if (data.testimonials) setTestimonials(data.testimonials);
-        if (data.photos) setPhotos(data.photos);
-        if (data.plan) setPlan(data.plan);
-        if (data.staff) setStaff(data.staff);
-        if (data.lunches) setLunches(data.lunches);
+        // Support both direct export format and Firebase backup (prontoHQ.state.oloka)
+        const raw = data.prontoHQ?.state?.oloka || data.prontoHQ?.state?.vanja || data;
+        const s = fbToArr(raw);
+        if (s.tasksByDate) setTasksByDate(s.tasksByDate);
+        if (s.schedule) setSchedule(s.schedule);
+        if (s.dayNotes) setDayNotes(s.dayNotes);
+        if (s.content) setContent(s.content);
+        if (s.ideas) setIdeas(s.ideas);
+        if (s.suppliers) setSuppliers(s.suppliers);
+        if (s.budget) setBudget(s.budget);
+        if (s.onboarding) setOnboarding(s.onboarding);
+        if (s.courses) setCourses(s.courses);
+        if (s.testimonials) setTestimonials(s.testimonials);
+        if (s.photos) setPhotos(s.photos);
+        if (s.plan) setPlan(s.plan);
+        if (s.staff) setStaff(s.staff);
+        if (s.lunches) setLunches(s.lunches);
+        if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
+        if (s.ongoingJobs) setOngoingJobs(s.ongoingJobs);
+        if (s.toBeCompleted) setToBeCompleted(s.toBeCompleted);
+        if (s.postApprovals) setPostApprovals(s.postApprovals);
+        if (s.videoEvents) setVideoEvents(s.videoEvents);
+        if (s.toPostList) setToPostList(s.toPostList);
+        if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
+        if (s.activityLog) setActivityLog(s.activityLog);
+        if (s.schedSpans) setSchedSpans(s.schedSpans);
       } catch (err) {
         alert("Could not read that file:\n" + err.message);
       }
