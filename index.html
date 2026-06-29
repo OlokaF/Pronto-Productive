@@ -1472,7 +1472,23 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
       const { _meta, ...incoming } = data;
       if (!hasReceivedInitialData.current) {
         hasReceivedInitialData.current = true;
-        // First connect: server wins for my data; merge with their snapshot if already available
+        // First connect: check if local data is significantly newer than Firebase
+        const localState = getState ? getState() : null;
+        const localMs = localState?.savedAt ? new Date(localState.savedAt).getTime() : 0;
+        const remoteMs = incoming.savedAt ? new Date(incoming.savedAt).getTime() : (_meta?.updatedAt || 0);
+        const diffHours = (localMs - remoteMs) / (1000 * 60 * 60);
+        if (localMs > 0 && diffHours > 1) {
+          const fmt = ms => new Date(ms).toLocaleString("en-NZ", { day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+          const keepLocal = window.confirm(
+            `⚠️ Sync conflict!\n\nYour local data is ${Math.round(diffHours)} hour(s) newer than the server copy.\n\nLocal:  ${fmt(localMs)}\nServer: ${fmt(remoteMs)}\n\nOK = Keep your local data (recommended)\nCancel = Load the older server version`
+          );
+          if (keepLocal) {
+            // Keep local — push it to Firebase on next write cycle
+            setLastSync(new Date());
+            return;
+          }
+        }
+        // Server wins (no conflict, or user chose server version)
         applyState(_mergeState(incoming, theirSnapRef.current, identity));
         setLastSync(new Date());
         return;
