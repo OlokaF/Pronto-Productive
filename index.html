@@ -32,6 +32,7 @@
     input::placeholder{color:#9AA0AE;}
     input:focus{outline:none;}
     button{font-family:inherit;}
+    @keyframes prontoTypingBounce { 0%,80%,100% { transform:translateY(0); opacity:0.4; } 40% { transform:translateY(-4px); opacity:1; } }
   </style>
   <style>
   /* ── Mobile Responsive Overrides (≤ 768px) ── */
@@ -1150,6 +1151,20 @@ function stripForSync(state) {
 }
 
 // ── Presence avatars — shown in the app header ──
+function TypingDots({ color }) {
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:2 }}>
+      {[0,1,2].map(i => (
+        <span key={i} style={{
+          width:4, height:4, borderRadius:"50%", background: color || "#fff",
+          display:"inline-block",
+          animation:`prontoTypingBounce 1.2s ease-in-out ${i*0.2}s infinite`,
+        }}/>
+      ))}
+    </span>
+  );
+}
+
 function PresenceAvatars({ users, myIdentity }) {
   const MEMBERS = [
     { id:"vanja", name:"Vanja", color:T.vanja },
@@ -1162,9 +1177,10 @@ function PresenceAvatars({ users, myIdentity }) {
         const online   = !!presence;
         const isMe     = m.id === myIdentity;
         const tabLabel = presence ? TAB_LABELS[presence.tab] || presence.tab : null;
+        const typing   = !isMe && presence?.typing;
         return (
           <div key={m.id} style={{ position:"relative" }}
-            title={online ? `${m.name} · ${tabLabel || ""}${isMe ? " (you)" : ""}` : `${m.name} · offline`}
+            title={online ? `${m.name} · ${typing ? typing : (tabLabel || "")}${isMe ? " (you)" : ""}` : `${m.name} · offline`}
           >
             <div style={{
               width:30, height:30, borderRadius:"50%",
@@ -1173,10 +1189,10 @@ function PresenceAvatars({ users, myIdentity }) {
               color: online ? "#fff" : "#9AA0AE",
               fontSize:12, fontWeight:800, letterSpacing:"0.02em",
               border: isMe && online ? `2px solid ${m.color}` : "2px solid transparent",
-              boxShadow: online ? `0 0 0 3px ${m.color}30` : "none",
+              boxShadow: typing ? `0 0 0 4px ${m.color}60` : online ? `0 0 0 3px ${m.color}30` : "none",
               transition:"all 0.3s", cursor:"default", userSelect:"none",
             }}>
-              {m.name[0]}
+              {typing ? <TypingDots color="#fff"/> : m.name[0]}
             </div>
             {online && (
               <span style={{
@@ -1186,7 +1202,7 @@ function PresenceAvatars({ users, myIdentity }) {
                 boxShadow:"0 0 0 1px #0E9F6E44",
               }}/>
             )}
-            {online && !isMe && tabLabel && (
+            {online && !isMe && tabLabel && !typing && (
               <div style={{
                 position:"absolute", top:"calc(100% + 5px)", left:"50%",
                 transform:"translateX(-50%)",
@@ -1196,6 +1212,20 @@ function PresenceAvatars({ users, myIdentity }) {
                 whiteSpace:"nowrap", pointerEvents:"none", zIndex:500,
               }}>
                 {tabLabel.toUpperCase()}
+              </div>
+            )}
+            {online && !isMe && typing && (
+              <div style={{
+                position:"absolute", top:"calc(100% + 5px)", left:"50%",
+                transform:"translateX(-50%)",
+                background:m.color, color:"#fff",
+                fontSize:8.5, fontWeight:800, letterSpacing:"0.04em",
+                padding:"3px 7px", borderRadius:10,
+                whiteSpace:"nowrap", pointerEvents:"none", zIndex:500,
+                display:"flex", alignItems:"center", gap:4,
+                boxShadow:`0 2px 8px ${m.color}44`,
+              }}>
+                <TypingDots color="#fff"/>
               </div>
             )}
           </div>
@@ -1425,6 +1455,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
     if (presListRef.current)      { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
     if (myPresRef.current)        { myPresRef.current.remove(); myPresRef.current = null; }
+    window.broadcastTyping = null;
     theirSnapRef.current = null;
     if (!conf || !conf.apiKey || !conf.databaseURL) {
       setStatus("disconnected"); dbRef.current = null;
@@ -1447,6 +1478,9 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     myPresRef.current = meRef;
     meRef.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:myColor||T.vanja, tab:activeTab||"tasks", online:true, lastSeen:Date.now() });
     meRef.onDisconnect().remove();
+    window.broadcastTyping = (action) => {
+      if (myPresRef.current) myPresRef.current.update({ typing: action || null, lastSeen: Date.now() });
+    };
     const presRef = db.ref(FB_PRES_PATH);
     const presHandler = snap => { if (onPresenceChange) onPresenceChange(Object.values(snap.val() || {})); };
     presRef.on("value", presHandler);
@@ -1788,6 +1822,8 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
               <OrangeCheckbox done={socialPostDone} onToggle={toggleSocialPost} />
               <span style={{ fontSize:11, fontWeight:700, color:ORANGE, flexShrink:0 }}>Social Post —</span>
               <input value={socialPostText} onChange={e => setSocialPostText(e.target.value)}
+                onFocus={() => window.broadcastTyping?.("editing content")}
+                onBlur={() => window.broadcastTyping?.(null)}
                 placeholder={contentCalLabel || "Enter post title…"}
                 style={{ flex:1, padding:"3px 7px", border:`1px solid ${socialPostDone?T.border:ORANGE+"55"}`, borderRadius:4, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit", textDecoration:socialPostDone?"line-through":"none", opacity:socialPostDone?0.6:1 }}
               />
@@ -2598,6 +2634,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
   const pct = baseList.length ? Math.round((done / baseList.length) * 100) : 0;
 
   const submit = () => {
+    window.broadcastTyping?.(null);
     if (!text.trim()) { setAdding(false); return; }
     const isEvent = cat === "Event";
     onAdd(dateKey, { text:text.trim(), priority:isEvent?"Normal":pri, category:cat, done:false, owner:isEvent?"event":owner });
@@ -2683,7 +2720,8 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
           {adding ? (
             <div style={{ padding:"10px 12px", background:T.surface, border:`1px dashed ${cat==="Event"?T.gold:accent}`, borderRadius:8 }}>
               <input ref={inputRef} value={text} onChange={e => setText(e.target.value)}
-                onKeyDown={e => { if(e.key==="Enter") submit(); if(e.key==="Escape") setAdding(false); }}
+                onFocus={() => window.broadcastTyping?.("adding a task")}
+                onKeyDown={e => { if(e.key==="Enter") submit(); if(e.key==="Escape") { window.broadcastTyping?.(null); setAdding(false); } }}
                 placeholder={cat==="Event" ? "Event title…" : "What needs doing?"}
                 style={{ width:"100%", background:"transparent", border:"none", color:T.ink, fontSize:13, outline:"none", marginBottom:8, fontFamily:"inherit" }}
               />
@@ -2691,7 +2729,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                 {cat !== "Event" && <select value={pri} onChange={e => setPri(e.target.value)} style={selStyle}>{["Urgent","High","Normal","Low"].map(p => <option key={p}>{p}</option>)}</select>}
                 <select value={cat} onChange={e => setCat(e.target.value)} style={selStyle}>{(window.prontoCats||CATS).map(c => <option key={c}>{c}</option>)}</select>
                 <button onClick={submit} style={{ background:cat==="Event"?T.gold:accent, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:800, padding:"6px 14px", cursor:"pointer", fontFamily:"inherit" }}>{cat==="Event"?"ADD EVENT":"ADD"}</button>
-                <button onClick={() => setAdding(false)} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:11, padding:"6px 11px", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+                <button onClick={() => { window.broadcastTyping?.(null); setAdding(false); }} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:11, padding:"6px 11px", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
               </div>
             </div>
           ) : (
@@ -3722,6 +3760,7 @@ function ChatView({ msgs, setMsgs, chatAs, setChatAs, tasksByDate, onJumpToTask 
       <style>{`
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes prontoTypingBounce { 0%,80%,100% { transform:translateY(0); opacity:0.4; } 40% { transform:translateY(-4px); opacity:1; } }
       `}</style>
     </div>
   );
@@ -5390,7 +5429,7 @@ function PlanView({ plan, setPlan }) {
   const updateItem = (id, text) => setPlan(p => ({ ...p, items: p.items.map(it => it.id === id ? { ...it, text } : it) }));
   const delItem = (id) => setPlan(p => ({ ...p, items: p.items.filter(it => it.id !== id) }));
   const addItem = (section, monthIdx) => setPlan(p => {
-    const id = Math.max(0, ...p.items.map(it => it.id)) + 1;
+    const id = Date.now();
     return { ...p, items: [...p.items, { id, section, monthIdx, text: "" }] };
   });
 
@@ -8289,7 +8328,7 @@ function AddPostForm({ onAdd, defaultType = "Post" }) {
 
   useEc(() => { if (expanded) inputRef.current && inputRef.current.focus(); }, [expanded]);
 
-  const reset = () => { setTitle(""); setType(defaultType); setPillar(null); setNotes(""); setExpanded(false); };
+  const reset = () => { window.broadcastTyping?.(null); setTitle(""); setType(defaultType); setPillar(null); setNotes(""); setExpanded(false); };
   const submit = () => {
     if (!title.trim()) { reset(); return; }
     const post = { id: "post_" + Date.now(), title: title.trim(), type, updatedAt: Date.now() };
@@ -8327,7 +8366,9 @@ function AddPostForm({ onAdd, defaultType = "Post" }) {
       borderRadius:6, padding:"10px 12px",
     }}>
       <input ref={inputRef} value={title} onChange={e => setTitle(e.target.value)}
-        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } if (e.key === "Escape") reset(); }}
+        onFocus={() => window.broadcastTyping?.("adding content")}
+        onBlur={() => window.broadcastTyping?.(null)}
+        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } if (e.key === "Escape") { window.broadcastTyping?.(null); reset(); } }}
         placeholder="Post title…"
         style={{
           width:"100%", border:"none", outline:"none",
@@ -14870,7 +14911,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     logActivity(todayUser, "added task", data.text || "New task");
     setTasksByDate(prev => {
       const arr = prev[dateKey] || [];
-      const id = Math.max(0, ...Object.values(prev).flat().map(t => t.id)) + 1;
+      const id = Date.now();
       return { ...prev, [dateKey]: [...arr, { ...data, id, updatedAt: _now() }] };
     });
   };
@@ -15408,6 +15449,20 @@ function App({ onSwitchWorkspace = () => {} }) {
           view={contentView} setView={setContentView}
           machinesToPush={machinesToPush} setMachinesToPush={setMachinesToPush}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
+        {(() => {
+          const MEMBER_COLORS = { vanja: T.vanja, oloka: T.oloka };
+          const MEMBER_NAMES  = { vanja: "Vanja", oloka: "Oloka" };
+          const typers = (onlineUsers || []).filter(u => u.id !== chatAs && u.typing);
+          if (!typers.length) return null;
+          const u = typers[0];
+          const color = MEMBER_COLORS[u.id] || T.navy;
+          return (
+            <div style={{ position:"fixed", bottom:24, left:24, zIndex:9990, background:color, color:"#fff", padding:"10px 16px", borderRadius:20, boxShadow:`0 4px 16px ${color}55`, fontSize:12, fontWeight:700, display:"flex", alignItems:"center", gap:8, pointerEvents:"none" }}>
+              <TypingDots color="#fff"/>
+              <span>{MEMBER_NAMES[u.id] || u.id} is {u.typing}</span>
+            </div>
+          );
+        })()}
         {approvalToast && (
           <div onClick={() => setApprovalToast(null)} style={{ position:"fixed", bottom:24, right:24, zIndex:9999, background:approvalToast.color, color:"#fff", padding:"12px 20px", borderRadius:10, boxShadow:"0 8px 24px rgba(0,0,0,0.25)", fontSize:13, fontWeight:700, cursor:"pointer", maxWidth:340, display:"flex", alignItems:"center", gap:10, animation:"slideInRight 0.3s ease" }}>
             <span style={{ flex:1 }}>{approvalToast.msg}</span>
