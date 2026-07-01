@@ -20685,7 +20685,7 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
             <img src="assets/logo-horizontal.jpg" alt="Pronto Hire"
               className="app-header-logo"
               style={{ height:48, width:'auto', display:'block', objectFit:'contain',
-                       filter: theme === 'light' ? 'brightness(0) saturate(100%)' : 'none' }}
+                       filter: (() => { try { return localStorage.getItem('prontoHQ.theme') === 'light'; } catch { return true; } })() ? 'brightness(0) saturate(100%)' : 'none' }}
             />
             <div style={{ width:1, height:30, background:T.border }}/>
             <div>
