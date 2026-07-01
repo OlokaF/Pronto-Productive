@@ -18866,7 +18866,27 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
 
   // ─── 3. SalesUserPicker ───────────────────────────────────────────────────
 
+  const SALES_PW = { bronson: atob('TCFtZTk4'), victoria: atob('QzB3MTg1') };
+
   function SalesUserPicker({ onSelect, onSwitchWorkspace }) {
+    const [pending, setPending] = useSs(null); // { key, label, color }
+    const [pw, setPw]           = useSs('');
+    const [err, setErr]         = useSs(false);
+    const [show, setShow]       = useSs(false);
+    const inputRef              = useRs(null);
+
+    const openPrompt = (u) => {
+      setPending(u); setPw(''); setErr(false); setShow(false);
+      setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
+    };
+
+    const attempt = () => {
+      if (pw === SALES_PW[pending.key]) { onSelect(pending.key); }
+      else { setErr(true); setPw(''); setTimeout(() => inputRef.current && inputRef.current.focus(), 30); }
+    };
+
+    const cancel = () => { setPending(null); setPw(''); setErr(false); };
+
     return (
       <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column',
                     alignItems:'center', justifyContent:'center',
@@ -18884,7 +18904,7 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
         </div>
         <div style={{ display:'flex', gap: 20, flexWrap:'wrap', justifyContent:'center' }}>
           {SALES_USERS.map(u => (
-            <button key={u.key} onClick={() => onSelect(u.key)}
+            <button key={u.key} onClick={() => openPrompt(u)}
               style={{ width: 200, padding: '32px 24px', background: T.cardBg,
                        border: `2px solid ${u.color}40`, borderRadius: 16, cursor:'pointer',
                        display:'flex', flexDirection:'column', alignItems:'center', gap: 10,
@@ -18901,6 +18921,68 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
             </button>
           ))}
         </div>
+
+        {/* Password modal */}
+        {pending && (
+          <div onClick={cancel} style={{ position:'fixed', inset:0, zIndex:9000,
+                background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              background: T.cardBg, borderRadius: 16, padding: '32px 28px',
+              width: '100%', maxWidth: 360,
+              border: `2px solid ${pending.color}50`,
+              boxShadow:`0 8px 40px ${pending.color}30`,
+              display:'flex', flexDirection:'column', alignItems:'center', gap: 18,
+            }}>
+              <div style={{ width: 56, height: 56, borderRadius:'50%', background: pending.color,
+                            color:'#fff', fontWeight:800, fontSize:22,
+                            display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {pending.label[0]}
+              </div>
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontWeight:800, fontSize:18, color: pending.color }}>{pending.label}</div>
+                <div style={{ fontSize:12, color: T.muted, marginTop:3 }}>Enter your password to continue</div>
+              </div>
+              <div style={{ width:'100%' }}>
+                <div style={{ position:'relative' }}>
+                  <input
+                    ref={inputRef}
+                    type={show ? 'text' : 'password'}
+                    value={pw}
+                    onChange={e => { setPw(e.target.value); setErr(false); }}
+                    onKeyDown={e => { if (e.key === 'Enter') attempt(); if (e.key === 'Escape') cancel(); }}
+                    placeholder="Password"
+                    style={{
+                      width:'100%', padding:'11px 44px 11px 14px', borderRadius:9,
+                      border:`2px solid ${err ? '#EF4444' : pw ? pending.color+'80' : T.border}`,
+                      fontSize:15, color: T.ink, background: T.bg, outline:'none',
+                      fontFamily:'inherit', boxSizing:'border-box',
+                      transition:'border-color 0.15s',
+                    }}
+                  />
+                  <button onClick={() => setShow(s => !s)} style={{
+                    position:'absolute', right:10, top:'50%', transform:'translateY(-50%)',
+                    background:'none', border:'none', cursor:'pointer', color: T.muted,
+                    fontSize:14, padding:4, lineHeight:1,
+                  }}>{show ? '🙈' : '👁'}</button>
+                </div>
+                {err && <div style={{ fontSize:12, color:'#EF4444', marginTop:6, textAlign:'center', fontWeight:600 }}>
+                  Incorrect password — try again
+                </div>}
+              </div>
+              <div style={{ display:'flex', gap:10, width:'100%' }}>
+                <button onClick={cancel} style={{
+                  flex:1, padding:'10px', borderRadius:8, border:`1px solid ${T.border}`,
+                  background:'transparent', color:T.muted, fontSize:13, cursor:'pointer', fontFamily:'inherit',
+                }}>Cancel</button>
+                <button onClick={attempt} style={{
+                  flex:2, padding:'10px', borderRadius:8, border:'none',
+                  background: pending.color, color:'#fff', fontSize:13, fontWeight:800,
+                  cursor:'pointer', fontFamily:'inherit',
+                }}>Enter</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
