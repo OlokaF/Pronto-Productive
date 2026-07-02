@@ -1512,17 +1512,15 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
         const remoteMs = incoming.savedAt ? new Date(incoming.savedAt).getTime() : (_meta?.updatedAt || 0);
         const diffHours = (localMs - remoteMs) / (1000 * 60 * 60);
         if (localMs > 0 && diffHours > 1) {
-          const fmt = ms => new Date(ms).toLocaleString("en-NZ", { day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
-          const keepLocal = window.confirm(
-            `⚠️ Sync conflict!\n\nYour local data is ${Math.round(diffHours)} hour(s) newer than the server copy.\n\nLocal:  ${fmt(localMs)}\nServer: ${fmt(remoteMs)}\n\nOK = Keep your local data (recommended)\nCancel = Load the older server version`
-          );
-          if (keepLocal) {
-            // Keep local — push it to Firebase on next write cycle
-            setLastSync(new Date());
-            return;
+          // Local is newer — keep it and push to server immediately so future loads don't conflict
+          if (pendingState.current && dbRef.current) {
+            localWriteAt.current = Date.now();
+            dbRef.current.ref(myPath).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } });
           }
+          setLastSync(new Date());
+          return;
         }
-        // Server wins (no conflict, or user chose server version)
+        // Server is equal or newer — merge server data in
         applyState(_mergeState(incoming, theirSnapRef.current, identity));
         setLastSync(new Date());
         return;
@@ -1625,7 +1623,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
       onMouseLeave={e => { if (status!=="live"&&!open) { e.currentTarget.style.borderColor="#E5E5E0"; e.currentTarget.style.color="#2A3147"; }}}
       >
         <span style={{ width:7, height:7, borderRadius:"50%", background:dotColor, flexShrink:0 }}></span>
-        {status==="live" ? "LIVE" : "SYNC"}
+        {status==="live" ? (lastSync ? `LIVE · ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "LIVE") : "SYNC"}
       </button>
 
       {open && (
