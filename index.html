@@ -1645,11 +1645,26 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
               <p style={{ fontSize:12, color:"#0E9F6E", fontWeight:700, marginBottom:4 }}>Connected — changes sync automatically</p>
               <p style={{ fontSize:11, color:"#6B7280", marginBottom:8 }}>Every edit pushes within 1.5 s. Avatars show who's online and which tab they're on.</p>
               {lastSync && <p style={{ fontSize:10.5, color:"#9AA0AE" }}>Last synced: {lastSync.toLocaleTimeString()}</p>}
-              <button onClick={disconnect} style={{
-                marginTop:10, fontSize:10, fontWeight:800, letterSpacing:"0.08em",
-                background:"transparent", color:"#6B7280", border:"1px solid #E5E5E0",
-                borderRadius:4, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit",
-              }}>DISCONNECT</button>
+              <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
+                {(() => {
+                  const dbId = dbUrl ? dbUrl.replace('https://','').replace('.firebaseio.com','').replace(/\/$/,'') : null;
+                  const projId = dbId ? dbId.replace(/-default-rtdb$/,'') : null;
+                  const backupsUrl = projId ? `https://console.firebase.google.com/project/${projId}/database/${dbId}/backups` : null;
+                  return backupsUrl ? (
+                    <a href={backupsUrl} target="_blank" rel="noreferrer" style={{
+                      fontSize:10, fontWeight:800, letterSpacing:"0.08em",
+                      background:"transparent", color:"#14295A", border:"1px solid #14295A33",
+                      borderRadius:4, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit",
+                      textDecoration:"none", display:"inline-block",
+                    }}>↓ VIEW BACKUPS</a>
+                  ) : null;
+                })()}
+                <button onClick={disconnect} style={{
+                  fontSize:10, fontWeight:800, letterSpacing:"0.08em",
+                  background:"transparent", color:"#6B7280", border:"1px solid #E5E5E0",
+                  borderRadius:4, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit",
+                }}>DISCONNECT</button>
+              </div>
             </div>
           )}
 
