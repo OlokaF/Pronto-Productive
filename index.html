@@ -1428,6 +1428,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
   const [dbUrl, setDbUrl]       = useSy(() => loadFbConf()?.databaseURL || "");
   const [status, setStatus]     = useSy("disconnected");
   const [lastSync, setLastSync] = useSy(null);
+  const [syncError, setSyncError] = useSy(false);
   const [errMsg, setErrMsg]     = useSy("");
 
   const dbRef                  = useRy(null);
@@ -1441,6 +1442,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
   const theirSnapRef           = useRy(null);   // other user's latest Firebase snapshot
   const popupRef               = useRy(null);
   const hasReceivedInitialData = useRy(false); // guard: never write before first server read
+  const hasPendingWrite        = useRy(false);  // dirty flag: unconfirmed write in flight
 
   // Close popup on outside click
   useEy(() => {
@@ -1469,7 +1471,19 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     if (!db) { setStatus("error"); setErrMsg("Could not initialise Firebase. Check your config."); return; }
     dbRef.current = db;
 
-    db.ref(".info/connected").on("value", snap => setStatus(snap.val() ? "live" : "connecting"));
+    db.ref(".info/connected").on("value", snap => {
+      const connected = snap.val();
+      setStatus(connected ? "live" : "connecting");
+      if (connected && hasPendingWrite.current && pendingState.current && hasReceivedInitialData.current) {
+        const s = pendingState.current;
+        const ident = myIdentity || "vanja";
+        localWriteAt.current = Date.now();
+        dbRef.current.ref(`${FB_STATE_PATH}/${ident}`)
+          .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
+          .then(() => { setLastSync(new Date()); setSyncError(false); hasPendingWrite.current = false; })
+          .catch(err => console.error("[Pronto] Reconnect flush failed:", err));
+      }
+    });
 
     // ── Presence ──
     const identity = myIdentity || "vanja";
@@ -1567,23 +1581,45 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     syncRef.current = {
       scheduleWrite(state) {
         pendingState.current = state;
+        hasPendingWrite.current = true;
         if (!dbRef.current) return;
         clearTimeout(writeTimerRef.current);
         writeTimerRef.current = setTimeout(() => {
           const s = pendingState.current;
-          if (!s || !dbRef.current) return;
-          if (!hasReceivedInitialData.current) return; // never write before first server read
+          if (!s || !dbRef.current || !hasReceivedInitialData.current) return;
           const identity = myIdentity || "vanja";
+          const payload = { ...stripForSync(s), _meta:{ updatedAt:Date.now() } };
           localWriteAt.current = Date.now();
-          dbRef.current.ref(`${FB_STATE_PATH}/${identity}`)
-            .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
-            .then(() => setLastSync(new Date()))
-            .catch(err => console.error("Firebase write:", err));
+          const attempt = (retriesLeft) => {
+            if (!dbRef.current) return;
+            dbRef.current.ref(`${FB_STATE_PATH}/${identity}`).set(payload)
+              .then(() => { setLastSync(new Date()); setSyncError(false); hasPendingWrite.current = false; })
+              .catch(err => {
+                if (retriesLeft > 0 && dbRef.current) {
+                  setTimeout(() => attempt(retriesLeft - 1), 2000 * (4 - retriesLeft));
+                } else {
+                  console.error("[Pronto] Firebase write failed after retries:", err);
+                  setSyncError(true);
+                }
+              });
+          };
+          attempt(3);
         }, 1500);
       }
     };
     return () => clearTimeout(writeTimerRef.current);
   });
+
+  // Best-effort flush when closing/refreshing the tab
+  useEy(() => {
+    const flush = () => {
+      if (!hasPendingWrite.current || !pendingState.current || !dbRef.current || !hasReceivedInitialData.current) return;
+      const ident = myIdentity || "vanja";
+      try { dbRef.current.ref(`${FB_STATE_PATH}/${ident}`).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } }); } catch(_) {}
+    };
+    window.addEventListener('beforeunload', flush);
+    return () => window.removeEventListener('beforeunload', flush);
+  }, [myIdentity]);
 
   const connect = () => {
     const trimmed = { apiKey:apiKey.trim(), databaseURL:dbUrl.trim().replace(/\/$/, "") };
@@ -1606,16 +1642,16 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     if (onPresenceChange) onPresenceChange([]);
   };
 
-  const dotColor = { live:"#0E9F6E", connecting:"#DC9F09", error:"#C8261A", disconnected:"#9AA0AE" }[status];
-  const dotLabel = { live:"Live", connecting:"Connecting…", error:"Error", disconnected:"Offline" }[status];
+  const dotColor = { live: syncError ? "#F59E0B" : "#0E9F6E", connecting:"#DC9F09", error:"#C8261A", disconnected:"#9AA0AE" }[status];
+  const dotLabel = { live: syncError ? "Sync Error" : "Live", connecting:"Connecting…", error:"Error", disconnected:"Offline" }[status];
 
   return (
     <div ref={popupRef} style={{ position:"relative" }}>
       <button onClick={() => setOpen(o => !o)} style={{
         padding:"7px 12px",
-        background: status==="live" ? "#E4F7EF" : open ? "#14295A" : "transparent",
-        border:`1px solid ${status==="live" ? "#0E9F6E44" : open ? "#14295A" : "#E5E5E0"}`,
-        borderRadius:6, color: status==="live" ? "#0E9F6E" : open ? "#fff" : "#2A3147",
+        background: status==="live" ? (syncError?"#FEF3CD":"#E4F7EF") : open ? "#14295A" : "transparent",
+        border:`1px solid ${status==="live" ? (syncError?"#F59E0B55":"#0E9F6E44") : open ? "#14295A" : "#E5E5E0"}`,
+        borderRadius:6, color: status==="live" ? (syncError?"#B45309":"#0E9F6E") : open ? "#fff" : "#2A3147",
         fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
         display:"flex", alignItems:"center", gap:6, transition:"all 0.15s",
       }}
@@ -1623,7 +1659,7 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
       onMouseLeave={e => { if (status!=="live"&&!open) { e.currentTarget.style.borderColor="#E5E5E0"; e.currentTarget.style.color="#2A3147"; }}}
       >
         <span style={{ width:7, height:7, borderRadius:"50%", background:dotColor, flexShrink:0 }}></span>
-        {status==="live" ? (lastSync ? `LIVE · ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "LIVE") : "SYNC"}
+        {status==="live" ? (syncError ? "⚠ SYNC ERROR" : lastSync ? `LIVE · ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "LIVE") : "SYNC"}
       </button>
 
       {open && (
@@ -1641,8 +1677,13 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
           </div>
 
           {status==="live" && (
-            <div style={{ padding:"10px 12px", background:"#E4F7EF", border:"1px solid #0E9F6E22", borderRadius:7, marginBottom:14 }}>
-              <p style={{ fontSize:12, color:"#0E9F6E", fontWeight:700, marginBottom:4 }}>Connected — changes sync automatically</p>
+            <div style={{ padding:"10px 12px", background:syncError?"#FFFBEB":"#E4F7EF", border:`1px solid ${syncError?"#F59E0B33":"#0E9F6E22"}`, borderRadius:7, marginBottom:14 }}>
+              {syncError && (
+                <div style={{ background:"#FEF3CD", border:"1px solid #F59E0B44", borderRadius:5, padding:"7px 10px", marginBottom:8, fontSize:11, color:"#92400E", fontWeight:600 }}>
+                  ⚠ Last write failed — retrying automatically. Your data is safe in your browser.
+                </div>
+              )}
+              <p style={{ fontSize:12, color:syncError?"#B45309":"#0E9F6E", fontWeight:700, marginBottom:4 }}>{syncError ? "Connected — sync error" : "Connected — changes sync automatically"}</p>
               <p style={{ fontSize:11, color:"#6B7280", marginBottom:8 }}>Every edit pushes within 1.5 s. Avatars show who's online and which tab they're on.</p>
               {lastSync && <p style={{ fontSize:10.5, color:"#9AA0AE" }}>Last synced: {lastSync.toLocaleTimeString()}</p>}
               <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
