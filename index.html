@@ -18809,8 +18809,16 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
     { key: 'victoria', label: 'Victoria', color: '#DB2777', role: 'EA · Delegated Tasks'     },
   ];
 
-  const SALES_LS_KEY   = 'prontoHQ.sales.state.v1';
-  const SALES_USER_KEY = 'prontoHQ.sales.user';
+  const SALES_LS_KEY    = 'prontoHQ.sales.state.v1';
+  const SALES_USER_KEY  = 'prontoHQ.sales.user';
+  const SALES_PHOTO_KEY = (key) => `prontoHQ.sales.photo.${key}`;
+
+  function getSalesPhoto(key) {
+    try { return localStorage.getItem(SALES_PHOTO_KEY(key)) || null; } catch { return null; }
+  }
+  function setSalesPhoto(key, dataUrl) {
+    try { localStorage.setItem(SALES_PHOTO_KEY(key), dataUrl); } catch {}
+  }
 
   function scatByKey(k)  { return SALES_CATS.find(c => c.key === k)    || SALES_CATS[7]; }
   function surgByKey(k)  { return SALES_URGENCY.find(u => u.key === k) || SALES_URGENCY[2]; }
@@ -18924,11 +18932,27 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
   const SALES_PW = { bronson: atob('TCFtZTk4'), victoria: atob('QzB3MTg1') };
 
   function SalesUserPicker({ onSelect, onSwitchWorkspace }) {
-    const [pending, setPending] = useSs(null); // { key, label, color }
+    const [pending, setPending] = useSs(null);
     const [pw, setPw]           = useSs('');
     const [err, setErr]         = useSs(false);
     const [show, setShow]       = useSs(false);
+    const [photos, setPhotos]   = useSs(() => ({
+      bronson:  getSalesPhoto('bronson'),
+      victoria: getSalesPhoto('victoria'),
+    }));
     const inputRef              = useRs(null);
+    const fileRefs              = { bronson: useRs(null), victoria: useRs(null) };
+
+    function handlePhotoUpload(userKey, file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        setSalesPhoto(userKey, dataUrl);
+        setPhotos(p => ({ ...p, [userKey]: dataUrl }));
+      };
+      reader.readAsDataURL(file);
+    }
 
     const openPrompt = (u) => {
       setPending(u); setPw(''); setErr(false); setShow(false);
@@ -18959,21 +18983,37 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
         </div>
         <div style={{ display:'flex', gap: 20, flexWrap:'wrap', justifyContent:'center' }}>
           {SALES_USERS.map(u => (
-            <button key={u.key} onClick={() => openPrompt(u)}
-              style={{ width: 200, padding: '32px 24px', background: T.cardBg,
-                       border: `2px solid ${u.color}40`, borderRadius: 16, cursor:'pointer',
-                       display:'flex', flexDirection:'column', alignItems:'center', gap: 10,
-                       boxShadow:'0 2px 8px rgba(0,0,0,0.07)', transition:'box-shadow 0.15s' }}
-              onMouseEnter={e => e.currentTarget.style.boxShadow = `0 4px 20px ${u.color}40`}
-              onMouseLeave={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)'}>
-              <div style={{ width: 56, height: 56, borderRadius: '50%',
-                            background: u.color, color:'#fff', fontWeight: 800,
-                            fontSize: 22, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {u.label[0]}
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: u.color }}>{u.label}</div>
-              <div style={{ fontSize: 11, color: T.muted, textAlign:'center' }}>{u.role}</div>
-            </button>
+            <div key={u.key} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap: 8 }}>
+              <button onClick={() => openPrompt(u)}
+                style={{ width: 200, padding: '28px 24px 20px', background: T.cardBg,
+                         border: `2px solid ${u.color}40`, borderRadius: 16, cursor:'pointer',
+                         display:'flex', flexDirection:'column', alignItems:'center', gap: 10,
+                         boxShadow:'0 2px 8px rgba(0,0,0,0.07)', transition:'box-shadow 0.15s' }}
+                onMouseEnter={e => e.currentTarget.style.boxShadow = `0 4px 20px ${u.color}40`}
+                onMouseLeave={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)'}>
+                <div style={{ position:'relative', width:64, height:64 }}>
+                  <div style={{ width:64, height:64, borderRadius:'50%', overflow:'hidden',
+                                border:`3px solid ${u.color}`, flexShrink:0,
+                                background: u.color, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {photos[u.key]
+                      ? <img src={photos[u.key]} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                      : <span style={{ color:'#fff', fontWeight:800, fontSize:24 }}>{u.label[0]}</span>
+                    }
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: u.color }}>{u.label}</div>
+                <div style={{ fontSize: 11, color: T.muted, textAlign:'center' }}>{u.role}</div>
+              </button>
+              {/* Hidden file input */}
+              <input ref={fileRefs[u.key]} type="file" accept="image/*" style={{ display:'none' }}
+                onChange={e => handlePhotoUpload(u.key, e.target.files[0])} />
+              <button
+                onClick={() => fileRefs[u.key].current && fileRefs[u.key].current.click()}
+                style={{ fontSize:11, color:T.muted, background:'none', border:`1px solid ${T.border}`,
+                         borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'inherit' }}>
+                {photos[u.key] ? '📷 Change photo' : '📷 Upload photo'}
+              </button>
+            </div>
           ))}
         </div>
 
@@ -18988,10 +19028,13 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
               boxShadow:`0 8px 40px ${pending.color}30`,
               display:'flex', flexDirection:'column', alignItems:'center', gap: 18,
             }}>
-              <div style={{ width: 56, height: 56, borderRadius:'50%', background: pending.color,
-                            color:'#fff', fontWeight:800, fontSize:22,
-                            display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {pending.label[0]}
+              <div style={{ width:56, height:56, borderRadius:'50%', overflow:'hidden',
+                            border:`3px solid ${pending.color}`, flexShrink:0,
+                            background: pending.color, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {photos[pending.key]
+                  ? <img src={photos[pending.key]} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                  : <span style={{ color:'#fff', fontWeight:800, fontSize:22 }}>{pending.label[0]}</span>
+                }
               </div>
               <div style={{ textAlign:'center' }}>
                 <div style={{ fontWeight:800, fontSize:18, color: pending.color }}>{pending.label}</div>
@@ -21080,6 +21123,19 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     const [tab, setTab]             = useSs('today');
     const [theme, setTheme]         = useSs(() => { try { return localStorage.getItem('prontoHQ.theme') || 'light'; } catch { return 'light'; } });
     const [settingsOpen, setSettingsOpen] = useSs(false);
+    const [userPhoto, setUserPhoto]  = useSs(() => getSalesPhoto(salesUser));
+    const photoFileRef               = useRs(null);
+
+    function handlePhotoUpload(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        setSalesPhoto(salesUser, dataUrl);
+        setUserPhoto(dataUrl);
+      };
+      reader.readAsDataURL(file);
+    }
     const [selDate, setSelDate]     = useSs(() => today());
     const [tasksByDate, setTasksByDate] = useSs(() => {
       try {
@@ -21257,13 +21313,14 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
             <button onClick={() => changeDate(1)}
               style={{ background:'none', border:`1px solid ${T.border}`, borderRadius:6,
                        width:28, height:28, cursor:'pointer', color:T.muted, fontSize:14 }}>›</button>
-            {/* User avatar with photo */}
+            {/* User avatar */}
             <div style={{ width:34, height:34, borderRadius:'50%', overflow:'hidden',
-                          border:`2px solid ${userColor}`, flexShrink:0 }}>
-              <img src={`assets/team/${userInfo.label}.jpg`}
-                onError={e => { e.currentTarget.style.display='none'; e.currentTarget.parentNode.style.background=userColor; e.currentTarget.parentNode.innerHTML=`<span style="color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;height:100%">${userInfo.label[0]}</span>`; }}
-                style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}
-              />
+                          border:`2px solid ${userColor}`, flexShrink:0,
+                          background: userColor, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {userPhoto
+                ? <img src={userPhoto} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                : <span style={{ color:'#fff', fontWeight:800, fontSize:14 }}>{userInfo.label[0]}</span>
+              }
             </div>
             <button onClick={() => { setSalesUser(null); try { localStorage.removeItem(SALES_USER_KEY); } catch {} }}
               style={{ padding:'5px 12px', borderRadius:6, background:'none',
@@ -21349,12 +21406,31 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
             <div style={{ marginBottom:28 }}>
               <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:12 }}>Account</p>
               <div style={{ display:'flex', alignItems:'center', gap:12, background:T.surface, borderRadius:10, padding:'12px 14px', border:`1px solid ${T.border}` }}>
-                <div style={{ width:40, height:40, borderRadius:'50%', background:userColor, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:800, fontSize:16 }}>{userInfo.label[0]}</div>
+                <div style={{ position:'relative', flexShrink:0 }}>
+                  <div style={{ width:48, height:48, borderRadius:'50%', overflow:'hidden', border:`2px solid ${userColor}`, background:userColor, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {userPhoto
+                      ? <img src={userPhoto} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                      : <span style={{ color:'#fff', fontWeight:800, fontSize:18 }}>{userInfo.label[0]}</span>
+                    }
+                  </div>
+                  <button
+                    onClick={() => photoFileRef.current && photoFileRef.current.click()}
+                    title="Upload photo"
+                    style={{ position:'absolute', bottom:-2, right:-2, width:20, height:20, borderRadius:'50%', background:userColor, border:'2px solid '+T.bg, color:'#fff', fontSize:10, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}>
+                    📷
+                  </button>
+                </div>
                 <div>
                   <div style={{ fontWeight:700, fontSize:14, color:T.ink, fontFamily:"'Outfit',sans-serif" }}>{userInfo.label}</div>
                   <div style={{ fontSize:11, color:T.muted }}>Sales & GM Workspace</div>
+                  <button onClick={() => photoFileRef.current && photoFileRef.current.click()}
+                    style={{ marginTop:4, fontSize:11, color:userColor, background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:"'Outfit',sans-serif", fontWeight:600 }}>
+                    {userPhoto ? 'Change photo' : 'Upload photo'}
+                  </button>
                 </div>
               </div>
+              <input ref={photoFileRef} type="file" accept="image/*" style={{ display:'none' }}
+                onChange={e => handlePhotoUpload(e.target.files[0])} />
             </div>
 
             {/* Schedule preferences */}
