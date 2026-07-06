@@ -19584,12 +19584,8 @@ function BronsonTaskCard({ task, onToggle, onDelegate, onDelete, compact, select
   return (
     <div style={{ background:'#fff', borderRadius: 10, border:`${selected ? 2 : 1}px solid ${selected ? '#3B82F6' : '#D5D3CE'}`, marginBottom: 7, overflow:'hidden', transition:'border-color 0.12s' }}>
       <div style={{ display:'flex', alignItems:'flex-start', gap: 8, padding:'9px 11px' }}>
-        <div onClick={e => { e.stopPropagation(); onSelect && onSelect(task.id); }}
-          style={{ width: 16, height: 16, borderRadius:'50%', border:`2px solid ${selected ? '#3B82F6' : '#D5D3CE'}`, background: selected ? '#3B82F6' : 'transparent', color:'#fff', fontSize: 9, fontWeight: 900, cursor:'pointer', flexShrink: 0, display:'flex', alignItems:'center', justifyContent:'center', marginTop: 2, transition:'all 0.12s' }}>
-          {selected ? '✓' : ''}
-        </div>
         <div onClick={() => onToggle(task.id)}
-          style={{ width: 17, height: 17, borderRadius:'50%', border:`2px solid ${task.done ? '#0E9F6E' : '#D5D3CE'}`, background: task.done ? '#0E9F6E' : 'transparent', color:'#fff', fontSize: 9, fontWeight: 900, cursor:'pointer', flexShrink: 0, display:'flex', alignItems:'center', justifyContent:'center', marginTop: 2, transition:'all 0.12s' }}>
+          style={{ width: 17, height: 17, borderRadius: 4, border:`2px solid ${task.done ? '#0E9F6E' : '#D5D3CE'}`, background: task.done ? '#0E9F6E' : 'transparent', color:'#fff', fontSize: 9, fontWeight: 900, cursor:'pointer', flexShrink: 0, display:'flex', alignItems:'center', justifyContent:'center', marginTop: 2, transition:'all 0.12s' }}>
           {task.done ? '✓' : ''}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -19606,6 +19602,10 @@ function BronsonTaskCard({ task, onToggle, onDelegate, onDelete, compact, select
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap: 3, flexShrink: 0 }}>
+          <button onClick={e => { e.stopPropagation(); onSelect && onSelect(task.id); }}
+            style={{ padding:'3px 7px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor:'pointer', border:`1px solid ${selected ? '#3B82F6' : '#D5D3CE'}`, background: selected ? '#EFF6FF' : 'transparent', color: selected ? '#3B82F6' : '#9B9894', fontFamily:"'Outfit',sans-serif", whiteSpace:'nowrap' }}>
+            {selected ? '✓ Selected' : 'Select'}
+          </button>
           <button onClick={() => setShowSub(!showSub)} style={{ padding:'3px 7px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor:'pointer', border:'1px solid #D5D3CE', background:'transparent', color:'#9B9894', fontFamily:"'Outfit',sans-serif" }}>{showSub ? '▲' : '▼'}</button>
           <button onClick={() => { setShowSub(true); }} style={{ padding:'3px 7px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor:'pointer', border:'1px solid #D5D3CE', background:'transparent', color:'#9B9894', fontFamily:"'Outfit',sans-serif" }}>+ Sub</button>
           <button onClick={() => setShowNote(!showNote)} style={{ padding:'3px 7px', borderRadius: 6, fontSize: 10, cursor:'pointer', border:'1px solid #D5D3CE', background:'transparent', color:'#9B9894' }}>📝</button>
@@ -20246,27 +20246,32 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
 
   // ─── 9. SalesScheduleView ─────────────────────────────────────────────────
 
-  function SalesScheduleView({ selDate, tasksByDate, setTasksByDate,
+  function SalesScheduleView({ selDate, setSelDate, tasksByDate, setTasksByDate,
                                schedule, setSchedule,
                                deletedTasks, setDeletedTasks,
                                dayFlags, setDayFlags,
                                isBronson, salesUser, userColor, visibleTasks }) {
     const dk = isoDate(selDate);
-    const HOUR_START = 7, HOUR_END = 20, HOUR_PX = 64;
+    const HOUR_START = 0, HOUR_END = 24, HOUR_PX = 64;
     const MIN_PX = HOUR_PX / 60;
     const TOTAL_PX = (HOUR_END - HOUR_START) * HOUR_PX;
     const hours = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i);
 
-    const [nowMin,     setNowMin]     = useSs(() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); });
-    const [isMobile,   setIsMobile]   = useSs(() => window.innerWidth < 768);
-    const [mobTab,     setMobTab]     = useSs('tasks');
-    const [touchItem,  setTouchItem]  = useSs(null);
-    const [dragOver,   setDragOver]   = useSs(null);
-    const [modal,      setModal]      = useSs(null);
-    const [newMtg,     setNewMtg]     = useSs({ title: '', withs: '', time: '09:00', dur: '60', loc: '' });
-    const [olPicked,   setOlPicked]   = useSs(() => new Set(['o1', 'o2']));
-    const [olImported, setOlImported] = useSs(() => new Set());
-    const dragRef = useRs(null);
+    const [nowMin,       setNowMin]       = useSs(() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); });
+    const [isMobile,     setIsMobile]     = useSs(() => window.innerWidth < 768);
+    const [mobTab,       setMobTab]       = useSs('tasks');
+    const [touchItem,    setTouchItem]    = useSs(null);
+    const [dragOver,     setDragOver]     = useSs(null);
+    const [modal,        setModal]        = useSs(null);
+    const [newMtg,       setNewMtg]       = useSs({ title: '', withs: '', time: '09:00', dur: '60', loc: '' });
+    const [olPicked,     setOlPicked]     = useSs(() => new Set(['o1', 'o2']));
+    const [olImported,   setOlImported]   = useSs(() => new Set());
+    const [schedSubTab,  setSchedSubTab]  = useSs('day');
+    const [editTimeItem, setEditTimeItem] = useSs(null);
+    const [editTimeVals, setEditTimeVals] = useSs({ start: '09:00', dur: '60' });
+    const [resizeState,  setResizeState]  = useSs(null);
+    const dragRef      = useRs(null);
+    const gridScrollRef = useRs(null);
 
     useEs(() => {
       const clockId = setInterval(() => {
@@ -20276,6 +20281,29 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
       window.addEventListener('resize', onResize);
       return () => { clearInterval(clockId); window.removeEventListener('resize', onResize); };
     }, []);
+
+    // Auto-scroll to 7am on mount
+    useEs(() => {
+      if (gridScrollRef.current) gridScrollRef.current.scrollTop = 7 * HOUR_PX;
+    }, []);
+
+    // Resize drag: track mousemove/mouseup globally
+    useEs(() => {
+      if (!resizeState) return;
+      function onMove(e) {
+        const dy = e.clientY - resizeState.startY;
+        const rawDur = resizeState.origDuration + dy / MIN_PX;
+        const snapped = Math.max(15, Math.round(rawDur / 15) * 15);
+        setTasksByDate(prev => ({
+          ...prev,
+          [dk]: (prev[dk] || []).map(t => t.id === resizeState.id ? { ...t, durationMin: snapped } : t),
+        }));
+      }
+      function onUp() { setResizeState(null); }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    }, [resizeState]);
 
     const allItems        = tasksByDate[dk] || [];
     const scheduledItems  = allItems.filter(t => t.startMin != null);
@@ -20300,6 +20328,26 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     ];
 
     function minToPx(min) { return (min - HOUR_START * 60) * MIN_PX; }
+
+    function openEditTime(item) {
+      const hh = String(Math.floor(item.startMin / 60)).padStart(2,'0');
+      const mm = String(item.startMin % 60).padStart(2,'0');
+      setEditTimeVals({ start: `${hh}:${mm}`, dur: String(item.durationMin || 60) });
+      setEditTimeItem(item);
+    }
+
+    function saveEditTime() {
+      if (!editTimeItem) return;
+      const [hh, mm] = editTimeVals.start.split(':').map(Number);
+      const newStart = hh * 60 + mm;
+      const newDur = Math.max(15, parseInt(editTimeVals.dur) || 60);
+      setTasksByDate(prev => ({
+        ...prev,
+        [dk]: (prev[dk] || []).map(t => t.id === editTimeItem.id
+          ? { ...t, startMin: newStart, durationMin: newDur, updatedAt: Date.now() } : t),
+      }));
+      setEditTimeItem(null);
+    }
 
     function itemColors(item) {
       if (item.schedType === 'block')   return { bg: item.blockBg || '#FEF3C7', color: item.blockColor || '#92400E' };
@@ -20488,7 +20536,7 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     );
 
     const timeGrid = (
-      <div style={{ flex: 1, minWidth: 0, overflowY:'auto', overflowX:'hidden' }}>
+      <div ref={gridScrollRef} style={{ flex: 1, minWidth: 0, overflowY:'auto', overflowX:'hidden', height: isMobile ? 'calc(100vh - 260px)' : 'calc(100vh - 220px)' }}>
         <div style={{ position:'relative', height: TOTAL_PX, background: T.cardBg, border:`1px solid ${T.border}`, borderRadius: 12 }}>
           {/* Hour rows */}
           {hours.map(h => {
@@ -20537,11 +20585,13 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
               ? (item.blockIcon ? item.blockIcon + ' ' : '') + item.text
               : item.schedType === 'meeting' ? '📅 ' + item.text
               : item.text;
+            const isResizing = resizeState && resizeState.id === item.id;
             return (
               <div key={item.id}
                 draggable
                 onDragStart={e => onDragStart(e, { existingId: item.id, text: item.text })}
-                style={{ position:'absolute', left: 56, right: 8, top, height, background: bg, borderLeft:`3px solid ${color}`, borderRadius: 6, padding:'3px 8px', overflow:'hidden', boxSizing:'border-box', cursor:'grab', zIndex: 5, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' }}>
+                onClick={() => openEditTime(item)}
+                style={{ position:'absolute', left: 56, right: 8, top, height, background: bg, borderLeft:`3px solid ${color}`, borderRadius: 6, padding:'3px 8px', overflow:'hidden', boxSizing:'border-box', cursor:'pointer', zIndex: isResizing ? 20 : 5, boxShadow: isResizing ? `0 4px 12px ${color}44` : '0 1px 3px rgba(0,0,0,0.08)', userSelect:'none' }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap: 4 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color, flex: 1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
                   <span onClick={e => { e.stopPropagation(); removeScheduled(item.id); }}
@@ -20549,12 +20599,48 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
                 </div>
                 {height > 36 && (
                   <span style={{ fontSize: 10, color, opacity: 0.8 }}>
-                    {fmtTime(item.startMin)}{item.meetingWith ? ' · ' + item.meetingWith : ''}
+                    {fmtTime(item.startMin)} – {fmtTime(item.startMin + dur)}{item.meetingWith ? ' · ' + item.meetingWith : ''}
                   </span>
                 )}
+                {/* Resize handle */}
+                <div
+                  onMouseDown={e => { e.stopPropagation(); e.preventDefault(); setResizeState({ id: item.id, startY: e.clientY, origDuration: dur }); }}
+                  onClick={e => e.stopPropagation()}
+                  style={{ position:'absolute', bottom: 0, left: 0, right: 0, height: 8, cursor:'ns-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <div style={{ width: 24, height: 3, borderRadius: 2, background: color, opacity: 0.5 }} />
+                </div>
               </div>
             );
           })}
+        </div>
+      </div>
+    );
+
+    const timeEditModal = editTimeItem && (
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+        onClick={() => setEditTimeItem(null)}>
+        <div onClick={e => e.stopPropagation()}
+          style={{ background: T.cardBg, borderRadius:16, padding:24, width:'100%', maxWidth:300, boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+          <h3 style={{ margin:'0 0 16px', fontFamily:"'Outfit',sans-serif", fontWeight:700, color:T.ink, fontSize:15 }}>Edit Time</h3>
+          <p style={{ margin:'0 0 14px', fontSize:12, color:T.muted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{editTimeItem.text}</p>
+          <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+            <div style={{ flex:1 }}>
+              <label style={{ display:'block', fontSize:10, fontWeight:700, color:T.muted, marginBottom:4, textTransform:'uppercase', letterSpacing:'0.05em' }}>Start time</label>
+              <input type="time" value={editTimeVals.start} onChange={e => setEditTimeVals(p => ({ ...p, start: e.target.value }))}
+                style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, fontFamily:"'Outfit',sans-serif", fontSize:13, boxSizing:'border-box' }} />
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={{ display:'block', fontSize:10, fontWeight:700, color:T.muted, marginBottom:4, textTransform:'uppercase', letterSpacing:'0.05em' }}>Duration</label>
+              <select value={editTimeVals.dur} onChange={e => setEditTimeVals(p => ({ ...p, dur: e.target.value }))}
+                style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, fontFamily:"'Outfit',sans-serif", fontSize:13, boxSizing:'border-box' }}>
+                {['15','30','45','60','90','120','180'].map(d => <option key={d} value={d}>{d} min</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={() => setEditTimeItem(null)} style={{ flex:1, padding:10, borderRadius:8, border:`1px solid ${T.border}`, background:T.surface, color:T.muted, cursor:'pointer', fontFamily:"'Outfit',sans-serif", fontWeight:600 }}>Cancel</button>
+            <button onClick={saveEditTime} style={{ flex:1, padding:10, borderRadius:8, border:'none', background:T.navy, color:'#fff', cursor:'pointer', fontFamily:"'Outfit',sans-serif", fontWeight:700 }}>Save</button>
+          </div>
         </div>
       </div>
     );
@@ -20634,20 +20720,39 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
       </div>
     );
 
+    const subTabs = (
+      <div style={{ display:'flex', gap:2, marginBottom:12, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:4, alignSelf:'flex-start' }}>
+        {[{k:'day',l:'Day'},{k:'week',l:'Week'},{k:'month',l:'Month'}].map(st => (
+          <button key={st.k} onClick={() => setSchedSubTab(st.k)}
+            style={{ padding:'5px 16px', borderRadius:7, border:'none', background: schedSubTab===st.k ? T.navy : 'transparent', color: schedSubTab===st.k ? '#fff' : T.muted, fontFamily:"'Outfit',sans-serif", fontWeight:700, fontSize:12, cursor:'pointer' }}>
+            {st.l}
+          </button>
+        ))}
+      </div>
+    );
+
     if (isMobile) {
       return (
         <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-          <div style={{ display:'flex', borderBottom:`1px solid ${T.border}`, background: T.cardBg, flexShrink: 0 }}>
-            {['tasks','schedule'].map(tab => (
-              <button key={tab} onClick={() => setMobTab(tab)}
-                style={{ flex: 1, padding: 10, border:'none', borderBottom:`2px solid ${mobTab===tab ? T.navy : 'transparent'}`, background:'transparent', color: mobTab===tab ? T.navy : T.muted, fontFamily:"'Outfit',sans-serif", fontWeight: 700, fontSize: 13, cursor:'pointer', textTransform:'capitalize' }}>
-                {tab === 'tasks' ? '📋 Tasks & Blocks' : '🗓 Schedule'}
-              </button>
-            ))}
-          </div>
-          <div style={{ flex: 1, overflow:'auto', padding: 12 }}>
-            {mobTab === 'tasks' ? leftPanel : timeGrid}
-          </div>
+          {subTabs}
+          {schedSubTab === 'week'  && <SalesWeeklyView  selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} setTasksByDate={setTasksByDate} schedule={schedule} setSchedule={setSchedule} dayFlags={dayFlags} setDayFlags={setDayFlags} deletedTasks={deletedTasks} setDeletedTasks={setDeletedTasks} isBronson={isBronson} salesUser={salesUser} userColor={userColor} visibleTasks={visibleTasks} />}
+          {schedSubTab === 'month' && <SalesMonthlyView selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} isBronson={isBronson} salesUser={salesUser} userColor={userColor} />}
+          {schedSubTab === 'day' && (
+            <>
+              <div style={{ display:'flex', borderBottom:`1px solid ${T.border}`, background: T.cardBg, flexShrink: 0 }}>
+                {['tasks','schedule'].map(tab => (
+                  <button key={tab} onClick={() => setMobTab(tab)}
+                    style={{ flex: 1, padding: 10, border:'none', borderBottom:`2px solid ${mobTab===tab ? T.navy : 'transparent'}`, background:'transparent', color: mobTab===tab ? T.navy : T.muted, fontFamily:"'Outfit',sans-serif", fontWeight: 700, fontSize: 13, cursor:'pointer', textTransform:'capitalize' }}>
+                    {tab === 'tasks' ? '📋 Tasks & Blocks' : '🗓 Schedule'}
+                  </button>
+                ))}
+              </div>
+              <div style={{ flex: 1, overflow:'auto', padding: 12 }}>
+                {mobTab === 'tasks' ? leftPanel : timeGrid}
+              </div>
+            </>
+          )}
+          {timeEditModal}
           {meetingModal}
           {outlookModal}
         </div>
@@ -20655,9 +20760,17 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     }
 
     return (
-      <div style={{ display:'flex', gap: 16, height:'100%', minHeight: 0 }}>
-        {leftPanel}
-        <div style={{ flex: 1, overflow:'auto' }}>{timeGrid}</div>
+      <div style={{ display:'flex', flexDirection:'column', gap: 0, height:'100%', minHeight: 0 }}>
+        {subTabs}
+        {schedSubTab === 'week'  && <SalesWeeklyView  selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} setTasksByDate={setTasksByDate} schedule={schedule} setSchedule={setSchedule} dayFlags={dayFlags} setDayFlags={setDayFlags} deletedTasks={deletedTasks} setDeletedTasks={setDeletedTasks} isBronson={isBronson} salesUser={salesUser} userColor={userColor} visibleTasks={visibleTasks} />}
+        {schedSubTab === 'month' && <SalesMonthlyView selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} isBronson={isBronson} salesUser={salesUser} userColor={userColor} />}
+        {schedSubTab === 'day' && (
+          <div style={{ display:'flex', gap: 16, flex:1, minHeight: 0 }}>
+            {leftPanel}
+            {timeGrid}
+          </div>
+        )}
+        {timeEditModal}
         {meetingModal}
         {outlookModal}
       </div>
@@ -20965,6 +21078,8 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     });
 
     const [tab, setTab]             = useSs('today');
+    const [theme, setTheme]         = useSs(() => { try { return localStorage.getItem('prontoHQ.theme') || 'light'; } catch { return 'light'; } });
+    const [settingsOpen, setSettingsOpen] = useSs(false);
     const [selDate, setSelDate]     = useSs(() => today());
     const [tasksByDate, setTasksByDate] = useSs(() => {
       try {
@@ -21084,7 +21199,7 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     }
 
     // Tabs available
-    const TABS_BRONSON  = ['today','tasks','schedule','accounts','weekly','monthly'];
+    const TABS_BRONSON  = ['today','tasks','schedule','accounts'];
     const TABS_VICTORIA = ['today','tasks','schedule'];
     const TABS = isBronson ? TABS_BRONSON : TABS_VICTORIA;
 
@@ -21093,8 +21208,6 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
       tasks:    'Tasks',
       schedule: 'Schedule',
       accounts: 'Accounts',
-      weekly:   'Weekly',
-      monthly:  'Monthly',
     };
 
     const sharedProps = {
@@ -21126,7 +21239,7 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
             <img src="assets/logo-horizontal.jpg" alt="Pronto Hire"
               className="app-header-logo"
               style={{ height:48, width:'auto', display:'block', objectFit:'contain',
-                       filter: (() => { try { return localStorage.getItem('prontoHQ.theme') === 'light'; } catch { return true; } })() ? 'brightness(0) saturate(100%)' : 'none' }}
+                       filter: theme === 'light' ? 'brightness(0) saturate(100%)' : 'none' }}
             />
             <div style={{ width:1, height:30, background:T.border }}/>
             <div>
@@ -21161,6 +21274,10 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
               style={{ padding:'5px 12px', borderRadius:6, background:'none',
                        border:`1px solid ${T.border}`, color:T.muted, fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>
               ← Back
+            </button>
+            <button onClick={() => setSettingsOpen(true)} title="Settings"
+              style={{ width:32, height:32, borderRadius:6, background:'none', border:`1px solid ${T.border}`, color:T.muted, fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              ⚙
             </button>
             <SalesSyncButton
               getState={getState}
@@ -21202,9 +21319,79 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
               accounts={accounts} setAccounts={setAccounts}
               tasksByDate={tasksByDate} isBronson={isBronson} userColor={userColor} />
           )}
-          {tab === 'weekly'   && isBronson && <SalesWeeklyView {...sharedProps} />}
-          {tab === 'monthly'  && isBronson && <SalesMonthlyView {...sharedProps} />}
         </div>
+
+        {/* ── Settings panel ── */}
+      {settingsOpen && (
+        <div style={{ position:'fixed', inset:0, zIndex:8000 }} onClick={() => setSettingsOpen(false)}>
+          <div style={{ position:'absolute', top:0, right:0, bottom:0, width: Math.min(400, window.innerWidth), background:T.bg, borderLeft:`1px solid ${T.border}`, boxShadow:'-8px 0 40px rgba(0,0,0,0.18)', overflowY:'auto', padding:'28px 28px' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:28 }}>
+              <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:17, color:T.heading, letterSpacing:'0.06em', margin:0 }}>SETTINGS</p>
+              <button onClick={() => setSettingsOpen(false)} style={{ background:'transparent', border:'none', color:T.muted, fontSize:22, cursor:'pointer', lineHeight:1 }}>×</button>
+            </div>
+
+            {/* Theme */}
+            <div style={{ marginBottom:28 }}>
+              <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:12 }}>Appearance</p>
+              <div style={{ display:'flex', gap:8 }}>
+                {[{k:'light',l:'Light',icon:'☀️'},{k:'dark',l:'Dark',icon:'🌙'},{k:'navy',l:'Navy',icon:'⭐'}].map(t => (
+                  <button key={t.k} onClick={() => { applyTheme(t.k); try { localStorage.setItem('prontoHQ.theme', t.k); } catch {} setTheme(t.k); setSettingsOpen(false); }}
+                    style={{ flex:1, padding:'10px 8px', borderRadius:8, border:`2px solid ${theme===t.k ? T.navy : T.border}`, background: theme===t.k ? T.navy+'12' : T.surface, cursor:'pointer', fontFamily:"'Outfit',sans-serif", fontSize:12, fontWeight:700, color: theme===t.k ? T.navy : T.muted, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                    <span style={{ fontSize:18 }}>{t.icon}</span>
+                    {t.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* User */}
+            <div style={{ marginBottom:28 }}>
+              <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:12 }}>Account</p>
+              <div style={{ display:'flex', alignItems:'center', gap:12, background:T.surface, borderRadius:10, padding:'12px 14px', border:`1px solid ${T.border}` }}>
+                <div style={{ width:40, height:40, borderRadius:'50%', background:userColor, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:800, fontSize:16 }}>{userInfo.label[0]}</div>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:14, color:T.ink, fontFamily:"'Outfit',sans-serif" }}>{userInfo.label}</div>
+                  <div style={{ fontSize:11, color:T.muted }}>Sales & GM Workspace</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Schedule preferences */}
+            <div style={{ marginBottom:28 }}>
+              <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:12 }}>Schedule</p>
+              <div style={{ background:T.surface, borderRadius:10, border:`1px solid ${T.border}`, overflow:'hidden' }}>
+                <div style={{ padding:'12px 14px', borderBottom:`1px solid ${T.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>24-hour view</div>
+                    <div style={{ fontSize:11, color:T.muted }}>Show full day from midnight</div>
+                  </div>
+                  <div style={{ width:36, height:20, borderRadius:10, background:T.navy, position:'relative' }}>
+                    <div style={{ position:'absolute', right:2, top:2, width:16, height:16, borderRadius:'50%', background:'#fff' }} />
+                  </div>
+                </div>
+                <div style={{ padding:'12px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>Auto-scroll to now</div>
+                    <div style={{ fontSize:11, color:T.muted }}>Jump to current time on open</div>
+                  </div>
+                  <div style={{ width:36, height:20, borderRadius:10, background:T.navy, position:'relative' }}>
+                    <div style={{ position:'absolute', right:2, top:2, width:16, height:16, borderRadius:'50%', background:'#fff' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sign out */}
+            <div>
+              <button onClick={() => { setSalesUser(null); try { localStorage.removeItem(SALES_USER_KEY); } catch {} setSettingsOpen(false); }}
+                style={{ width:'100%', padding:'10px', borderRadius:8, border:`1px solid ${T.border}`, background:'transparent', color:T.muted, fontSize:13, cursor:'pointer', fontFamily:"'Outfit',sans-serif", fontWeight:600 }}>
+                Sign out of workspace
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     );
   }
