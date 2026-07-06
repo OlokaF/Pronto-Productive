@@ -19455,7 +19455,7 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
   // BronsonTaskCard, VictoriaTaskCard, BronsonColumn, VictoriaColumn,
   // SalesDayView, SalesWeekView, SalesMonthView
 
-function SalesMiniCalendar({ selDate, setSelDate, tasksByDate }) {
+function SalesMiniCalendar({ selDate, setSelDate, tasksByDate, selectedCount, onMoveToDate }) {
   const [calOffset, setCalOffset] = useSs(0);
   const base = new Date(selDate.getFullYear(), selDate.getMonth() + calOffset, 1);
   const yr = base.getFullYear(), mo = base.getMonth();
@@ -19466,8 +19466,14 @@ function SalesMiniCalendar({ selDate, setSelDate, tasksByDate }) {
   for (let i = 0; i < firstDow; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(yr, mo, d));
   const monLabel = `${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][mo]} ${yr}`;
+  const moveMode = selectedCount > 0;
   return (
     <div style={{ width: '100%' }}>
+      {moveMode && (
+        <div style={{ background: T.navy+'14', border:`1px solid ${T.navy+'30'}`, borderRadius: 6, padding:'5px 8px', marginBottom: 6, fontSize: 10, fontWeight: 700, color: T.navy, textAlign:'center' }}>
+          📅 Click a date to move {selectedCount} task{selectedCount > 1 ? 's' : ''}
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <button onClick={() => setCalOffset(calOffset - 1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, fontSize: 13, padding: '0 2px' }}>‹</button>
         <span style={{ fontSize: 9, fontWeight: 800, color: T.heading, letterSpacing: '0.08em' }}>{monLabel}</span>
@@ -19487,8 +19493,8 @@ function SalesMiniCalendar({ selDate, setSelDate, tasksByDate }) {
           const hasTasks = tasksByDate[key] && tasksByDate[key].some(t => !t.done);
           const hasUrgent = tasksByDate[key] && tasksByDate[key].some(t => t.urgency === 'urgent' && !t.done);
           return (
-            <button key={i} onClick={() => { setSelDate(d); setCalOffset(0); }}
-              style={{ width: '100%', aspectRatio: '1/1', borderRadius: 4, border: `1.5px solid ${isSel ? T.navy : isToday ? T.gold : 'transparent'}`, background: isSel ? T.navy : isToday ? T.gold + '22' : 'transparent', color: isSel ? '#fff' : isToday ? T.gold : T.text, fontSize: 10.5, fontWeight: isSel || isToday ? 800 : 400, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, padding: 2 }}>
+            <button key={i} onClick={() => { setSelDate(d); setCalOffset(0); if (moveMode && onMoveToDate) onMoveToDate(d); }}
+              style={{ width: '100%', aspectRatio: '1/1', borderRadius: 4, border: `1.5px solid ${moveMode ? T.navy+'50' : isSel ? T.navy : isToday ? T.gold : 'transparent'}`, background: isSel ? T.navy : isToday ? T.gold + '22' : moveMode ? T.navy+'08' : 'transparent', color: isSel ? '#fff' : isToday ? T.gold : T.text, fontSize: 10.5, fontWeight: isSel || isToday ? 800 : 400, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, padding: 2 }}>
               {d.getDate()}
               {hasTasks && <div style={{ width: 3, height: 3, borderRadius: '50%', background: hasUrgent ? T.gold : T.navy }} />}
             </button>
@@ -19552,11 +19558,16 @@ function SalesCategoryTags({ activeTag, setActiveTag }) {
   );
 }
 
-function BronsonTaskCard({ task, onToggle, onFocus, onDelegate, onDelete, onPrivacyToggle, compact }) {
+function BronsonTaskCard({ task, onToggle, onFocus, onDelegate, onDelete, onPrivacyToggle, compact, selected, onSelect }) {
   const cat = scatByKey(task.cat);
   const urg = surgByKey(task.urgency);
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: compact ? '6px 8px' : '8px 10px', borderRadius: 8, background: T.cardBg, marginBottom: 5, border: `1px solid ${T.border}` }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: compact ? '6px 8px' : '8px 10px', borderRadius: 8, background: selected ? T.navy+'0d' : T.cardBg, marginBottom: 5, border: `1px solid ${selected ? T.navy+'50' : T.border}`, transition: 'background 0.1s, border-color 0.1s' }}>
+      <button onClick={e => { e.stopPropagation(); onSelect && onSelect(task.id); }}
+        title="Select task"
+        style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${selected ? T.navy : T.border}`, background: selected ? T.navy : 'transparent', color: '#fff', fontSize: 9, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+        {selected && '✓'}
+      </button>
       <button onClick={() => onToggle(task.id)}
         style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#22c55e' : T.border}`, background: task.done ? '#22c55e' : 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
         {task.done && '✓'}
@@ -19643,12 +19654,28 @@ function VictoriaTaskCard({ task, onToggle, onDelete, onSendUpdate }) {
   );
 }
 
-function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayType, setDayType }) {
+function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayType, setDayType, selectedIds, setSelectedIds }) {
   const [focusInput, setFocusInput] = useSs('');
   const [reactiveInput, setReactiveInput] = useSs('');
   const [recurInput, setRecurInput] = useSs('');
   const [ongoingInput, setOngoingInput] = useSs('');
   const [handedOffOpen, setHandedOffOpen] = useSs(false);
+  const [toast, setToast] = useSs(null);
+
+  useEs(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  function toggleSelect(id) {
+    if (!setSelectedIds) return;
+    setSelectedIds(prev => {
+      const ns = new Set(prev);
+      ns.has(id) ? ns.delete(id) : ns.add(id);
+      return ns;
+    });
+  }
 
   function toggleFocus(id) {
     const t = tasks.find(x => x.id === id);
@@ -19663,6 +19690,7 @@ function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayTyp
     const t = tasks.find(x => x.id === id);
     if (!t) return;
     updateTask(id, { delegated: !t.delegated, inFocus: false });
+    if (!t.delegated) setToast('📧 Email sent to Victoria · Added to her task list');
   }
   function togglePrivacy(id) {
     const t = tasks.find(x => x.id === id);
@@ -19703,11 +19731,19 @@ function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayTyp
     key: t.id, task: t,
     onToggle: id => updateTask(id, { done: !tasks.find(x => x.id === id).done }),
     onFocus: toggleFocus, onDelegate: toggleDelegate,
-    onDelete: deleteTask, onPrivacyToggle: togglePrivacy
+    onDelete: deleteTask, onPrivacyToggle: togglePrivacy,
+    selected: selectedIds ? selectedIds.has(t.id) : false,
+    onSelect: toggleSelect,
   });
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
+      {toast && (
+        <div style={{ background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 8, padding: '8px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#166534' }}>
+          <span style={{ flex: 1 }}>{toast}</span>
+          <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', fontSize: 14, lineHeight: 1 }}>×</button>
+        </div>
+      )}
       <div style={{ height: 4, borderRadius: 2, background: T.surface2, marginBottom: 12, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: T.navy, borderRadius: 2, transition: 'width 0.4s' }} />
       </div>
@@ -19818,14 +19854,26 @@ function VictoriaColumn({ tasks, dateKey, salesUser, addTask, updateTask, delete
   );
 }
 
-function SalesDayView({ selDate, setSelDate, tasksByDate, addTask, updateTask, deleteTask, dayFlags, setDayFlags, isBronson, salesUser, userColor, visibleTasks }) {
+function SalesDayView({ selDate, setSelDate, tasksByDate, setTasksByDate, addTask, updateTask, deleteTask, dayFlags, setDayFlags, isBronson, salesUser, userColor, visibleTasks }) {
   const [filter, setFilter] = useSs('all');
   const [activeTag, setActiveTag] = useSs(null);
   const [personView, setPersonView] = useSs('all');
   const [search, setSearch] = useSs('');
   const [statsFilter, setStatsFilter] = useSs(null);
+  const [selectedIds, setSelectedIds] = useSs(() => new Set());
 
   const dateKey = sfmtDateStr(selDate);
+
+  function moveTasksToDate(targetDate) {
+    const targetDk = sfmtDateStr(targetDate);
+    if (targetDk === dateKey || !selectedIds.size || !setTasksByDate) return;
+    setTasksByDate(prev => ({
+      ...prev,
+      [dateKey]: (prev[dateKey] || []).filter(t => !selectedIds.has(t.id)),
+      [targetDk]: [...(prev[targetDk] || []), ...(prev[dateKey] || []).filter(t => selectedIds.has(t.id)).map(t => ({ ...t, updatedAt: Date.now() }))],
+    }));
+    setSelectedIds(new Set());
+  }
   const dayTasksRaw = tasksByDate[dateKey] || [];
   const flags = dayFlags[dateKey] || {};
 
@@ -19862,7 +19910,7 @@ function SalesDayView({ selDate, setSelDate, tasksByDate, addTask, updateTask, d
   return (
     <div style={{ display: 'flex', gap: 0 }}>
       <div style={{ width: 216, paddingRight: 20, borderRight: `1px solid ${T.border}`, marginRight: 24, flexShrink: 0 }}>
-        <SalesMiniCalendar selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} />
+        <SalesMiniCalendar selDate={selDate} setSelDate={setSelDate} tasksByDate={tasksByDate} selectedCount={selectedIds.size} onMoveToDate={moveTasksToDate} />
         <div style={{ marginTop: 22 }}>
           <SalesViewFilters filter={filter} setFilter={setFilter} tasks={dayTasksRaw} overdueCount={overdueCount} />
         </div>
@@ -19884,6 +19932,13 @@ function SalesDayView({ selDate, setSelDate, tasksByDate, addTask, updateTask, d
               style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 7, border: 'none', background: T.navy, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Add Task</button>
           </div>
         </div>
+        {selectedIds.size > 0 && (
+          <div style={{ background: T.navy+'12', border:`1px solid ${T.navy+'35'}`, borderRadius: 8, padding:'8px 14px', marginBottom: 14, display:'flex', alignItems:'center', gap: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: T.navy }}>{selectedIds.size} task{selectedIds.size > 1 ? 's' : ''} selected</span>
+            <span style={{ fontSize: 12, color: T.muted }}>→ Click a date in the calendar to move them</span>
+            <button onClick={() => setSelectedIds(new Set())} style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color: T.muted, fontSize: 13, lineHeight: 1 }}>✕ Clear</button>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 18 }}>
           {statCards.map(sc => (
             <div key={sc.key} onClick={() => setStatsFilter(statsFilter === sc.key ? null : sc.key)}
@@ -19905,7 +19960,7 @@ function SalesDayView({ selDate, setSelDate, tasksByDate, addTask, updateTask, d
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: showBronson && showVictoria ? '1fr 1fr' : '1fr', gap: 20 }}>
           {showBronson && (
-            <BronsonColumn tasks={bronsonTasks} dateKey={dateKey} addTask={addTask} updateTask={updateTask} deleteTask={deleteTask} dayType={flags.dayType} setDayType={setDayType} />
+            <BronsonColumn tasks={bronsonTasks} dateKey={dateKey} addTask={addTask} updateTask={updateTask} deleteTask={deleteTask} dayType={flags.dayType} setDayType={setDayType} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />
           )}
           {showVictoria && (
             <VictoriaColumn tasks={victoriaTasks} dateKey={dateKey} salesUser={salesUser} addTask={addTask} updateTask={updateTask} deleteTask={deleteTask} />
