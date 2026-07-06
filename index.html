@@ -19562,40 +19562,44 @@ function BronsonTaskCard({ task, onToggle, onFocus, onDelegate, onDelete, onPriv
   const cat = scatByKey(task.cat);
   const urg = surgByKey(task.urgency);
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: compact ? '6px 8px' : '8px 10px', borderRadius: 8, background: selected ? T.navy+'0d' : T.cardBg, marginBottom: 5, border: `1px solid ${selected ? T.navy+'50' : T.border}`, transition: 'background 0.1s, border-color 0.1s' }}>
+    <div style={{ display:'flex', alignItems:'flex-start', gap: 10, padding: compact ? '8px 10px' : '10px 12px', borderRadius: 10, background: selected ? T.navy+'0d' : T.cardBg, marginBottom: 6, border:`1px solid ${selected ? T.navy+'55' : T.border}`, borderLeft:`3px solid ${cat.color}`, transition:'all 0.15s', boxShadow: selected ? `0 0 0 2px ${T.navy}22` : 'none' }}>
+      {/* Multi-select circle */}
       <button onClick={e => { e.stopPropagation(); onSelect && onSelect(task.id); }}
-        title="Select task"
-        style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${selected ? T.navy : T.border}`, background: selected ? T.navy : 'transparent', color: '#fff', fontSize: 9, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+        title="Select"
+        style={{ width: 20, height: 20, borderRadius: '50%', border:`2px solid ${selected ? T.navy : T.border}`, background: selected ? T.navy : 'transparent', color:'#fff', fontSize: 10, fontWeight: 700, cursor:'pointer', flexShrink: 0, display:'flex', alignItems:'center', justifyContent:'center', marginTop: 1, transition:'all 0.15s' }}>
         {selected && '✓'}
       </button>
+      {/* Done checkbox */}
       <button onClick={() => onToggle(task.id)}
-        style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${task.done ? '#22c55e' : T.border}`, background: task.done ? '#22c55e' : 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+        style={{ width: 20, height: 20, borderRadius: 6, border:`2px solid ${task.done ? '#22c55e' : T.border}`, background: task.done ? '#22c55e' : 'transparent', color:'#fff', fontSize: 11, cursor:'pointer', flexShrink: 0, display:'flex', alignItems:'center', justifyContent:'center', marginTop: 1 }}>
         {task.done && '✓'}
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: urg ? urg.color : T.border, flexShrink: 0 }} />
-          {cat && <span style={{ fontSize: 9.5, fontWeight: 700, background: cat.color, color: '#fff', padding: '1px 5px', borderRadius: 3 }}>{cat.label}</span>}
+        <div style={{ fontSize: compact ? 12.5 : 13.5, fontFamily:"'Outfit',sans-serif", fontWeight: 600, color: T.ink, textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.5 : 1, wordBreak:'break-word', lineHeight: 1.35, marginBottom: 5 }}>
+          {task.text}
         </div>
-        <div style={{ fontSize: 13, color: T.ink, textDecoration: task.done ? 'line-through' : 'none', opacity: task.done ? 0.55 : 1, wordBreak: 'break-word' }}>{task.text}</div>
-        {task.account && <div style={{ fontSize: 10.5, color: T.muted, marginTop: 1 }}>{task.account}</div>}
-        {task.delegated && (
-          <span style={{ display: 'inline-block', marginTop: 3, fontSize: 9.5, fontWeight: 700, color: '#0d9488', background: '#0d948818', padding: '1px 7px', borderRadius: 8 }}>→ Victoria</span>
-        )}
+        <div style={{ display:'flex', alignItems:'center', gap: 5, flexWrap:'wrap' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, background: cat.color+'22', color: cat.color, padding:'1px 7px', borderRadius: 20 }}>{cat.label}</span>
+          {urg && urg.key !== 'normal' && <span style={{ fontSize: 10, fontWeight: 700, background: urg.color+'20', color: urg.color, padding:'1px 7px', borderRadius: 20 }}>{urg.label}</span>}
+          {task.delegated && <span style={{ fontSize: 10, fontWeight: 700, background:'#0d948818', color:'#0d9488', padding:'1px 8px', borderRadius: 20 }}>→ Victoria</span>}
+          {task.inFocus && !task.delegated && <span style={{ fontSize: 10, color: T.gold }}>⭐</span>}
+          {task.account && <span style={{ fontSize: 10, color: T.muted }}>🏢 {task.account}</span>}
+          {task.isPrivate && <span style={{ fontSize: 10, color: T.gold }}>🔒</span>}
+        </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
-        <button onClick={() => onPrivacyToggle(task.id)} title={task.isPrivate ? 'Private' : 'Public'}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: task.isPrivate ? T.gold : T.muted, padding: '1px 3px' }}>{task.isPrivate ? '🔒' : '🔓'}</button>
+      <div style={{ display:'flex', gap: 4, flexShrink: 0, alignItems:'center' }}>
         {!task.delegated && (
-          <button onClick={() => onFocus(task.id)} title="Focus"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: task.inFocus ? T.gold : T.muted, padding: '1px 3px' }}>⭐</button>
+          <button onClick={() => onFocus(task.id)} title="Add to focus"
+            style={{ background:'none', border:'none', cursor:'pointer', fontSize: 13, color: task.inFocus ? T.gold : T.muted, padding:'2px 3px', lineHeight: 1 }}>⭐</button>
         )}
         {!task.delegated && (
-          <button onClick={() => onDelegate(task.id)} title="Delegate"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.muted, padding: '1px 3px' }}>↗</button>
+          <button onClick={() => onDelegate(task.id)}
+            style={{ background:'none', border:`1px solid ${T.border}`, borderRadius: 5, cursor:'pointer', fontSize: 10, fontWeight: 700, color: T.muted, padding:'2px 7px', fontFamily:"'Outfit',sans-serif", whiteSpace:'nowrap' }}>↗ Delegate</button>
         )}
-        <button onClick={() => onDelete(task.id)} title="Delete"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.muted, padding: '1px 3px' }}>×</button>
+        <button onClick={() => onPrivacyToggle(task.id)} title={task.isPrivate ? 'Make public' : 'Make private'}
+          style={{ background:'none', border:'none', cursor:'pointer', fontSize: 12, color: task.isPrivate ? T.gold : T.muted, padding:'2px 3px', lineHeight: 1 }}>{task.isPrivate ? '🔒' : '🔓'}</button>
+        <button onClick={() => onDelete(task.id)}
+          style={{ background:'none', border:'none', cursor:'pointer', fontSize: 15, color: T.muted, padding:'2px 3px', lineHeight: 1 }}>×</button>
       </div>
     </div>
   );
@@ -19724,8 +19728,8 @@ function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayTyp
   const total = tasks.length, done = tasks.filter(t => t.done).length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const shStyle = (color) => ({ fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: `3px solid ${color}`, paddingLeft: 7, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 });
-  const inputStyle = { flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.cardBg, color: T.ink, outline: 'none' };
+  const shStyle = (color) => ({ fontSize: 11, fontWeight: 800, color: T.ink, letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily:"'Outfit',sans-serif", borderLeft: `3px solid ${color}`, paddingLeft: 8, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 });
+  const inputStyle = { flex: 1, fontSize: 12.5, padding: '7px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, outline: 'none', fontFamily:"'Outfit',sans-serif" };
 
   const cardProps = (t) => ({
     key: t.id, task: t,
