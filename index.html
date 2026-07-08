@@ -4426,6 +4426,22 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
   const [brainItems, setBrainItems] = useSx(() => { try { return JSON.parse(localStorage.getItem("prontoHQ.brainDump")||"[]"); } catch(_) { return []; } });
   const [sideCalOffset, setSideCalOffset] = useSx(0);
   const [activeView, setActiveView] = useSx("myDay");
+  const [delegatedInbox, setDelegatedInbox] = useSx(() => {
+    try { return JSON.parse(localStorage.getItem("prontoHQ.delegated.inbox")||"[]"); } catch(_) { return []; }
+  });
+
+  function markDelegatedDone(id) {
+    const next = delegatedInbox.map(i => i.id === id ? { ...i, done: !i.done } : i);
+    setDelegatedInbox(next);
+    try { localStorage.setItem("prontoHQ.delegated.inbox", JSON.stringify(next)); } catch(_) {}
+  }
+  function dismissDelegated(id) {
+    const next = delegatedInbox.filter(i => i.id !== id);
+    setDelegatedInbox(next);
+    try { localStorage.setItem("prontoHQ.delegated.inbox", JSON.stringify(next)); } catch(_) {}
+  }
+
+  const myDelegated = todayUser ? delegatedInbox.filter(i => i.to === todayUser) : [];
 
   // Data
   const tasks = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event");
@@ -4662,6 +4678,33 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
             </button>
           </div>
         </div>
+
+        {/* DELEGATED FROM BRONSON */}
+        {myDelegated.length > 0 && (
+          <div style={{ background:"#EFF6FF", border:"1.5px solid #3B82F6", borderRadius:12, padding:"14px 18px", marginBottom:20 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+              <div style={{ width:28, height:28, borderRadius:"50%", background:"#3B82F6", color:"#fff", fontFamily:"'ProximaNova Black',sans-serif", fontSize:13, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center" }}>B</div>
+              <div>
+                <p style={{ fontSize:12, fontWeight:800, color:"#1D4ED8", margin:0 }}>Tasks from Bronson</p>
+                <p style={{ fontSize:10.5, color:"#3B82F6", margin:0 }}>{myDelegated.filter(i=>!i.done).length} open · delegated to you</p>
+              </div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {myDelegated.map(item => (
+                <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10, background:"#fff", border:"1px solid #BFDBFE", borderLeft:"3px solid #3B82F6", borderRadius:8, padding:"8px 12px" }}>
+                  <div onClick={() => markDelegatedDone(item.id)}
+                    style={{ width:17, height:17, borderRadius:4, border:`2px solid ${item.done?"#10B981":"#3B82F6"}`, background:item.done?"#10B981":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    {item.done && <span style={{ color:"#fff", fontSize:10, fontWeight:900 }}>✓</span>}
+                  </div>
+                  <span style={{ flex:1, fontSize:12.5, fontWeight:600, color:item.done?"#9CA3AF":"#1E293B", textDecoration:item.done?"line-through":"none" }}>{item.text}</span>
+                  {item.cat && <span style={{ fontSize:9.5, fontWeight:700, color:"#3B82F6", background:"#DBEAFE", padding:"1px 6px", borderRadius:3, letterSpacing:"0.05em", textTransform:"uppercase" }}>{item.cat}</span>}
+                  <button onClick={() => dismissDelegated(item.id)} title="Dismiss"
+                    style={{ background:"none", border:"none", color:"#9CA3AF", fontSize:14, cursor:"pointer", lineHeight:1, padding:"0 2px" }}>×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* STATS STRIP */}
         <div style={{ display:"flex", gap:10, marginBottom:22 }}>
@@ -19315,179 +19358,202 @@ const { useState: useSs, useRef: useRs, useEffect: useEs, useCallback: useCBs } 
 
   // ─── 7. SalesTodayView ────────────────────────────────────────────────────
 
-  function SalesTodayView({ selDate, tasksByDate, setTasksByDate, deletedTasks, setDeletedTasks,
-                             dayFlags, setDayFlags, isBronson, salesUser, userColor, visibleTasks }) {
+  function SalesTodayView({ selDate, tasksByDate, setTasksByDate, schedule, deletedTasks, setDeletedTasks,
+                             dayFlags, setDayFlags, isBronson, salesUser, userColor, visibleTasks, setTab }) {
     const dk = isoDate(selDate);
     const allToday = tasksByDate[dk] || [];
-    const [showFormFor, setShowFormFor] = useSs(null); // 'bronson' | 'victoria'
-    const todayStr = isoDate(today());
-
-    function addTask(ownerKey, taskData) {
-      const t = { ...taskData, owner: ownerKey };
-      setTasksByDate(prev => ({
-        ...prev,
-        [dk]: [...(prev[dk] || []), t]
-      }));
-      setShowFormFor(null);
-    }
+    const todayD = today();
+    const todDk  = isoDate(todayD);
 
     function toggleTask(id) {
       setTasksByDate(prev => ({
         ...prev,
-        [dk]: (prev[dk] || []).map(t =>
-          t.id === id ? { ...t, done: !t.done, updatedAt: Date.now() } : t
-        )
+        [dk]: (prev[dk] || []).map(t => t.id === id ? { ...t, done: !t.done, updatedAt: Date.now() } : t)
       }));
-    }
-
-    function deleteTask(id) {
-      setTasksByDate(prev => ({
-        ...prev,
-        [dk]: (prev[dk] || []).filter(t => t.id !== id)
-      }));
-      setDeletedTasks(prev => ({ ...prev, [id]: Date.now() }));
     }
 
     function toggleDayType(type) {
-      setDayFlags(prev => ({
-        ...prev,
-        [dk]: prev[dk] === type ? null : type
-      }));
+      setDayFlags(prev => ({ ...prev, [dk]: prev[dk] === type ? null : type }));
     }
 
-    const bronsonTasks  = sortByUrgency(allToday.filter(t => t.owner === 'bronson'));
-    const victoriaTasks = sortByUrgency(allToday.filter(t => {
-      if (t.owner !== 'victoria') return false;
-      return true;
-    }));
-
-    const visB = isBronson ? bronsonTasks : bronsonTasks.filter(t => !t.isPrivate || t.delegated);
-    const visV = victoriaTasks;
-
-    const totalTasks = allToday.length;
-    const completed  = allToday.filter(t => t.done).length;
-    const urgent     = allToday.filter(t => t.urgency === 'urgent').length;
-    const todDk      = isoDate(today());
-    const overdue    = Object.entries(tasksByDate)
+    const flagNow  = dayFlags[dk];
+    const myTasks  = sortByUrgency(allToday.filter(t => isBronson ? t.owner === 'bronson' : t.owner === salesUser));
+    const openTasks   = myTasks.filter(t => !t.done);
+    const doneTasks   = myTasks.filter(t => t.done);
+    const urgentTasks = openTasks.filter(t => t.urgency === 'urgent');
+    const delegated   = isBronson ? allToday.filter(t => t.delegated && t.owner === 'bronson') : [];
+    const overdue     = Object.entries(tasksByDate)
       .filter(([d]) => d < todDk)
       .flatMap(([, ts]) => ts)
-      .filter(t => !t.done && (isBronson || !t.isPrivate || t.delegated)).length;
+      .filter(t => !t.done && (isBronson ? t.owner === 'bronson' : t.owner === salesUser)).length;
 
-    const flagNow = dayFlags[dk];
+    // Schedule preview — next upcoming items
+    const schedItems = (allToday.filter(t => t.startMin != null) || [])
+      .sort((a, b) => a.startMin - b.startMin);
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    const upcomingItems = schedItems.filter(t => (t.startMin + (t.durationMin || 60)) > nowMin).slice(0, 4);
+
+    const userName  = isBronson ? 'Bronson' : 'Victoria';
+    const photo     = getSalesPhoto(salesUser);
+    const greeting  = (() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })();
+    const quote     = typeof getDailyQuote === 'function' ? getDailyQuote() : { q: 'Focus on what matters most today.', a: 'Pronto HQ' };
 
     const statCards = [
-      { label:'Total Tasks', val: totalTasks, color:'#3B82F6', bg:'#EFF6FF' },
-      { label:'Completed',   val: completed,  color:'#10B981', bg:'#F0FDF4' },
-      { label:'Urgent',      val: urgent,     color:'#EF4444', bg:'#FEF2F2' },
-      { label:'Overdue',     val: overdue,    color:'#F97316', bg:'#FFF7ED' },
+      { label:'Open tasks',  val: openTasks.length,   color: T.navy,   bg: T.navy+'12'   },
+      { label:'Completed',   val: doneTasks.length,   color:'#10B981', bg:'#D1FAE520'    },
+      { label:'Urgent',      val: urgentTasks.length, color:'#EF4444', bg:'#FEE2E220'    },
+      { label:'Delegated',   val: delegated.length,   color:'#8B5CF6', bg:'#EDE9FE20'    },
     ];
 
-    const greeting = (() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })();
-    const userName = isBronson ? 'Bronson' : 'Victoria';
-    const userPhoto = `assets/team/${userName}.jpg`;
+    const URGENCY_DOT = { urgent:'#EF4444', high:'#F97316', normal: T.navy, low:'#9AA0AE' };
 
     return (
-      <div style={{ display:'flex', flexDirection:'column', gap: 16 }}>
-        {/* Greeting banner */}
-        <div style={{ background: T.cardBg, border:`1px solid ${T.border}`, borderRadius:16, padding:'20px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
-          <div>
-            <div style={{ fontSize:11, color:userColor, fontWeight:700, letterSpacing:'0.12em', marginBottom:4 }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
+
+        {/* ── Hero greeting ── */}
+        <div style={{ background: T.cardBg, border:`1px solid ${T.border}`, borderRadius:16, padding:'22px 28px', display:'flex', alignItems:'center', gap:20 }}>
+          <div style={{ width:72, height:72, borderRadius:'50%', overflow:'hidden', border:`3px solid ${userColor}`, flexShrink:0, background: userColor, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:`0 0 0 4px ${userColor}20` }}>
+            {photo
+              ? <img src={photo} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+              : <span style={{ fontFamily:"'ProximaNova Black',sans-serif", color:'#fff', fontSize:28, fontWeight:900 }}>{userName[0]}</span>
+            }
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:11, color: userColor, fontWeight:700, letterSpacing:'0.12em', marginBottom:3 }}>
               {selDate.toLocaleDateString('en-NZ', { weekday:'long', day:'numeric', month:'long', year:'numeric' }).toUpperCase()}
             </div>
-            <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:28, color:T.heading, margin:'0 0 4px', lineHeight:1.1 }}>
+            <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:30, color:T.heading, margin:'0 0 4px', lineHeight:1.1 }}>
               {greeting}, {userName} 👋
             </h1>
-            <p style={{ fontSize:12, color:T.muted, margin:0 }}>Let's make today count.</p>
+            <div style={{ display:'flex', gap:6, marginTop:6 }}>
+              {[{ k:'road', l:'🚗 Road Day' }, { k:'office', l:'🏢 Office Day' }].map(({ k, l }) => (
+                <button key={k} onClick={() => toggleDayType(k)}
+                  style={{ padding:'4px 12px', borderRadius:20, fontSize:11, fontWeight:700, cursor:'pointer',
+                           border:`1.5px solid ${flagNow===k ? userColor : T.border}`,
+                           background: flagNow===k ? userColor : 'transparent',
+                           color: flagNow===k ? '#fff' : T.muted }}>
+                  {l}
+                </button>
+              ))}
+            </div>
           </div>
-          <div style={{ width:72, height:72, borderRadius:'50%', overflow:'hidden', border:`3px solid ${userColor}`, flexShrink:0, boxShadow:`0 0 0 4px ${userColor}20` }}>
-            <img src={userPhoto}
-              onError={e => { e.currentTarget.style.display='none'; e.currentTarget.parentNode.style.background=userColor; e.currentTarget.parentNode.style.display='flex'; e.currentTarget.parentNode.style.alignItems='center'; e.currentTarget.parentNode.style.justifyContent='center'; e.currentTarget.parentNode.innerHTML=`<span style="font-family:'ProximaNova Black',sans-serif;color:#fff;font-size:28px;font-weight:900">${userName[0]}</span>`; }}
-              style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}
-            />
+          {/* Quote */}
+          <div style={{ maxWidth:320, background: T.gold+'10', border:`1px solid ${T.gold}30`, borderRadius:12, padding:'14px 18px' }}>
+            <p style={{ fontSize:13, color:T.ink, fontStyle:'italic', lineHeight:1.6, margin:'0 0 6px' }}>"{quote.q}"</p>
+            <p style={{ fontSize:11, color:T.gold, fontWeight:800, letterSpacing:'0.06em', margin:0 }}>– {quote.a}</p>
           </div>
         </div>
-        {/* Day type toggles */}
-        <div style={{ display:'flex', gap: 8, alignItems:'center' }}>
-          <span style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>Day type:</span>
-          {[{ k:'road', l:'🚗 Road Day' }, { k:'office', l:'🏢 Office Day' }].map(({ k, l }) => (
-            <button key={k} onClick={() => toggleDayType(k)}
-              style={{ padding:'5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                       cursor:'pointer', border:`1.5px solid ${userColor}`,
-                       background: flagNow === k ? userColor : 'transparent',
-                       color: flagNow === k ? '#fff' : userColor }}>
-              {l}
-            </button>
-          ))}
-        </div>
-        {/* Stats row */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap: 10 }}>
+
+        {/* ── Stats strip ── */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
           {statCards.map(s => (
-            <div key={s.label}
-              style={{ background: T.cardBg, border:`1px solid ${s.color}30`,
-                       borderRadius: 12, padding:'14px 16px', textAlign:'center' }}>
-              <div style={{ fontSize: 30, fontWeight: 900, color: s.color, fontFamily:"'ProximaNova Black', sans-serif", lineHeight:1 }}>{s.val}</div>
-              <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginTop: 4, letterSpacing:'0.06em' }}>{s.label.toUpperCase()}</div>
+            <div key={s.label} style={{ background: T.cardBg, border:`1px solid ${s.color}30`, borderRadius:12, padding:'14px 16px', textAlign:'center' }}>
+              <div style={{ fontSize:32, fontWeight:900, color:s.color, fontFamily:"'ProximaNova Black',sans-serif", lineHeight:1 }}>{s.val}</div>
+              <div style={{ fontSize:10, color:T.muted, fontWeight:700, marginTop:4, letterSpacing:'0.06em' }}>{s.label.toUpperCase()}</div>
             </div>
           ))}
         </div>
-        {/* Two-column layout */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 14 }}>
-          {[
-            { ukey:'bronson', label:'Bronson', color:'#3B82F6', tasks: visB },
-            { ukey:'victoria', label:'Victoria', color:'#DB2777', tasks: visV },
-          ].map(col => {
-            const canAdd = isBronson || col.ukey === 'victoria';
-            return (
-              <div key={col.ukey}
-                style={{ background: T.cardBg, border:`1px solid ${T.border}`,
-                         borderRadius: 12, overflow:'hidden' }}>
-                {/* Column header */}
-                <div style={{ background: col.color, padding:'10px 14px',
-                              display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
-                    <div style={{ width: 30, height: 30, borderRadius:'50%',
-                                  background:'rgba(255,255,255,0.25)', color:'#fff',
-                                  fontWeight: 800, fontSize: 13, display:'flex',
-                                  alignItems:'center', justifyContent:'center' }}>
-                      {col.label[0]}
-                    </div>
-                    <span style={{ color:'#fff', fontWeight: 700, fontSize: 14 }}>{col.label}</span>
-                    <span style={{ background:'rgba(255,255,255,0.25)', color:'#fff',
-                                   fontSize: 11, padding:'1px 7px', borderRadius: 20 }}>
-                      {col.tasks.length}
-                    </span>
-                  </div>
-                  {canAdd && showFormFor !== col.ukey && (
-                    <button onClick={() => setShowFormFor(col.ukey)}
-                      style={{ background:'rgba(255,255,255,0.25)', border:'none', borderRadius: 6,
-                               color:'#fff', fontWeight: 700, fontSize: 16, width: 26, height: 26,
-                               cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      +
-                    </button>
-                  )}
-                </div>
-                <div style={{ padding: 10, display:'flex', flexDirection:'column', gap: 6, minHeight: 80 }}>
-                  {showFormFor === col.ukey && (
-                    <SalesTaskForm isBronson={isBronson} userColor={col.color}
-                      prefillOwner={col.ukey}
-                      onSave={t => addTask(col.ukey, t)}
-                      onCancel={() => setShowFormFor(null)} />
-                  )}
-                  {col.tasks.length === 0 && showFormFor !== col.ukey && (
-                    <div style={{ fontSize: 12, color: T.faint, textAlign:'center', padding:'16px 0' }}>
-                      No tasks today
-                    </div>
-                  )}
-                  {col.tasks.map(t => (
-                    <SalesTaskCard key={t.id} task={t} compact
-                      isBronson={isBronson}
-                      onToggle={toggleTask}
-                      onDelete={isBronson || t.owner === salesUser ? deleteTask : null} />
-                  ))}
-                </div>
+
+        {/* ── Two-column: tasks preview + agenda ── */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+
+          {/* Tasks preview */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, overflow:'hidden' }}>
+            <div style={{ padding:'14px 16px 12px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:16 }}>📋</span>
+                <p style={{ fontWeight:800, fontSize:12.5, color:T.heading, letterSpacing:'0.06em', margin:0 }}>TODAY'S TASKS</p>
               </div>
-            );
-          })}
+              {setTab && <button onClick={() => setTab('tasks')} style={{ background:'transparent', border:'none', color:T.navy, fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em' }}>View all →</button>}
+            </div>
+            <div style={{ padding:'6px 0' }}>
+              {openTasks.length === 0
+                ? <p style={{ fontSize:12, color:T.muted, fontStyle:'italic', padding:'14px 16px', margin:0 }}>No open tasks · Great job! 🎉</p>
+                : openTasks.slice(0, 5).map(t => {
+                    const cat = scatByKey(t.cat);
+                    const dot = URGENCY_DOT[t.urgency] || T.navy;
+                    return (
+                      <div key={t.id} onClick={() => toggleTask(t.id)}
+                        style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 16px', borderTop:`1px solid ${T.border}`, cursor:'pointer', transition:'background 0.1s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = T.surface}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${t.done ? '#10B981' : T.border}`, background: t.done ? '#10B981' : 'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          {t.done && <span style={{ color:'#fff', fontSize:10, fontWeight:900 }}>✓</span>}
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ fontSize:12.5, color: t.done ? T.muted : T.ink, fontWeight:600, lineHeight:1.3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, textDecoration: t.done ? 'line-through' : 'none' }}>{t.text}</p>
+                          {t.delegated && <span style={{ fontSize:9, fontWeight:700, color:'#8B5CF6', background:'#EDE9FE', padding:'1px 5px', borderRadius:3 }}>→ Victoria</span>}
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+                          <span style={{ fontSize:9.5, fontWeight:700, color:cat.color, background:cat.color+'18', padding:'1px 6px', borderRadius:3, letterSpacing:'0.05em' }}>{cat.label}</span>
+                          <div style={{ width:6, height:6, borderRadius:'50%', background:dot }} />
+                        </div>
+                      </div>
+                    );
+                  })
+              }
+              {openTasks.length > 5 && (
+                <div style={{ padding:'8px 16px', borderTop:`1px solid ${T.border}`, fontSize:11.5, color:T.muted, fontStyle:'italic' }}>
+                  +{openTasks.length - 5} more tasks
+                </div>
+              )}
+              {setTab && (
+                <button onClick={() => setTab('tasks')} style={{ width:'100%', padding:'10px 16px', background:'transparent', border:'none', borderTop:`1px solid ${T.border}`, color:userColor, fontSize:11.5, fontWeight:700, cursor:'pointer', fontFamily:'inherit', textAlign:'center', letterSpacing:'0.04em' }}>
+                  + Add / View all tasks
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Agenda preview */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, overflow:'hidden' }}>
+            <div style={{ padding:'14px 16px 12px', borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:16 }}>🗓</span>
+                <p style={{ fontWeight:800, fontSize:12.5, color:T.heading, letterSpacing:'0.06em', margin:0 }}>TODAY'S AGENDA</p>
+              </div>
+              {setTab && <button onClick={() => setTab('schedule')} style={{ background:'transparent', border:'none', color:T.navy, fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em' }}>Open schedule →</button>}
+            </div>
+            <div style={{ padding:'6px 0' }}>
+              {upcomingItems.length === 0
+                ? <p style={{ fontSize:12, color:T.muted, fontStyle:'italic', padding:'14px 16px', margin:0 }}>Nothing scheduled yet · Add to your schedule →</p>
+                : upcomingItems.map(item => {
+                    const dur = item.durationMin || 60;
+                    const hh = String(Math.floor(item.startMin/60)).padStart(2,'0');
+                    const mm = String(item.startMin%60).padStart(2,'0');
+                    const endMin = item.startMin + dur;
+                    const ehh = String(Math.floor(endMin/60)).padStart(2,'0');
+                    const emm = String(endMin%60).padStart(2,'0');
+                    const isNow = nowMin >= item.startMin && nowMin < endMin;
+                    const cat = item.schedType === 'meeting' ? { color:'#1E3A5F', bg:'#DBEAFE' }
+                              : item.schedType === 'block'   ? { color: item.blockColor || '#92400E', bg: item.blockBg || '#FEF3C7' }
+                              : { color: scatByKey(item.cat).color, bg: scatByKey(item.cat).color + '22' };
+                    return (
+                      <div key={item.id} style={{ display:'flex', alignItems:'flex-start', gap:12, padding:'10px 16px', borderTop:`1px solid ${T.border}`, background: isNow ? cat.bg+'80' : 'transparent' }}>
+                        <div style={{ flexShrink:0, textAlign:'right', minWidth:44 }}>
+                          <div style={{ fontSize:12, fontWeight:700, color:cat.color }}>{hh}:{mm}</div>
+                          <div style={{ fontSize:10, color:T.muted }}>{ehh}:{emm}</div>
+                        </div>
+                        <div style={{ width:3, alignSelf:'stretch', borderRadius:2, background:cat.color, flexShrink:0 }} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ fontSize:12.5, fontWeight:700, color:T.ink, margin:'0 0 2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {item.schedType === 'meeting' ? '📅 ' : item.blockIcon ? item.blockIcon+' ' : ''}{item.text}
+                          </p>
+                          {item.meetingWith && <p style={{ fontSize:10.5, color:T.muted, margin:0 }}>with {item.meetingWith}</p>}
+                          {isNow && <span style={{ fontSize:9, fontWeight:800, color:'#fff', background:cat.color, padding:'1px 6px', borderRadius:3 }}>NOW</span>}
+                        </div>
+                      </div>
+                    );
+                  })
+              }
+              {schedItems.length === 0 && setTab && (
+                <button onClick={() => setTab('schedule')} style={{ width:'100%', padding:'10px 16px', background:'transparent', border:'none', borderTop:`1px solid ${T.border}`, color:userColor, fontSize:11.5, fontWeight:700, cursor:'pointer', fontFamily:'inherit', textAlign:'center', letterSpacing:'0.04em' }}>
+                  + Plan your day
+                </button>
+              )}
+            </div>
+          </div>
+
         </div>
       </div>
     );
@@ -19758,10 +19824,10 @@ function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayTyp
   }, [toast]);
 
   const TEAM_D = [
-    { id:'victoria', name:'Victoria', role:'Sales',     color:'#0891B2', bg:'#E0F2FE' },
-    { id:'vanja',    name:'Vanja',    role:'Marketing', color:'#7C3AED', bg:'#EDE9FE' },
-    { id:'oloka',    name:'Oloka',    role:'Marketing', color:'#14295A', bg:'#EEF2FF' },
-    { id:'other',    name:'Other',    role:'Enter name',color:'#6B7280', bg:'#F3F4F6' },
+    { id:'victoria', name:'Victoria', role:'Sales',     color:'#0891B2', bg:'#E0F2FE', email:'victoria@prontohire.co.nz' },
+    { id:'vanja',    name:'Vanja',    role:'Marketing', color:'#7C3AED', bg:'#EDE9FE', email:'vanja@prontohire.co.nz'    },
+    { id:'oloka',    name:'Oloka',    role:'Marketing', color:'#14295A', bg:'#EEF2FF', email:'oloka@prontohire.co.nz'    },
+    { id:'other',    name:'Other',    role:'Enter name',color:'#6B7280', bg:'#F3F4F6', email:''                          },
   ];
 
   const CATS_LIST = [
@@ -19779,10 +19845,59 @@ function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayTyp
   function handleDelegate(taskId) { setDelegModal(taskId); setDelegPerson(null); }
   function confirmDelegate() {
     if (!delegPerson || !delegModal) return;
-    updateTask(delegModal, { delegated: true, inFocus: false });
+    const task   = tasks.find(t => t.id === delegModal);
     const person = TEAM_D.find(p => p.id === delegPerson);
+    if (!task) return;
+
+    // Mark original task delegated
+    updateTask(delegModal, { delegated: true, delegatedTo: delegPerson, delegatedToName: person?.name, inFocus: false });
+
+    if (delegPerson === 'victoria') {
+      // Add directly to Victoria's task list in the sales workspace
+      addTask({
+        text:        task.text,
+        cat:         task.cat || 'admin',
+        urgency:     task.urgency || 'normal',
+        owner:       'victoria',
+        delegatedBy: 'bronson',
+        delegatedAt: Date.now(),
+        isPrivate:   false,
+        done:        false,
+        section:     'reactive',
+      });
+      // Send email via mailto
+      const subj = encodeURIComponent(`Task assigned to you: ${task.text}`);
+      const body = encodeURIComponent(`Hi Victoria,\n\nBronson has delegated a task to you:\n\n"${task.text}"\n\nThis has been added to your task list.\n\nBest,\nBronson`);
+      window.open(`mailto:${person.email}?subject=${subj}&body=${body}`);
+      setToast(`✅ Added to Victoria's task list · Email opened`);
+
+    } else if (delegPerson === 'oloka' || delegPerson === 'vanja') {
+      // Write to shared cross-workspace inbox
+      const INBOX_KEY = 'prontoHQ.delegated.inbox';
+      const existing  = (() => { try { return JSON.parse(localStorage.getItem(INBOX_KEY) || '[]'); } catch { return []; } })();
+      existing.push({
+        id:          suid(),
+        text:        task.text,
+        cat:         task.cat || 'admin',
+        urgency:     task.urgency || 'normal',
+        to:          delegPerson,
+        from:        'bronson',
+        fromName:    'Bronson',
+        delegatedAt: Date.now(),
+        done:        false,
+      });
+      try { localStorage.setItem(INBOX_KEY, JSON.stringify(existing)); } catch {}
+      // Send email via mailto
+      const subj = encodeURIComponent(`Task delegated to you by Bronson: ${task.text}`);
+      const body = encodeURIComponent(`Hi ${person?.name},\n\nBronson has delegated the following task to you:\n\n"${task.text}"\n\nThis has been added to your task list in Pronto HQ.\n\nBest,\nBronson`);
+      window.open(`mailto:${person?.email}?subject=${subj}&body=${body}`);
+      setToast(`✅ Added to ${person?.name}'s task list · Email opened`);
+
+    } else {
+      setToast(`✅ Task marked as delegated to ${person?.name || delegPerson}`);
+    }
+
     setDelegModal(null); setDelegPerson(null);
-    setToast(`📧 Task delegated to ${person ? person.name : delegPerson} · Email sent & added to their task list`);
   }
   function handleSubToggle(taskId, si) {
     const t = tasks.find(x => x.id === taskId); if (!t) return;
@@ -19922,9 +20037,12 @@ function VictoriaColumn({ tasks, dateKey, salesUser, addTask, updateTask, delete
     addTask({ text: text.trim(), owner: 'victoria', isPrivate: false, delegated: false, section: 'reactive' });
   }
 
-  const assigned = tasks.filter(t => t.owner === 'bronson' && t.delegated && !t.isPrivate);
-  const inProgress = tasks.filter(t => t.owner === 'victoria' && !t.done);
-  const doneToday = tasks.filter(t => t.owner === 'victoria' && t.done);
+  // Tasks delegated FROM Bronson (new model: owner=victoria, delegatedBy=bronson)
+  const fromBronson = tasks.filter(t => t.owner === 'victoria' && t.delegatedBy === 'bronson' && !t.done);
+  // Legacy delegated (old model: owner=bronson, delegated=true)
+  const legacyAssigned = tasks.filter(t => t.owner === 'bronson' && t.delegated && !t.isPrivate);
+  const inProgress  = tasks.filter(t => t.owner === 'victoria' && !t.done && !t.delegatedBy);
+  const doneToday   = tasks.filter(t => t.owner === 'victoria' && t.done);
 
   const shStyle = (color) => ({ fontSize: 10, fontWeight: 800, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', borderLeft: `3px solid ${color}`, paddingLeft: 7, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 });
   const inputStyle = { flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 7, border: `1px solid ${T.border}`, background: T.cardBg, color: T.ink, outline: 'none' };
@@ -19938,13 +20056,32 @@ function VictoriaColumn({ tasks, dateKey, salesUser, addTask, updateTask, delete
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ ...shStyle('#3b82f6') }}>Assigned to Me</div>
-        {assigned.length === 0 && <div style={{ fontSize: 11.5, color: T.muted, padding: '4px 0 8px' }}>No delegated tasks.</div>}
-        {assigned.map(t => <VictoriaTaskCard {...cardProps(t)} />)}
-      </div>
+
+      {/* Tasks delegated from Bronson — highlighted */}
+      {(fromBronson.length > 0 || legacyAssigned.length > 0) && (
+        <div style={{ marginBottom: 14, background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: '10px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+            <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#3B82F6', color: '#fff', fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>B</div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#1D4ED8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>From Bronson</span>
+            <span style={{ fontSize: 9.5, fontWeight: 700, background: '#3B82F620', color: '#3B82F6', padding: '1px 6px', borderRadius: 8 }}>{fromBronson.length + legacyAssigned.length}</span>
+          </div>
+          {fromBronson.map(t => (
+            <div key={t.id} style={{ background: '#fff', border: '1px solid #BFDBFE', borderLeft: '3px solid #3B82F6', borderRadius: 7, padding: '7px 10px', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div onClick={() => updateTask(t.id, { done: !t.done })}
+                style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${t.done ? '#10B981' : '#3B82F6'}`, background: t.done ? '#10B981' : 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {t.done && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+              </div>
+              <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.ink }}>{t.text}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#3B82F6', background: '#EFF6FF', padding: '1px 6px', borderRadius: 3 }}>Bronson →</span>
+            </div>
+          ))}
+          {legacyAssigned.map(t => <VictoriaTaskCard {...cardProps(t)} />)}
+        </div>
+      )}
+
       <div style={{ marginBottom: 12 }}>
         <div style={{ ...shStyle(T.gold) }}>In Progress</div>
+        {inProgress.length === 0 && <div style={{ fontSize: 11.5, color: T.muted, padding: '4px 0 8px' }}>No tasks yet.</div>}
         {inProgress.map(t => <VictoriaTaskCard {...cardProps(t)} />)}
         <input value={myTaskInput} placeholder="Add my task…" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
           onChange={e => setMyTaskInput(e.target.value)}
@@ -19966,7 +20103,7 @@ function VictoriaColumn({ tasks, dateKey, salesUser, addTask, updateTask, delete
 function SalesDayView({ selDate, setSelDate, tasksByDate, setTasksByDate, addTask, updateTask, deleteTask, dayFlags, setDayFlags, isBronson, salesUser, userColor, visibleTasks }) {
   const [filter, setFilter] = useSs('all');
   const [activeTag, setActiveTag] = useSs(null);
-  const [personView, setPersonView] = useSs('all');
+  const [personView, setPersonView] = useSs(() => isBronson ? 'bronson' : 'victoria');
   const [search, setSearch] = useSs('');
   const [statsFilter, setStatsFilter] = useSs(null);
   const [selectedIds, setSelectedIds] = useSs(() => new Set());
@@ -21126,6 +21263,9 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     const [userPhoto, setUserPhoto]  = useSs(() => getSalesPhoto(salesUser));
     const photoFileRef               = useRs(null);
 
+    // Re-read photo whenever salesUser changes (e.g. after switching accounts)
+    useEs(() => { setUserPhoto(getSalesPhoto(salesUser)); }, [salesUser]);
+
     function handlePhotoUpload(file) {
       if (!file) return;
       const reader = new FileReader();
@@ -21255,7 +21395,7 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
     }
 
     // Tabs available
-    const TABS_BRONSON  = ['today','tasks','schedule','accounts'];
+    const TABS_BRONSON  = ['today','tasks','schedule'];
     const TABS_VICTORIA = ['today','tasks','schedule'];
     const TABS = isBronson ? TABS_BRONSON : TABS_VICTORIA;
 
@@ -21263,7 +21403,6 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
       today:    "Today's View",
       tasks:    'Tasks',
       schedule: 'Schedule',
-      accounts: 'Accounts',
     };
 
     const sharedProps = {
@@ -21366,16 +21505,10 @@ function SalesMonthView({ selDate, setSelDate, tasksByDate, dayFlags, isBronson 
         {/* ── Content ── */}
         <div style={{ flex: 1, padding: 20, maxWidth: 1400, margin:'0 auto', width:'100%', boxSizing:'border-box' }}>
           {tab === 'today'    && (
-            <SalesTodayView {...sharedProps}
-              accounts={accounts} setAccounts={setAccounts} />
+            <SalesTodayView {...sharedProps} setTab={setTab} />
           )}
           {tab === 'tasks'    && <SalesTaskView {...sharedProps} />}
           {tab === 'schedule' && <SalesScheduleView {...sharedProps} />}
-          {tab === 'accounts' && (
-            <SalesAccountsView
-              accounts={accounts} setAccounts={setAccounts}
-              tasksByDate={tasksByDate} isBronson={isBronson} userColor={userColor} />
-          )}
         </div>
 
         {/* ── Settings panel ── */}
