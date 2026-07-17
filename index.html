@@ -1413,6 +1413,10 @@ function _mergeState(myState, theirState, myIdentity) {
     toBeCompleted: _mergeById(myState.toBeCompleted, theirState.toBeCompleted),
     ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
     toPostList: _mergeById(myState.toPostList, theirState.toPostList),
+    lunches: _mergeById(
+      (myState.lunches||[]).map(l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) }),
+      (theirState.lunches||[]).map(l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) })
+    ),
     categories: [...new Set([...(myState.categories||[]), ...(theirState.categories||[])])],
     uniform: _mergeUniform(myState.uniform, theirState.uniform),
     postApprovals: _mergeById(myState.postApprovals, theirState.postApprovals),
@@ -8560,7 +8564,7 @@ function IdeasSidePanel({ toPostList, setToPostList, dayNotes, setDayNotes, onId
   const [newType, setNewType] = useSc("Post");
   const [statusFilter, setStatusFilter] = useSc("all");
 
-  const safeList = toPostList || [];
+  const safeList = (toPostList || []).filter(p => !p.deleted);
   const filtered = statusFilter === "all" ? safeList : safeList.filter(p => (p.status || "idea") === statusFilter);
 
   const addToList = () => {
@@ -8570,7 +8574,7 @@ function IdeasSidePanel({ toPostList, setToPostList, dayNotes, setDayNotes, onId
     setNewTitle(""); setAddingNew(false);
   };
 
-  const removeFromList = (id) => setToPostList(prev => prev.filter(p => p.id !== id));
+  const removeFromList = (id) => setToPostList(prev => prev.map(p => p.id === id ? { ...p, deleted: true, updatedAt: Date.now() } : p));
 
   const cycleStatus = (id) => {
     const keys = IDEA_STATUSES.map(s => s.key);
@@ -8772,7 +8776,7 @@ function ContentKanbanView({ toPostList, setToPostList, onSetContent, filterType
   const [scheduleDate, setScheduleDate] = useSc("");
 
   const filtered = useMc(() =>
-    (toPostList || []).filter(p => !filterType || p.type === filterType),
+    (toPostList || []).filter(p => !p.deleted && (!filterType || p.type === filterType)),
     [toPostList, filterType]
   );
   const getCol = (st) => filtered.filter(p => (p.status || "idea") === st);
@@ -8822,7 +8826,7 @@ function ContentKanbanView({ toPostList, setToPostList, onSetContent, filterType
     setDragId(null);
   };
 
-  const removeIdea = (id) => setToPostList(prev => prev.filter(p => p.id !== id));
+  const removeIdea = (id) => setToPostList(prev => prev.map(p => p.id === id ? { ...p, deleted: true, updatedAt: Date.now() } : p));
 
   return (
     <div>
@@ -9810,9 +9814,9 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
     });
   };
 
-  const updateLunch = (i, patch) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch } : l));
-  const delLunch = (i) => setLunches(prev => prev.filter((_, idx) => idx !== i));
-  const addLunch = () => setLunches(prev => [...prev, { name:"", date: new Date().toISOString().slice(0,10) }]);
+  const updateLunch = (i, patch) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch, updatedAt: Date.now() } : l));
+  const toggleLunchHad = (i) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, had: !l.had, updatedAt: Date.now() } : l));
+  const addLunch = () => setLunches(prev => [...prev, { id: Date.now() + "_" + Math.random().toString(36).slice(2,6), name:"", date: new Date().toISOString().slice(0,10), had: false, updatedAt: Date.now() }]);
 
   const filtered = staff.map((s, i) => ({ s, i })).filter(({ s }) => {
     if (filter === "All") return true;
@@ -9971,34 +9975,57 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
       <div style={{ marginTop:30 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:18, background:T.gold }}></span>
-          <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>RECENT LUNCH WINNERS</h2>
-          <span style={{ color:T.muted, fontSize:11 }}>· {lunches.length}</span>
+          <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>LUNCH WINNERS</h2>
+          <span style={{ color:T.muted, fontSize:11 }}>· {lunches.filter(l=>!l.had).length} remaining</span>
         </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:10 }}>
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", background:T.cardBg }}>
+          {/* Header row */}
+          <div style={{ display:"grid", gridTemplateColumns:"36px 1fr 140px 100px", gap:0, background:T.surface, borderBottom:`1px solid ${T.border}`, padding:"6px 12px" }}>
+            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>HAD</span>
+            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>NAME</span>
+            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>DATE</span>
+            <span></span>
+          </div>
+          {lunches.length === 0 && (
+            <p style={{ padding:"16px 14px", fontSize:11, color:T.faint, fontStyle:"italic" }}>No lunch winners yet — add one below</p>
+          )}
           {lunches.map((l, i) => (
-            <div key={i} style={{
-              background:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${T.gold}`,
-              borderRadius:6, padding:"10px 14px", display:"flex", alignItems:"center", gap:10,
+            <div key={l.id || i} style={{
+              display:"grid", gridTemplateColumns:"36px 1fr 140px 100px", gap:0, alignItems:"center",
+              padding:"7px 12px", borderBottom:`1px solid ${T.border}`,
+              background: l.had ? T.surface : T.cardBg,
+              opacity: l.had ? 0.6 : 1,
+              transition:"all 0.15s",
             }}>
-              <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ fontSize:13, fontWeight:700, color:T.ink }}>
-                  <EditableText value={l.name} onChange={v => updateLunch(i, { name:v })} placeholder="Winner"
-                    style={{ fontSize:13, fontWeight:700, color:T.ink }}/>
-                </p>
-                <p style={{ fontSize:10.5, color:T.muted, marginTop:2, letterSpacing:"0.04em" }}>
-                  <input type="date" value={l.date && l.date.match(/^\d{4}-\d{2}-\d{2}$/) ? l.date : ""} onChange={e => updateLunch(i, { date: e.target.value })} style={{
-                    background:"transparent", border:"none", color:T.muted, fontSize:10.5, fontFamily:"inherit",
-                    letterSpacing:"0.04em", padding:0,
-                  }}/>
-                </p>
-              </div>
-              <DeleteBtn onClick={() => delLunch(i)}/>
+              {/* Tick checkbox */}
+              <button onClick={() => toggleLunchHad(i)} title={l.had ? "Mark as not yet had" : "Mark as had lunch"} style={{
+                width:20, height:20, borderRadius:4, border:`2px solid ${l.had ? T.gold : T.border}`,
+                background: l.had ? T.gold : "transparent", cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                color:"#fff", fontSize:11, fontWeight:900, flexShrink:0, transition:"all 0.15s",
+              }}>{l.had ? "✓" : ""}</button>
+              {/* Name */}
+              <EditableText value={l.name} onChange={v => updateLunch(i, { name:v })} placeholder="Name"
+                style={{ fontSize:12, fontWeight:l.had ? 400 : 600, color: l.had ? T.muted : T.ink, textDecoration: l.had ? "line-through" : "none" }}/>
+              {/* Date */}
+              <input type="date" value={l.date && l.date.match(/^\d{4}-\d{2}-\d{2}$/) ? l.date : ""} onChange={e => updateLunch(i, { date: e.target.value })} style={{
+                background:"transparent", border:"none", color:T.muted, fontSize:11, fontFamily:"inherit", padding:0, cursor:"pointer",
+              }}/>
+              {/* Status badge */}
+              <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.07em", color: l.had ? "#10B981" : T.gold, background: l.had ? "#10B98115" : T.gold+"15", padding:"2px 8px", borderRadius:10, justifySelf:"end" }}>
+                {l.had ? "HAD IT ✓" : "PENDING"}
+              </span>
             </div>
           ))}
-          <div style={{ gridColumn:"1 / -1" }}>
+          <div style={{ padding:"8px 12px" }}>
             <AddRowBtn label="Add lunch winner" onClick={addLunch}/>
           </div>
         </div>
+        {lunches.some(l => l.had) && (
+          <p style={{ fontSize:10, color:T.faint, marginTop:8, fontStyle:"italic" }}>
+            {lunches.filter(l=>l.had).length} had lunch · {lunches.filter(l=>!l.had).length} still to go
+          </p>
+        )}
       </div>
     </div>
   );
@@ -13364,7 +13391,10 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                     <span style={{ fontSize:7, color:"#fff", fontWeight:800 }}>{ownerInitial}</span>
                   </div>
                   {!block.isBreak && (
-                    <button onClick={e=>{e.stopPropagation(); removeBlock(block);}}
+                    <button
+                      onTouchStart={e => e.stopPropagation()}
+                      onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); removeBlock(block); }}
+                      onClick={e => { e.stopPropagation(); removeBlock(block); }}
                       style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, padding:"0 2px", lineHeight:1, touchAction:"auto" }}>×</button>
                   )}
                 </div>
@@ -14629,10 +14659,16 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [recurringTasks, setRecurringTasks] = useS(() => loadOr("recurringTasks", () => []));
   const [machinesToPush, setMachinesToPush] = useS(() => loadOr("machinesToPush", () => []));
   const [toPostList, setToPostList] = useS(() => {
-    // Always merge with seed so both users see the preset ideas
+    // Always merge with seed so both users see the preset ideas, but respect soft-deletes
     const stored = saved && saved.toPostList !== undefined ? saved.toPostList : [];
-    const storedTitles = new Set((stored || []).map(p => (p.title || "").toLowerCase().trim()));
-    const toAdd = (SEED_TO_POST_LIST || []).filter(p => !storedTitles.has(p.title.toLowerCase().trim()));
+    const storedById = new Map((stored || []).map(p => [p.id, p]));
+    const storedActiveTitles = new Set((stored || []).filter(p => !p.deleted).map(p => (p.title || "").toLowerCase().trim()));
+    const toAdd = (SEED_TO_POST_LIST || []).filter(p => {
+      if (storedActiveTitles.has(p.title.toLowerCase().trim())) return false;
+      const byId = storedById.get(p.id);
+      if (byId && byId.deleted) return false;
+      return true;
+    });
     return [...(stored || []), ...toAdd];
   });
   // Email Pipeline state
@@ -14819,6 +14855,13 @@ function App({ onSwitchWorkspace = () => {} }) {
   }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, machinesToPush, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
+  // Expose a live hook so other workspaces (e.g. Sales) can inject tasks directly into this state
+  useE(() => {
+    window._prontoAddTask = (dateKey, task) => {
+      setTasksByDate(prev => ({ ...prev, [dateKey]: [...(prev[dateKey] || []), task] }));
+    };
+    return () => { try { delete window._prontoAddTask; } catch(_) {} };
+  }, []);
 
   // ── Export current state to a JSON file download ──
   const exportState = () => {
@@ -14909,7 +14952,10 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.photos) setPhotos(s.photos);
     if (s.plan) setPlan(s.plan);
     if (s.staff) setStaff(s.staff);
-    if (s.lunches) setLunches(s.lunches);
+    if (s.lunches) setLunches(prev => {
+      const ensureId = l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) };
+      return _mergeById((prev||[]).map(ensureId), (Array.isArray(s.lunches)?s.lunches:Object.values(s.lunches||{})).map(ensureId));
+    });
     if (s.schedule) setSchedule(s.schedule);
     if (s.actualSchedule) setActualSchedule(s.actualSchedule);
     if (s.dayNotes) setDayNotes(s.dayNotes);
@@ -14929,7 +14975,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.machinesToPush) setMachinesToPush(prev => _mergeById(prev, Array.isArray(s.machinesToPush)?s.machinesToPush:Object.values(s.machinesToPush||{})));
     if (s.uniform) setUniform(prev => _mergeUniform(prev, s.uniform));
     if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
-    if (s.toPostList) setToPostList(prev => { const titles = new Set((prev||[]).map(p=>(p.title||"").toLowerCase().trim())); const add = (Array.isArray(s.toPostList)?s.toPostList:Object.values(s.toPostList||{})).filter(p=>!titles.has((p.title||"").toLowerCase().trim())); return [...(prev||[]), ...add]; });
+    if (s.toPostList) setToPostList(prev => _mergeById(prev, Array.isArray(s.toPostList) ? s.toPostList : Object.values(s.toPostList || {})));
     if (s.emailItems) setEmailItems(s.emailItems);
     if (s.emailComments) setEmailComments(s.emailComments);
     if (s.emailActivity) setEmailActivity(s.emailActivity);
@@ -19872,21 +19918,32 @@ function BronsonColumn({ tasks, dateKey, addTask, updateTask, deleteTask, dayTyp
       setToast(`✅ Added to Victoria's task list · Email opened`);
 
     } else if (delegPerson === 'oloka' || delegPerson === 'vanja') {
-      // Write to shared cross-workspace inbox
-      const INBOX_KEY = 'prontoHQ.delegated.inbox';
-      const existing  = (() => { try { return JSON.parse(localStorage.getItem(INBOX_KEY) || '[]'); } catch { return []; } })();
-      existing.push({
-        id:          suid(),
-        text:        task.text,
-        cat:         task.cat || 'admin',
-        urgency:     task.urgency || 'normal',
-        to:          delegPerson,
-        from:        'bronson',
-        fromName:    'Bronson',
-        delegatedAt: Date.now(),
-        done:        false,
-      });
-      try { localStorage.setItem(INBOX_KEY, JSON.stringify(existing)); } catch {}
+      // Build the task in marketing-app format
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const newTask = {
+        id:            'del_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        text:          task.text,
+        owner:         delegPerson,
+        category:      task.cat || 'Admin',
+        priority:      task.urgency === 'urgent' ? 'Urgent' : 'Normal',
+        done:          false,
+        delegatedBy:   'bronson',
+        delegatedByName: 'Bronson',
+        delegatedAt:   Date.now(),
+      };
+      // If marketing app is mounted on this page, inject directly into its live state
+      if (typeof window._prontoAddTask === 'function') {
+        window._prontoAddTask(todayKey, newTask);
+      }
+      // Also write into marketing app's localStorage so it persists across reloads / when app isn't open
+      try {
+        const mktRaw  = localStorage.getItem('prontoHQ.state.v1');
+        const mktState = mktRaw ? JSON.parse(mktRaw) : {};
+        const tbd = mktState.tasksByDate || {};
+        tbd[todayKey] = [...(tbd[todayKey] || []), newTask];
+        mktState.tasksByDate = tbd;
+        localStorage.setItem('prontoHQ.state.v1', JSON.stringify(mktState));
+      } catch(_) {}
       // Send email via mailto
       const subj = encodeURIComponent(`Task delegated to you by Bronson: ${task.text}`);
       const body = encodeURIComponent(`Hi ${person?.name},\n\nBronson has delegated the following task to you:\n\n"${task.text}"\n\nThis has been added to your task list in Pronto HQ.\n\nBest,\nBronson`);
