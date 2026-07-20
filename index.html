@@ -5661,8 +5661,8 @@ Object.assign(window, { PlanView });
 // ── Schedule view: drag tasks + breaks into a time-blocked planner ──
 const { useState: useSh, useRef: useRh, useEffect: useEh, useMemo: useMh } = React;
 
-const SCHED_START = 7;   // 7am
-const SCHED_END   = 18;  // 6pm
+const SCHED_START = 0;   // midnight
+const SCHED_END   = 24;  // midnight
 const SLOT_MIN    = 15;  // 15-minute slots
 const PX_PER_MIN  = 1.2; // 1.2px per minute = 72px per hour
 
@@ -6104,6 +6104,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [sidebarSearch, setSidebarSearch] = useSh("");           // task search in sidebar
   const [sidebarFilter, setSidebarFilter] = useSh("all");        // all|unscheduled|overdue|scheduled|completed
   const [showSubtasks, setShowSubtasks] = useSh(false);          // expand subtasks in backlog
+  const [monthPopupDate, setMonthPopupDate] = useSh(null);       // date key for month day popup
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -6980,7 +6981,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                       const dayLeftM = Math.max(0, SCHED_END*60-(nowM.getHours()*60+nowM.getMinutes()));
                       return (
                         <div key={i}
-                          onClick={() => !spanDragStart && (onPickDay && onPickDay(new Date(mdk+"T12:00:00")), setSchedView("day"))}
+                          onClick={() => !spanDragStart && setMonthPopupDate(mdk)}
                           onMouseDown={e=>{if(e.button===0&&d){e.preventDefault();setSpanDragStart(mdk);setSpanDragEnd(mdk);}}}
                           onMouseEnter={()=>{if(spanDragStart&&d)setSpanDragEnd(mdk);}}
                           style={{ minHeight:100, padding:"8px 6px",
@@ -7024,7 +7025,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                             const label = block.isBreak ? block.breakLabel : (task?.text || block.qeTitle || "Event");
                             const scheme = getBlockScheme(block, task);
                             return (
-                              <div key={bi} onClick={e=>{e.stopPropagation();if(onPickDay)onPickDay(new Date(mdk+"T12:00:00"));setSchedView("day");setSelectedBlock({...block,_date:mdk});}}
+                              <div key={bi} onClick={e=>{e.stopPropagation();setMonthPopupDate(mdk);setSelectedBlock({...block,_date:mdk});}}
                                 style={{ background:scheme.solid, border:"none", borderRadius:4, padding:"2px 6px", marginBottom:2, fontSize:10, fontWeight:600, color:"#fff", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", display:"flex", gap:4, alignItems:"center", cursor:"pointer", boxShadow:"0 1px 2px rgba(0,0,0,0.15)" }}>
                                 <span style={{ fontSize:8, color:"rgba(255,255,255,0.85)", fontWeight:600, flexShrink:0 }}>{fmtTime(block.startMin)}</span>
                                 <span style={{ overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</span>
@@ -7218,6 +7219,26 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         })()}
 
       </div>{/* end 3-PANE LAYOUT */}
+
+      {/* Month day popup */}
+      {monthPopupDate && (
+        <MonthDayPopup
+          dk={monthPopupDate}
+          schedule={schedule}
+          setSchedule={setSchedule}
+          tasksByDate={tasksByDate}
+          tasksByIdRef={tasksByIdRef}
+          activeUser={activeUser}
+          actualSchedule={actualSchedule}
+          setActualSchedule={setActualSchedule}
+          onClose={() => setMonthPopupDate(null)}
+          onOpenFullDay={() => {
+            if (onPickDay) onPickDay(new Date(monthPopupDate + "T12:00:00"));
+            setSchedView("day");
+            setMonthPopupDate(null);
+          }}
+        />
+      )}
 
       {/* Span creation modal */}
       {spanModal && (
@@ -13956,7 +13977,7 @@ function MobileWeekView({ dk, setSelDateKey, setView, schedule, setSchedule, tas
 }
 
 // ─── Month View ───────────────────────────────────────────────────────────────
-function MobileMonthView({ dk, setSelDateKey, setView, schedule, tasksByDate }) {
+function MobileMonthView({ dk, setSelDateKey, setView, schedule, tasksByDate, onDayClick }) {
   const baseDate = new Date(dk+"T12:00:00");
   const [monthOffset, setMonthOffset] = useSh(0);
   const year = baseDate.getFullYear();
@@ -14013,7 +14034,7 @@ function MobileMonthView({ dk, setSelDateKey, setView, schedule, tasksByDate }) 
           const tasks = (tasksByDate[mdk]||[]).filter(t=>t.category!=="Event"&&!t.recurring);
           const donePct = tasks.length>0 ? Math.round(tasks.filter(t=>t.done).length/tasks.length*100) : 0;
           return (
-            <button key={i} onClick={()=>{ setSelDateKey(mdk); setView("day"); }}
+            <button key={i} onClick={()=>{ if (onDayClick) { onDayClick(mdk); } else { setSelDateKey(mdk); setView("day"); } }}
               style={{ background:isSel?T.navy:T.cardBg, border:`1.5px solid ${isSel?T.navy:isToday?T.gold:T.border}`, borderRadius:10, padding:"6px 4px", cursor:"pointer", fontFamily:"inherit", minHeight:72, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
               <span style={{ fontSize:13, fontWeight:900, color:isSel?"#fff":isToday?T.gold:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{d}</span>
               {blocks.length>0 && (
@@ -14121,6 +14142,7 @@ function MobileSchedulePage({ selDate, setSelDate, tasksByDate, schedule, setSch
   const [view, setView] = useSh("day");
   const todayKey = isoDate(today());
   const [selDateKey, setSelDateKeyRaw] = useSh(() => selDate ? isoDate(selDate instanceof Date ? selDate : new Date(selDate)) : todayKey);
+  const [monthPopupDate, setMonthPopupDate] = useSh(null);
 
   const setSelDateKey = (dk) => {
     setSelDateKeyRaw(dk);
@@ -14128,6 +14150,7 @@ function MobileSchedulePage({ selDate, setSelDate, tasksByDate, schedule, setSch
   };
 
   const tasksByIdRef = useMh(() => buildTasksById(tasksByDate), [tasksByDate]);
+  const activeUser = (todayUser === "vanja" || todayUser === "oloka") ? todayUser : "both";
 
   return (
     <div style={{ background:T.bg, minHeight:"100%" }}>
@@ -14135,8 +14158,26 @@ function MobileSchedulePage({ selDate, setSelDate, tasksByDate, schedule, setSch
       <MobileSchedViewTabs view={view} setView={setView} />
       {view === "day" && <MobileDayView dk={selDateKey} schedule={schedule} setSchedule={setSchedule} tasksByDate={tasksByDate} tasksByIdRef={tasksByIdRef} todayUser={todayUser} />}
       {view === "week" && <MobileWeekView dk={selDateKey} setSelDateKey={setSelDateKey} setView={setView} schedule={schedule} setSchedule={setSchedule} tasksByDate={tasksByDate} tasksByIdRef={tasksByIdRef} todayUser={todayUser} />}
-      {view === "month" && <MobileMonthView dk={selDateKey} setSelDateKey={setSelDateKey} setView={setView} schedule={schedule} tasksByDate={tasksByDate} />}
+      {view === "month" && <MobileMonthView dk={selDateKey} setSelDateKey={setSelDateKey} setView={setView} schedule={schedule} tasksByDate={tasksByDate} onDayClick={setMonthPopupDate} />}
       {view === "agenda" && <MobileAgendaView dk={selDateKey} schedule={schedule} tasksByDate={tasksByDate} tasksByIdRef={tasksByIdRef} />}
+      {monthPopupDate && (
+        <MonthDayPopup
+          dk={monthPopupDate}
+          schedule={schedule}
+          setSchedule={setSchedule}
+          tasksByDate={tasksByDate}
+          tasksByIdRef={tasksByIdRef}
+          activeUser={activeUser}
+          actualSchedule={actualSchedule}
+          setActualSchedule={setActualSchedule}
+          onClose={() => setMonthPopupDate(null)}
+          onOpenFullDay={() => {
+            setSelDateKey(monthPopupDate);
+            setView("day");
+            setMonthPopupDate(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -16465,6 +16506,218 @@ function compressImage(dataUrl, maxSize, quality, callback) {
     callback(canvas.toDataURL("image/jpeg", quality));
   };
   img.src = dataUrl;
+}
+
+// ── Month Day Popup ───────────────────────────────────────────────────────────
+function MonthDayPopup({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, activeUser, actualSchedule, setActualSchedule, onClose, onOpenFullDay }) {
+  const [drag, setDrag] = useSh(null);
+  const [quickAdd, setQuickAdd] = useSh(null);
+  const scrollRef = useRh(null);
+  const isToday = dk === isoDate(today());
+  const date = new Date(dk + 'T12:00:00');
+
+  // Scroll to current time (or 8am) when popup opens
+  useEh(() => {
+    if (!scrollRef.current) return;
+    const now = new Date();
+    const targetMin = isToday ? (now.getHours()*60 + now.getMinutes()) : 8*60;
+    scrollRef.current.scrollTop = Math.max(0, (targetMin - SCHED_START*60)*PX_PER_MIN - 120);
+  }, []);
+
+  // Date-scoped CRUD helpers
+  const addBlock = (owner, taskId, startMin, durationMin = 30, subtaskId) => {
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      const block = { blockId: newBlockId(), taskId, startMin, durationMin };
+      if (subtaskId) block.subtaskId = subtaskId;
+      day[owner] = [...(day[owner] || []), block];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day; return next;
+    });
+  };
+  const removeBlock = (owner, taskId, breakId, qeId, blockId) => {
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      if (breakId)      day[owner] = (day[owner]||[]).filter(b => b.breakId !== breakId);
+      else if (qeId)    day[owner] = (day[owner]||[]).filter(b => b.qeId !== qeId);
+      else if (blockId) day[owner] = (day[owner]||[]).filter(b => b.blockId !== blockId);
+      else              day[owner] = (day[owner]||[]).filter(b => b.taskId !== taskId);
+      next[dk] = day; return next;
+    });
+  };
+  const updateBlock = (owner, taskId, patch, breakId, qeId, blockId) => {
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      if (breakId)      day[owner] = (day[owner]||[]).map(b => b.breakId === breakId ? {...b,...patch} : b);
+      else if (qeId)    day[owner] = (day[owner]||[]).map(b => b.qeId === qeId ? {...b,...patch} : b);
+      else if (blockId) day[owner] = (day[owner]||[]).map(b => b.blockId === blockId ? {...b,...patch} : b);
+      else              day[owner] = (day[owner]||[]).map(b => b.taskId === taskId ? {...b,...patch} : b);
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day; return next;
+    });
+  };
+  const addBreakBlock = (owner, breakLabel, startMin, durationMin) => {
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      day[owner] = [...(day[owner]||[]), { breakId: newBreakId(), isBreak:true, breakLabel, startMin, durationMin }];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day; return next;
+    });
+  };
+  const addQuickEvent = (owner, qeTitle, startMin, durationMin) => {
+    setSchedule(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      day[owner] = [...(day[owner]||[]), { qeId: newQeId(), isQuickEvent:true, qeTitle, startMin, durationMin }];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day; return next;
+    });
+  };
+  const addActualBlock = (owner, taskId, startMin, durationMin = 30) => {
+    setActualSchedule(prev => {
+      const next = { ...(prev||{}) };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      day[owner] = [...(day[owner]||[]).filter(b => b.taskId !== taskId), { taskId, startMin, durationMin }];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day; return next;
+    });
+  };
+  const addActualBreakBlock = (owner, breakLabel, startMin, durationMin) => {
+    setActualSchedule(prev => {
+      const next = { ...(prev||{}) };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      day[owner] = [...(day[owner]||[]), { breakId: newBreakId(), isBreak:true, breakLabel, startMin, durationMin }];
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day; return next;
+    });
+  };
+  const removeActualBlock = (owner, taskId, breakId) => {
+    setActualSchedule(prev => {
+      const next = { ...(prev||{}) };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      if (breakId) day[owner] = (day[owner]||[]).filter(b => b.breakId !== breakId);
+      else         day[owner] = (day[owner]||[]).filter(b => b.taskId !== taskId);
+      next[dk] = day; return next;
+    });
+  };
+  const updateActualBlock = (owner, taskId, patch, breakId) => {
+    setActualSchedule(prev => {
+      const next = { ...(prev||{}) };
+      const day = { ...(next[dk] || { vanja:[], oloka:[] }) };
+      if (breakId) day[owner] = (day[owner]||[]).map(b => b.breakId === breakId ? {...b,...patch} : b);
+      else         day[owner] = (day[owner]||[]).map(b => b.taskId === taskId ? {...b,...patch} : b);
+      day[owner].sort((a,b) => a.startMin - b.startMin);
+      next[dk] = day; return next;
+    });
+  };
+
+  const daySchedule = schedule[dk] || {};
+  const dayActual   = (actualSchedule||{})[dk] || {};
+  const gridCols = activeUser === 'both' ? '36px 1fr 1fr' : '36px 1fr';
+
+  const makeCol = (owner) => {
+    const name   = owner === 'vanja' ? 'VANJA' : 'OLOKA';
+    const accent = owner === 'vanja' ? T.vanja : T.oloka;
+    return (
+      <TimeColumn key={'popup_' + owner}
+        name={name} owner={owner} accent={accent}
+        blocks={daySchedule[owner]||[]} actualBlocks={dayActual[owner]||[]}
+        actualMode={false} isActualColumn={false}
+        tasksByDate={tasksByDate} dk={dk}
+        drag={drag} setDrag={setDrag}
+        onAdd={addBlock} onAddBreak={addBreakBlock}
+        onRemove={removeBlock} onUpdate={updateBlock}
+        onAddActual={addActualBlock} onAddActualBreak={addActualBreakBlock}
+        onRemoveActual={removeActualBlock} onUpdateActual={updateActualBlock}
+        onAddQuickEvent={addQuickEvent}
+        onOpenEdit={() => {}}
+        onClickEmpty={(startMin, durationMin) => setQuickAdd({ owner, startMin, durationMin: durationMin||30 })}
+      />
+    );
+  };
+
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:2000, background:'rgba(32,33,36,0.6)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px 16px' }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:'#fff', borderRadius:16, width:'100%', maxWidth:700,
+        height:'88vh', display:'flex', flexDirection:'column',
+        boxShadow:'0 8px 40px rgba(0,0,0,0.35)', overflow:'hidden',
+      }}>
+        {/* Header */}
+        <div style={{ padding:'14px 20px 12px', borderBottom:'1px solid #dadce0', display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0, background:'#fff' }}>
+          <div>
+            <div style={{ fontSize:11, fontWeight:600, color:'#70757a', letterSpacing:'0.06em', marginBottom:2 }}>
+              {DAYS[date.getDay()].toUpperCase()}
+            </div>
+            <div style={{ fontSize:22, fontWeight:400, color: isToday ? '#1a73e8' : '#3c4043', display:'flex', alignItems:'center', gap:10 }}>
+              {date.toLocaleDateString('en-AU', { day:'numeric', month:'long', year:'numeric' })}
+              {isToday && <span style={{ fontSize:11, fontWeight:700, background:'#1a73e8', color:'#fff', borderRadius:12, padding:'2px 8px' }}>TODAY</span>}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <button onClick={onOpenFullDay} style={{ padding:'7px 14px', background:'#1a73e8', border:'none', borderRadius:8, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+              Full day view →
+            </button>
+            <button onClick={onClose} style={{ width:32, height:32, background:'#f1f3f4', border:'none', borderRadius:8, color:'#5f6368', cursor:'pointer', fontSize:20, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}>×</button>
+          </div>
+        </div>
+
+        {/* Scrollable timeline */}
+        <div ref={scrollRef} style={{ flex:1, overflowY:'auto', background:'#fff' }}>
+          <div style={{ display:'grid', gridTemplateColumns:gridCols, gap:0 }}>
+            {/* Time gutter */}
+            <div style={{ borderRight:'1px solid #dadce0', background:'#fff', position:'relative', flexShrink:0 }}>
+              <div style={{ height:32, borderBottom:'1px solid #dadce0' }}>
+                {isToday && (() => {
+                  const n = new Date();
+                  return <span style={{ position:'absolute', top:8, right:6, fontSize:9, fontWeight:700, color:'#EF4444' }}>{fmtTime(n.getHours()*60+n.getMinutes())}</span>;
+                })()}
+              </div>
+              <div style={{ position:'relative' }}>
+                <HourGutter />
+                {isToday && (() => {
+                  const n = new Date();
+                  const nowMin = n.getHours()*60 + n.getMinutes();
+                  const top = (nowMin - SCHED_START*60)*PX_PER_MIN;
+                  return (
+                    <div style={{ position:'absolute', left:-2, right:-2, top, height:2, background:'#EF4444', pointerEvents:'none', zIndex:10 }}>
+                      <div style={{ width:8, height:8, borderRadius:'50%', background:'#EF4444', marginTop:-3 }}/>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+            {/* Columns */}
+            {activeUser === 'both' ? (<>{makeCol('vanja')}{makeCol('oloka')}</>) : makeCol(activeUser)}
+          </div>
+        </div>
+
+        {/* Quick-add popover */}
+        {quickAdd && (
+          <QuickAddPopover
+            owner={quickAdd.owner}
+            startMin={quickAdd.startMin}
+            isActual={false}
+            tasks={(tasksByDate[dk]||[]).filter(t => t.owner===quickAdd.owner && !t.done)}
+            onConfirm={({ title, taskId, durationMin }) => {
+              const o=quickAdd.owner, sm=quickAdd.startMin, dm=durationMin||30;
+              if (taskId) { addBlock(o,taskId,sm); updateBlock(o,taskId,{durationMin:dm}); }
+              else if (title) { addQuickEvent(o,title,sm,dm); }
+              setQuickAdd(null);
+            }}
+            defaultDuration={quickAdd.durationMin||30}
+            onClose={() => setQuickAdd(null)}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Google Calendar Sync ─────────────────────────────────────────────────────
