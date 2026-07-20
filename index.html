@@ -15699,6 +15699,13 @@ function App({ onSwitchWorkspace = () => {} }) {
           </div>
         )}
       </main>
+      <GoogleCalSyncEngine
+        schedule={schedule}
+        setSchedule={setSchedule}
+        tasksByDate={tasksByDate}
+        selDate={selDate}
+        todayUser={todayUser}
+      />
     </div>
   );
 }
@@ -16463,6 +16470,406 @@ function compressImage(dataUrl, maxSize, quality, callback) {
   img.src = dataUrl;
 }
 
+// ── Google Calendar Sync ─────────────────────────────────────────────────────
+const GCAL_LS  = 'prontoHQ.gcal.v1';
+const GCAL_TAG = 'prontoHQ:';
+
+function loadGcalConf() {
+  try { return JSON.parse(localStorage.getItem(GCAL_LS) || 'null') || {}; } catch(_) { return {}; }
+}
+function saveGcalConf(patch) {
+  try {
+    const cur = loadGcalConf();
+    localStorage.setItem(GCAL_LS, JSON.stringify({ ...cur, ...patch }));
+  } catch(_) {}
+}
+
+async function gcalFetch(token, method, path, body) {
+  const opts = { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('https://www.googleapis.com/calendar/v3' + path, opts);
+  if (r.status === 204) return null;
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error?.message || 'HTTP ' + r.status);
+  return data;
+}
+
+function gcalAuthPopup(clientId) {
+  return new Promise((resolve, reject) => {
+    const redirectUri = window.location.origin + window.location.pathname.replace(/\/+$/, '');
+    const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'token',
+      scope: 'https://www.googleapis.com/auth/calendar',
+      state: Math.random().toString(36).slice(2),
+      include_granted_scopes: 'true',
+    });
+    const popup = window.open(url, 'gcal_oauth', 'width=520,height=640,left=200,top=100');
+    if (!popup) { reject(new Error('Popup blocked — allow popups for this site and try again.')); return; }
+    const timer = setInterval(() => {
+      try {
+        if (popup.closed) { clearInterval(timer); reject(new Error('Popup was closed')); return; }
+        const hash = popup.location.hash;
+        if (hash && hash.includes('access_token')) {
+          clearInterval(timer);
+          popup.close();
+          const p = new URLSearchParams(hash.slice(1));
+          const token = p.get('access_token');
+          const expiry = Date.now() + (parseInt(p.get('expires_in') || '3600')) * 1000;
+          if (token) resolve({ token, expiry });
+          else reject(new Error('No access token in response'));
+        }
+      } catch (_) { /* cross-origin — keep polling */ }
+    }, 400);
+    setTimeout(() => { clearInterval(timer); try { popup.close(); } catch(_) {} reject(new Error('Auth timed out')); }, 180000);
+  });
+}
+
+function blockToGcalBody(block, dateKey, tasksByDate) {
+  const pad = n => n.toString().padStart(2, '0');
+  const sm = block.startMin || 0, dm = block.durationMin || 30;
+  const em = sm + dm;
+  const startDt = new Date(dateKey + 'T' + pad(Math.floor(sm/60)) + ':' + pad(sm%60) + ':00');
+  const endDt   = new Date(dateKey + 'T' + pad(Math.min(23,Math.floor(em/60))) + ':' + pad(em%60) + ':00');
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let title = 'Pronto Task';
+  if (block.isBreak) {
+    title = block.breakLabel || 'Break';
+  } else if (block.qeTitle) {
+    title = block.qeTitle;
+  } else if (block.taskId && tasksByDate) {
+    for (const tasks of Object.values(tasksByDate)) {
+      const t = (tasks || []).find(t => t.id === block.taskId);
+      if (t) { title = t.text || 'Pronto Task'; break; }
+    }
+  }
+  return {
+    summary:     title,
+    start:       { dateTime: startDt.toISOString(), timeZone: tz },
+    end:         { dateTime: endDt.toISOString(),   timeZone: tz },
+    description: GCAL_TAG + (block.owner || 'oloka') + ':' + (block.blockId || block.qeId || ''),
+    colorId:     (block.owner || 'oloka') === 'vanja' ? '3' : '9',
+  };
+}
+
+function gcalEventToExternalBlock(event, owner) {
+  const startStr = event.start?.dateTime || event.start?.date || '';
+  const endStr   = event.end?.dateTime   || event.end?.date   || '';
+  if (!startStr) return null;
+  const start = new Date(startStr), end = new Date(endStr);
+  const startMin    = start.getHours() * 60 + start.getMinutes();
+  const durationMin = Math.max(15, Math.round((end - start) / 60000));
+  return {
+    qeId: 'gcal_ext_' + event.id, blockId: 'gcal_ext_' + event.id,
+    isQuickEvent: true, qeTitle: event.summary || 'Event',
+    startMin, durationMin, owner,
+    gcalEventId: event.id, isGcal: true, isExternal: true,
+  };
+}
+
+function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, todayUser }) {
+  const [conf, setConf]     = useS(loadGcalConf);
+  const [status, setStatus] = useS('idle');
+  const [lastSync, setLastSync]   = useS(null);
+  const [syncError, setSyncError] = useS('');
+  const prevScheduleRef = useR(null);
+  const pushQueueRef    = useR([]);
+  const syncRunning     = useR(false);
+
+  const reloadConf = () => setConf(loadGcalConf());
+
+  useE(() => {
+    window._gcalSync = {
+      connect: async (clientId) => {
+        setStatus('connecting');
+        try {
+          const { token, expiry } = await gcalAuthPopup(clientId);
+          saveGcalConf({ clientId, accessToken: token, tokenExpiry: expiry, enabled: true });
+          reloadConf();
+          setStatus('ok');
+          return token;
+        } catch(e) { setStatus('error'); setSyncError(e.message); throw e; }
+      },
+      disconnect: () => {
+        saveGcalConf({ accessToken: null, tokenExpiry: 0, enabled: false });
+        reloadConf();
+        setStatus('idle');
+        setSyncError('');
+      },
+      syncNow: () => setConf(c => ({ ...c, _forcePoll: Date.now() })),
+      saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
+      listCalendars: async (token) => {
+        const data = await gcalFetch(token, 'GET', '/users/me/calendarList');
+        return (data?.items || []).map(c => ({ id: c.id, summary: c.summary }));
+      },
+      getStatus: () => ({ status, lastSync, error: syncError }),
+    };
+    return () => { try { delete window._gcalSync; } catch(_) {} };
+  }, [status, lastSync, syncError]);
+
+  useE(() => {
+    const onStorage = e => { if (e.key === GCAL_LS) reloadConf(); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const doSync = useR(null);
+  doSync.current = async () => {
+    if (syncRunning.current) return;
+    const c = loadGcalConf();
+    if (!c.enabled || !c.accessToken) return;
+    if (c.tokenExpiry && Date.now() > c.tokenExpiry) { setStatus('expired'); return; }
+    syncRunning.current = true;
+    setStatus('syncing');
+    const calId = c.calendarId || 'primary';
+    const token = c.accessToken;
+    const owner = todayUser || 'oloka';
+    try {
+      const base = selDate instanceof Date ? selDate : new Date();
+      const pad  = n => n.toString().padStart(2,'0');
+      const fmt  = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+      const tmin = new Date(base); tmin.setDate(tmin.getDate() - 7);
+      const tmax = new Date(base); tmax.setDate(tmax.getDate() + 14);
+      const params = new URLSearchParams({
+        timeMin: fmt(tmin) + 'T00:00:00Z', timeMax: fmt(tmax) + 'T23:59:59Z',
+        singleEvents: 'true', maxResults: '250', orderBy: 'startTime',
+      });
+      const data   = await gcalFetch(token, 'GET', '/calendars/' + encodeURIComponent(calId) + '/events?' + params);
+      const events = (data?.items || []).filter(e => e.start?.dateTime || e.start?.date);
+
+      const byDate = {};
+      for (const ev of events) {
+        const desc = ev.description || '';
+        if (desc.startsWith(GCAL_TAG)) continue;  // Pronto-managed — skip pull
+        const d = new Date(ev.start.dateTime || ev.start.date);
+        const dk = fmt(d);
+        const blk = gcalEventToExternalBlock(ev, owner);
+        if (blk) { if (!byDate[dk]) byDate[dk] = []; byDate[dk].push(blk); }
+      }
+
+      const dates = [];
+      const cur = new Date(tmin);
+      while (cur <= tmax) { dates.push(fmt(cur)); cur.setDate(cur.getDate()+1); }
+
+      setSchedule(prev => {
+        const next = { ...prev };
+        for (const dk of dates) {
+          const day = next[dk] || {};
+          const ownerCol = (day[owner] || []).filter(b => !b.isExternal);
+          next[dk] = { ...day, [owner]: [...ownerCol, ...(byDate[dk] || [])] };
+        }
+        return next;
+      });
+
+      // Process push queue
+      const queue = [...pushQueueRef.current];
+      pushQueueRef.current = [];
+      for (const item of queue) {
+        try {
+          if (item.action === 'create') {
+            const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
+            const ev = await gcalFetch(token, 'POST', '/calendars/' + encodeURIComponent(calId) + '/events', body);
+            if (ev?.id) {
+              const gcalEventId = ev.id;
+              setSchedule(prev => {
+                const day = prev[item.dateKey] || {};
+                const col = (day[owner] || []).map(b =>
+                  (b.blockId || b.qeId) === (item.block.blockId || item.block.qeId) ? { ...b, gcalEventId } : b
+                );
+                return { ...prev, [item.dateKey]: { ...day, [owner]: col } };
+              });
+            }
+          } else if (item.action === 'update' && item.block.gcalEventId) {
+            const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
+            await gcalFetch(token, 'PUT', '/calendars/' + encodeURIComponent(calId) + '/events/' + item.block.gcalEventId, body);
+          } else if (item.action === 'delete' && item.gcalEventId) {
+            await gcalFetch(token, 'DELETE', '/calendars/' + encodeURIComponent(calId) + '/events/' + item.gcalEventId);
+          }
+        } catch(e) { console.warn('[GCal push]', item.action, e.message); }
+      }
+
+      setLastSync(new Date().toISOString());
+      setStatus('ok');
+      setSyncError('');
+    } catch(e) {
+      setStatus('error');
+      setSyncError(e.message);
+      if (e.message.includes('401') || e.message.toLowerCase().includes('invalid')) {
+        saveGcalConf({ accessToken: null, tokenExpiry: 0 });
+        reloadConf();
+        setStatus('expired');
+      }
+    } finally { syncRunning.current = false; }
+  };
+
+  // Poll every 60s when enabled
+  useE(() => {
+    const c = conf;
+    if (!c.enabled || !c.accessToken) return;
+    doSync.current();
+    const iv = setInterval(() => doSync.current(), 60000);
+    return () => clearInterval(iv);
+  }, [conf.enabled, conf.accessToken, conf.calendarId, conf._forcePoll, selDate]);
+
+  // Watch schedule changes — queue pushes for the current user's blocks
+  useE(() => {
+    const c = loadGcalConf();
+    if (!c.enabled || !c.accessToken) { prevScheduleRef.current = schedule; return; }
+    const prev = prevScheduleRef.current;
+    prevScheduleRef.current = schedule;
+    if (!prev) return;
+    const owner = todayUser || 'oloka';
+    const allDates = new Set([...Object.keys(schedule), ...Object.keys(prev)]);
+    let dirty = false;
+    for (const dk of allDates) {
+      const col     = (schedule[dk]?.[owner] || []).filter(b => !b.isExternal);
+      const prevCol = (prev[dk]?.[owner]     || []).filter(b => !b.isExternal);
+      const prevMap = new Map(prevCol.map(b => [(b.blockId||b.qeId), b]));
+      const curMap  = new Map(col.map(b => [(b.blockId||b.qeId), b]));
+      for (const [id, block] of curMap) {
+        if (!id) continue;
+        const was = prevMap.get(id);
+        if (!was && !block.gcalEventId) {
+          pushQueueRef.current.push({ action:'create', block, dateKey:dk }); dirty = true;
+        } else if (was && block.gcalEventId &&
+            (was.startMin !== block.startMin || was.durationMin !== block.durationMin)) {
+          pushQueueRef.current.push({ action:'update', block, dateKey:dk }); dirty = true;
+        }
+      }
+      for (const [id, pb] of prevMap) {
+        if (!id || !pb.gcalEventId) continue;
+        if (!curMap.has(id)) {
+          pushQueueRef.current.push({ action:'delete', gcalEventId:pb.gcalEventId, dateKey:dk }); dirty = true;
+        }
+      }
+    }
+    if (dirty) setTimeout(() => doSync.current(), 2000);
+  }, [schedule]);
+
+  return null;
+}
+
+function GCalSettingsCard() {
+  const [conf, setConf]             = useS(loadGcalConf);
+  const [clientIdInput, setClientIdInput] = useS('');
+  const [msg, setMsg]               = useS('');
+  const [calendars, setCalendars]   = useS([]);
+  const [loading, setLoading]       = useS(false);
+  const reloadConf = () => setConf(loadGcalConf());
+  const isConnected = !!(conf.accessToken && conf.tokenExpiry > Date.now());
+  const bridgeStatus = window._gcalSync?.getStatus?.() || {};
+  const statusDot = {ok:'#22C55E', syncing:'#F59E0B', error:'#EF4444', expired:'#EF4444', connecting:'#F59E0B'}[bridgeStatus.status] || '#9CA3AF';
+
+  const handleConnect = async () => {
+    const cid = (clientIdInput || conf.clientId || '').trim();
+    if (!cid) { setMsg('Paste your Google OAuth Client ID above first.'); return; }
+    setLoading(true); setMsg('Opening Google sign-in…');
+    try {
+      const token = await window._gcalSync.connect(cid);
+      const cals  = await window._gcalSync.listCalendars(token);
+      setCalendars(cals);
+      if (!conf.calendarId && cals.length) window._gcalSync.saveConfig({ calendarId: cals[0].id });
+      reloadConf();
+      setMsg('Connected! Syncing now…');
+    } catch(e) { setMsg('Error: ' + e.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleDisconnect = () => {
+    window._gcalSync?.disconnect();
+    setCalendars([]);
+    reloadConf();
+    setMsg('Disconnected.');
+  };
+
+  return (
+    <div>
+      <p style={{ fontSize:12, color:T.muted, marginBottom:12, lineHeight:1.6 }}>
+        Sync your Pronto schedule with Google Calendar — your Google Calendar events appear in the schedule, and Pronto blocks are pushed to Google Calendar automatically.
+      </p>
+      {!isConnected ? (
+        <div>
+          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:4 }}>GOOGLE OAUTH CLIENT ID</p>
+          <input
+            value={clientIdInput || conf.clientId || ''}
+            onChange={e => setClientIdInput(e.target.value)}
+            placeholder="xxxxxxxx.apps.googleusercontent.com"
+            style={{ width:'100%', background:T.surface, border:`1px solid ${T.border}`, borderRadius:6,
+              padding:"8px 12px", fontSize:12, color:T.ink, fontFamily:"inherit",
+              boxSizing:"border-box", marginBottom:8 }}
+          />
+          <p style={{ fontSize:10.5, color:T.muted, marginBottom:12, lineHeight:1.6 }}>
+            To get a Client ID: go to{' '}
+            <span style={{ color:T.oloka, fontWeight:700 }}>console.cloud.google.com</span>
+            {' '}→ create a project → enable <b>Google Calendar API</b> → Credentials → Create OAuth 2.0 Client ID (Web application) → add this page's URL under Authorised JavaScript origins → copy the Client ID here.
+          </p>
+          <button onClick={handleConnect} disabled={loading} style={{
+            background:T.oloka, border:"none", borderRadius:6, color:"#fff",
+            padding:"9px 18px", fontSize:11, fontWeight:800,
+            cursor: loading ? "wait" : "pointer", fontFamily:"inherit", opacity: loading ? 0.7 : 1,
+          }}>{loading ? 'CONNECTING…' : 'CONNECT GOOGLE CALENDAR'}</button>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+            <div style={{ width:8, height:8, borderRadius:"50%", background:statusDot, flexShrink:0 }}></div>
+            <p style={{ fontSize:12, fontWeight:700, color:T.ink }}>
+              {bridgeStatus.status === 'syncing' ? 'Syncing…' : bridgeStatus.status === 'error' ? 'Sync error' : bridgeStatus.status === 'expired' ? 'Token expired' : 'Connected'}
+            </p>
+            {bridgeStatus.lastSync && (
+              <p style={{ fontSize:11, color:T.muted }}>— last sync {new Date(bridgeStatus.lastSync).toLocaleTimeString()}</p>
+            )}
+          </div>
+          {(bridgeStatus.status === 'error' || bridgeStatus.status === 'expired') && bridgeStatus.error && (
+            <p style={{ fontSize:11, color:"#EF4444", marginBottom:10 }}>{bridgeStatus.error}</p>
+          )}
+          <div style={{ marginBottom:14 }}>
+            <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>SYNC CALENDAR</p>
+            {calendars.length > 0 ? (
+              <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                {calendars.map(c => (
+                  <label key={c.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
+                    <input type="radio" checked={conf.calendarId === c.id} onChange={() => {
+                      window._gcalSync?.saveConfig({ calendarId: c.id });
+                      reloadConf();
+                    }} style={{ accentColor: T.oloka }}/>
+                    <span style={{ fontSize:12, color:T.ink }}>{c.summary}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <p style={{ fontSize:12, color:T.ink }}>{conf.calendarId === 'primary' ? 'Primary calendar' : conf.calendarId}</p>
+                <button onClick={async () => {
+                  try {
+                    const cals = await window._gcalSync.listCalendars(conf.accessToken);
+                    setCalendars(cals);
+                  } catch(_) {}
+                }} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:5,
+                  color:T.muted, padding:"3px 8px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Change</button>
+              </div>
+            )}
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={() => {
+              window._gcalSync?.syncNow();
+              setMsg('Syncing…');
+              setTimeout(() => setMsg(''), 4000);
+            }} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:6,
+              color:T.ink, padding:"8px 14px", fontSize:11, fontWeight:700,
+              cursor:"pointer", fontFamily:"inherit" }}>SYNC NOW</button>
+            <button onClick={handleDisconnect} style={{ background:"transparent", border:`1px solid ${T.border}`,
+              borderRadius:6, color:T.muted, padding:"8px 14px", fontSize:11,
+              cursor:"pointer", fontFamily:"inherit" }}>Disconnect</button>
+          </div>
+        </div>
+      )}
+      {msg && <p style={{ fontSize:11.5, color: msg.startsWith('Error') ? '#EF4444' : T.oloka, marginTop:10, fontWeight:700 }}>{msg}</p>}
+    </div>
+  );
+}
+
 // ── Settings View ──
 function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels }) {
   const [newCat, setNewCat] = useS("");
@@ -16657,6 +17064,12 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
             style={{ flex:1, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"7px 10px", fontSize:12, color:T.ink, fontFamily:"inherit" }}/>
           <button onClick={() => { const el = document.getElementById("newVideoLabel"); if(el && el.value.trim()) { setVideoLabels && setVideoLabels(prev => [...prev, el.value.trim()]); el.value=""; } }} style={{ background:T.gold, border:"none", borderRadius:6, color:"#fff", padding:"7px 14px", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>ADD</button>
         </div>
+      </Card>
+
+      {/* Google Calendar */}
+      <Card>
+        <SectionTitle>GOOGLE CALENDAR</SectionTitle>
+        <GCalSettingsCard />
       </Card>
 
       {/* Password */}
