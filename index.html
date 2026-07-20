@@ -16565,6 +16565,11 @@ function gcalEventToExternalBlock(event, owner) {
   };
 }
 
+// Stable key for a block — used to track it across renders for push detection
+function _gcalBlockKey(b) {
+  return b.blockId || b.qeId || (b.taskId ? b.taskId + '|' + b.startMin : null);
+}
+
 function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, todayUser }) {
   const [conf, setConf]     = useS(loadGcalConf);
   const [status, setStatus] = useS('idle');
@@ -16598,7 +16603,12 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
       listCalendars: async (token) => {
         const data = await gcalFetch(token, 'GET', '/users/me/calendarList');
-        return (data?.items || []).map(c => ({ id: c.id, summary: c.summary }));
+        return (data?.items || []).map(c => ({
+          id: c.id, summary: c.summary,
+          backgroundColor: c.backgroundColor || '#1a73e8',
+          foregroundColor: c.foregroundColor || '#fff',
+          accessRole: c.accessRole || 'reader',
+        }));
       },
       getStatus: () => ({ status, lastSync, error: syncError }),
     };
@@ -16619,7 +16629,12 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
     if (c.tokenExpiry && Date.now() > c.tokenExpiry) { setStatus('expired'); return; }
     syncRunning.current = true;
     setStatus('syncing');
-    const calId = c.calendarId || 'primary';
+    // pushCalendarId = where Pronto blocks are pushed; pullCalendarIds = which calendars to pull from
+    const pushCalId = c.calendarId || 'primary';
+    const allCals   = c.allCalendars || [];
+    const pullCalIds = c.pullCalendarIds
+      ? c.pullCalendarIds
+      : allCals.length > 0 ? allCals.map(x => x.id) : [pushCalId];
     const token = c.accessToken;
     const owner = todayUser || 'oloka';
     try {
@@ -16628,26 +16643,38 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       const fmt  = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
       const tmin = new Date(base); tmin.setDate(tmin.getDate() - 7);
       const tmax = new Date(base); tmax.setDate(tmax.getDate() + 14);
-      const params = new URLSearchParams({
-        timeMin: fmt(tmin) + 'T00:00:00Z', timeMax: fmt(tmax) + 'T23:59:59Z',
-        singleEvents: 'true', maxResults: '250', orderBy: 'startTime',
-      });
-      const data   = await gcalFetch(token, 'GET', '/calendars/' + encodeURIComponent(calId) + '/events?' + params);
-      const events = (data?.items || []).filter(e => e.start?.dateTime || e.start?.date);
-
-      const byDate = {};
-      for (const ev of events) {
-        const desc = ev.description || '';
-        if (desc.startsWith(GCAL_TAG)) continue;  // Pronto-managed — skip pull
-        const d = new Date(ev.start.dateTime || ev.start.date);
-        const dk = fmt(d);
-        const blk = gcalEventToExternalBlock(ev, owner);
-        if (blk) { if (!byDate[dk]) byDate[dk] = []; byDate[dk].push(blk); }
-      }
-
       const dates = [];
       const cur = new Date(tmin);
       while (cur <= tmax) { dates.push(fmt(cur)); cur.setDate(cur.getDate()+1); }
+
+      // Pull from all enabled calendars
+      const byDate = {};
+      for (const calId of pullCalIds) {
+        try {
+          const params = new URLSearchParams({
+            timeMin: fmt(tmin) + 'T00:00:00Z', timeMax: fmt(tmax) + 'T23:59:59Z',
+            singleEvents: 'true', maxResults: '250', orderBy: 'startTime',
+          });
+          const data = await gcalFetch(token, 'GET', '/calendars/' + encodeURIComponent(calId) + '/events?' + params);
+          const events = (data?.items || []).filter(e => e.start?.dateTime || e.start?.date);
+          for (const ev of events) {
+            const desc = ev.description || '';
+            if (desc.startsWith(GCAL_TAG)) continue;  // Pronto-managed — skip pull
+            const d = new Date(ev.start.dateTime || ev.start.date);
+            const dk = fmt(d);
+            const blk = gcalEventToExternalBlock(ev, owner);
+            if (blk) {
+              blk.gcalCalendarId = calId;
+              if (!byDate[dk]) byDate[dk] = [];
+              // Deduplicate by gcalEventId across calendars
+              if (!byDate[dk].some(x => x.gcalEventId === blk.gcalEventId)) byDate[dk].push(blk);
+            }
+          }
+        } catch(calErr) {
+          // Skip individual calendar errors (e.g. read-only calendars) — don't abort
+          console.warn('[GCal pull] calendar', calId, calErr.message);
+        }
+      }
 
       setSchedule(prev => {
         const next = { ...prev };
@@ -16659,29 +16686,30 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
         return next;
       });
 
-      // Process push queue
+      // Process push queue — always push to the designated push calendar
       const queue = [...pushQueueRef.current];
       pushQueueRef.current = [];
       for (const item of queue) {
         try {
           if (item.action === 'create') {
             const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
-            const ev = await gcalFetch(token, 'POST', '/calendars/' + encodeURIComponent(calId) + '/events', body);
+            const ev = await gcalFetch(token, 'POST', '/calendars/' + encodeURIComponent(pushCalId) + '/events', body);
             if (ev?.id) {
               const gcalEventId = ev.id;
+              const itemKey = _gcalBlockKey(item.block);
               setSchedule(prev => {
                 const day = prev[item.dateKey] || {};
                 const col = (day[owner] || []).map(b =>
-                  (b.blockId || b.qeId) === (item.block.blockId || item.block.qeId) ? { ...b, gcalEventId } : b
+                  _gcalBlockKey(b) === itemKey ? { ...b, gcalEventId } : b
                 );
                 return { ...prev, [item.dateKey]: { ...day, [owner]: col } };
               });
             }
           } else if (item.action === 'update' && item.block.gcalEventId) {
             const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
-            await gcalFetch(token, 'PUT', '/calendars/' + encodeURIComponent(calId) + '/events/' + item.block.gcalEventId, body);
+            await gcalFetch(token, 'PUT', '/calendars/' + encodeURIComponent(pushCalId) + '/events/' + item.block.gcalEventId, body);
           } else if (item.action === 'delete' && item.gcalEventId) {
-            await gcalFetch(token, 'DELETE', '/calendars/' + encodeURIComponent(calId) + '/events/' + item.gcalEventId);
+            await gcalFetch(token, 'DELETE', '/calendars/' + encodeURIComponent(pushCalId) + '/events/' + item.gcalEventId);
           }
         } catch(e) { console.warn('[GCal push]', item.action, e.message); }
       }
@@ -16707,7 +16735,7 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
     doSync.current();
     const iv = setInterval(() => doSync.current(), 60000);
     return () => clearInterval(iv);
-  }, [conf.enabled, conf.accessToken, conf.calendarId, conf._forcePoll, selDate]);
+  }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll, selDate]);
 
   // Watch schedule changes — queue pushes for the current user's blocks
   useE(() => {
@@ -16722,10 +16750,9 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
     for (const dk of allDates) {
       const col     = (schedule[dk]?.[owner] || []).filter(b => !b.isExternal);
       const prevCol = (prev[dk]?.[owner]     || []).filter(b => !b.isExternal);
-      const prevMap = new Map(prevCol.map(b => [(b.blockId||b.qeId), b]));
-      const curMap  = new Map(col.map(b => [(b.blockId||b.qeId), b]));
+      const prevMap = new Map(prevCol.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
+      const curMap  = new Map(col.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
       for (const [id, block] of curMap) {
-        if (!id) continue;
         const was = prevMap.get(id);
         if (!was && !block.gcalEventId) {
           pushQueueRef.current.push({ action:'create', block, dateKey:dk }); dirty = true;
@@ -16735,56 +16762,90 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
         }
       }
       for (const [id, pb] of prevMap) {
-        if (!id || !pb.gcalEventId) continue;
+        if (!pb.gcalEventId) continue;
         if (!curMap.has(id)) {
           pushQueueRef.current.push({ action:'delete', gcalEventId:pb.gcalEventId, dateKey:dk }); dirty = true;
         }
       }
     }
-    if (dirty) setTimeout(() => doSync.current(), 2000);
+    if (dirty) setTimeout(() => doSync.current(), 1500);
   }, [schedule]);
 
   return null;
 }
 
 function GCalSettingsCard() {
-  const [conf, setConf]             = useS(loadGcalConf);
+  const [conf, setConf]                   = useS(loadGcalConf);
   const [clientIdInput, setClientIdInput] = useS('');
-  const [msg, setMsg]               = useS('');
-  const [calendars, setCalendars]   = useS([]);
-  const [loading, setLoading]       = useS(false);
+  const [msg, setMsg]                     = useS('');
+  const [loadingCals, setLoadingCals]     = useS(false);
+  const [connecting, setConnecting]       = useS(false);
   const reloadConf = () => setConf(loadGcalConf());
+
   const isConnected = !!(conf.accessToken && conf.tokenExpiry > Date.now());
   const bridgeStatus = window._gcalSync?.getStatus?.() || {};
-  const statusDot = {ok:'#22C55E', syncing:'#F59E0B', error:'#EF4444', expired:'#EF4444', connecting:'#F59E0B'}[bridgeStatus.status] || '#9CA3AF';
+  const statusDot = {ok:'#22C55E',syncing:'#F59E0B',error:'#EF4444',expired:'#EF4444',connecting:'#F59E0B'}[bridgeStatus.status] || '#9CA3AF';
+  const allCals   = conf.allCalendars || [];
+  // pullCalendarIds: which calendars to read events FROM (default all)
+  const pullIds   = conf.pullCalendarIds || allCals.map(c => c.id);
+  // calendarId: where Pronto blocks are pushed TO
+  const pushCalId = conf.calendarId || (allCals[0]?.id) || 'primary';
+  // writeable calendars only for push target
+  const writableCals = allCals.filter(c => c.accessRole === 'owner' || c.accessRole === 'writer');
+
+  const refreshCalendars = async (token) => {
+    setLoadingCals(true);
+    try {
+      const cals = await window._gcalSync.listCalendars(token || conf.accessToken);
+      const patch = { allCalendars: cals };
+      // default push = first writable calendar
+      if (!conf.calendarId) {
+        const writable = cals.find(c => c.accessRole === 'owner' || c.accessRole === 'writer');
+        if (writable) patch.calendarId = writable.id;
+      }
+      // default pull = all calendars
+      if (!conf.pullCalendarIds) patch.pullCalendarIds = cals.map(c => c.id);
+      window._gcalSync?.saveConfig(patch);
+      reloadConf();
+    } catch(e) { setMsg('Could not load calendars: ' + e.message); }
+    finally { setLoadingCals(false); }
+  };
 
   const handleConnect = async () => {
     const cid = (clientIdInput || conf.clientId || '').trim();
-    if (!cid) { setMsg('Paste your Google OAuth Client ID above first.'); return; }
-    setLoading(true); setMsg('Opening Google sign-in…');
+    if (!cid) { setMsg('Paste your Google OAuth Client ID first.'); return; }
+    setConnecting(true); setMsg('Opening Google sign-in…');
     try {
       const token = await window._gcalSync.connect(cid);
-      const cals  = await window._gcalSync.listCalendars(token);
-      setCalendars(cals);
-      if (!conf.calendarId && cals.length) window._gcalSync.saveConfig({ calendarId: cals[0].id });
-      reloadConf();
+      await refreshCalendars(token);
       setMsg('Connected! Syncing now…');
     } catch(e) { setMsg('Error: ' + e.message); }
-    finally { setLoading(false); }
+    finally { setConnecting(false); }
   };
 
   const handleDisconnect = () => {
     window._gcalSync?.disconnect();
-    setCalendars([]);
     reloadConf();
     setMsg('Disconnected.');
+  };
+
+  const togglePull = (calId) => {
+    const next = pullIds.includes(calId) ? pullIds.filter(x => x !== calId) : [...pullIds, calId];
+    window._gcalSync?.saveConfig({ pullCalendarIds: next });
+    reloadConf();
+  };
+
+  const setPushCal = (calId) => {
+    window._gcalSync?.saveConfig({ calendarId: calId });
+    reloadConf();
   };
 
   return (
     <div>
       <p style={{ fontSize:12, color:T.muted, marginBottom:12, lineHeight:1.6 }}>
-        Sync your Pronto schedule with Google Calendar — your Google Calendar events appear in the schedule, and Pronto blocks are pushed to Google Calendar automatically.
+        Sync with Google Calendar — events you add in Google Calendar appear in Pronto, and schedule blocks you create in Pronto are pushed to Google Calendar automatically.
       </p>
+
       {!isConnected ? (
         <div>
           <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:4 }}>GOOGLE OAUTH CLIENT ID</p>
@@ -16797,64 +16858,89 @@ function GCalSettingsCard() {
               boxSizing:"border-box", marginBottom:8 }}
           />
           <p style={{ fontSize:10.5, color:T.muted, marginBottom:12, lineHeight:1.6 }}>
-            To get a Client ID: go to{' '}
-            <span style={{ color:T.oloka, fontWeight:700 }}>console.cloud.google.com</span>
-            {' '}→ create a project → enable <b>Google Calendar API</b> → Credentials → Create OAuth 2.0 Client ID (Web application) → add this page's URL under Authorised JavaScript origins → copy the Client ID here.
+            Go to <span style={{ color:T.oloka, fontWeight:700 }}>console.cloud.google.com</span> → enable Google Calendar API → Credentials → Create OAuth 2.0 Client ID → add this page's URL to Authorised JavaScript origins and Redirect URIs → paste the Client ID above.
           </p>
-          <button onClick={handleConnect} disabled={loading} style={{
-            background:T.oloka, border:"none", borderRadius:6, color:"#fff",
-            padding:"9px 18px", fontSize:11, fontWeight:800,
-            cursor: loading ? "wait" : "pointer", fontFamily:"inherit", opacity: loading ? 0.7 : 1,
-          }}>{loading ? 'CONNECTING…' : 'CONNECT GOOGLE CALENDAR'}</button>
+          <button onClick={handleConnect} disabled={connecting} style={{
+            background:'#1a73e8', border:"none", borderRadius:6, color:"#fff",
+            padding:"9px 18px", fontSize:11, fontWeight:700,
+            cursor: connecting ? "wait" : "pointer", fontFamily:"inherit", opacity: connecting ? 0.7 : 1,
+          }}>{connecting ? 'CONNECTING…' : 'CONNECT GOOGLE CALENDAR'}</button>
         </div>
       ) : (
         <div>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-            <div style={{ width:8, height:8, borderRadius:"50%", background:statusDot, flexShrink:0 }}></div>
-            <p style={{ fontSize:12, fontWeight:700, color:T.ink }}>
-              {bridgeStatus.status === 'syncing' ? 'Syncing…' : bridgeStatus.status === 'error' ? 'Sync error' : bridgeStatus.status === 'expired' ? 'Token expired' : 'Connected'}
-            </p>
+          {/* Status row */}
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+            <div style={{ width:8, height:8, borderRadius:"50%", background:statusDot, flexShrink:0 }}/>
+            <span style={{ fontSize:12, fontWeight:700, color:T.ink }}>
+              {bridgeStatus.status === 'syncing' ? 'Syncing…' : bridgeStatus.status === 'error' ? 'Sync error' : bridgeStatus.status === 'expired' ? 'Token expired — reconnect' : 'Connected'}
+            </span>
             {bridgeStatus.lastSync && (
-              <p style={{ fontSize:11, color:T.muted }}>— last sync {new Date(bridgeStatus.lastSync).toLocaleTimeString()}</p>
+              <span style={{ fontSize:11, color:T.muted }}>· last sync {new Date(bridgeStatus.lastSync).toLocaleTimeString()}</span>
             )}
           </div>
           {(bridgeStatus.status === 'error' || bridgeStatus.status === 'expired') && bridgeStatus.error && (
             <p style={{ fontSize:11, color:"#EF4444", marginBottom:10 }}>{bridgeStatus.error}</p>
           )}
-          <div style={{ marginBottom:14 }}>
-            <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>SYNC CALENDAR</p>
-            {calendars.length > 0 ? (
-              <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                {calendars.map(c => (
-                  <label key={c.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
-                    <input type="radio" checked={conf.calendarId === c.id} onChange={() => {
-                      window._gcalSync?.saveConfig({ calendarId: c.id });
-                      reloadConf();
-                    }} style={{ accentColor: T.oloka }}/>
-                    <span style={{ fontSize:12, color:T.ink }}>{c.summary}</span>
-                  </label>
-                ))}
+
+          {allCals.length === 0 ? (
+            <button onClick={() => refreshCalendars()} disabled={loadingCals} style={{
+              background:T.surface, border:`1px solid ${T.border}`, borderRadius:6,
+              color:T.ink, padding:"7px 14px", fontSize:11, fontWeight:700,
+              cursor:"pointer", fontFamily:"inherit", marginBottom:14,
+            }}>{loadingCals ? 'Loading…' : 'Load Calendars'}</button>
+          ) : (
+            <div style={{ marginBottom:16 }}>
+              {/* PULL section — which calendars to read events from */}
+              <div style={{ marginBottom:14 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                  <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em" }}>SHOW EVENTS FROM</p>
+                  <button onClick={() => refreshCalendars()} style={{ background:"transparent", border:"none", color:T.oloka, fontSize:10, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"inherit" }}>
+                    {loadingCals ? '…' : '↻ Refresh'}
+                  </button>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  {allCals.map(cal => (
+                    <label key={cal.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
+                      <input type="checkbox"
+                        checked={pullIds.includes(cal.id)}
+                        onChange={() => togglePull(cal.id)}
+                        style={{ accentColor: cal.backgroundColor || '#1a73e8', width:14, height:14 }}
+                      />
+                      <div style={{ width:12, height:12, borderRadius:"50%", background:cal.backgroundColor||'#1a73e8', flexShrink:0 }}/>
+                      <span style={{ fontSize:12, color:T.ink, flex:1 }}>{cal.summary}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            ) : (
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <p style={{ fontSize:12, color:T.ink }}>{conf.calendarId === 'primary' ? 'Primary calendar' : conf.calendarId}</p>
-                <button onClick={async () => {
-                  try {
-                    const cals = await window._gcalSync.listCalendars(conf.accessToken);
-                    setCalendars(cals);
-                  } catch(_) {}
-                }} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:5,
-                  color:T.muted, padding:"3px 8px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Change</button>
+
+              {/* PUSH section — which writable calendar gets Pronto blocks */}
+              <div style={{ marginBottom:14 }}>
+                <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>SAVE PRONTO BLOCKS TO</p>
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  {(writableCals.length > 0 ? writableCals : allCals).map(cal => (
+                    <label key={cal.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
+                      <input type="radio"
+                        checked={pushCalId === cal.id}
+                        onChange={() => setPushCal(cal.id)}
+                        style={{ accentColor: cal.backgroundColor || '#1a73e8' }}
+                      />
+                      <div style={{ width:12, height:12, borderRadius:"50%", background:cal.backgroundColor||'#1a73e8', flexShrink:0 }}/>
+                      <span style={{ fontSize:12, color:T.ink, flex:1 }}>{cal.summary}</span>
+                      {cal.accessRole === 'reader' && <span style={{ fontSize:9, color:T.muted, background:T.surface, borderRadius:3, padding:"1px 4px" }}>read-only</span>}
+                    </label>
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
+            </div>
+          )}
+
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             <button onClick={() => {
               window._gcalSync?.syncNow();
               setMsg('Syncing…');
               setTimeout(() => setMsg(''), 4000);
-            }} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:6,
-              color:T.ink, padding:"8px 14px", fontSize:11, fontWeight:700,
+            }} style={{ background:'#1a73e8', border:"none", borderRadius:6,
+              color:"#fff", padding:"8px 16px", fontSize:11, fontWeight:700,
               cursor:"pointer", fontFamily:"inherit" }}>SYNC NOW</button>
             <button onClick={handleDisconnect} style={{ background:"transparent", border:`1px solid ${T.border}`,
               borderRadius:6, color:T.muted, padding:"8px 14px", fontSize:11,
@@ -16862,7 +16948,7 @@ function GCalSettingsCard() {
           </div>
         </div>
       )}
-      {msg && <p style={{ fontSize:11.5, color: msg.startsWith('Error') ? '#EF4444' : T.oloka, marginTop:10, fontWeight:700 }}>{msg}</p>}
+      {msg && <p style={{ fontSize:11.5, color: msg.startsWith('Error') || msg.startsWith('Could') ? '#EF4444' : '#1a73e8', marginTop:10, fontWeight:700 }}>{msg}</p>}
     </div>
   );
 }
