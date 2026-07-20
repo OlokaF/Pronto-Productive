@@ -16744,6 +16744,41 @@ async function gcalFetch(token, method, path, body) {
   return data;
 }
 
+// Silent re-auth (prompt=none) — no UI if Google session is still active
+function gcalSilentRefresh(clientId) {
+  return new Promise((resolve, reject) => {
+    const redirectUri = window.location.origin + window.location.pathname.replace(/\/+$/, '');
+    const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'token',
+      scope: 'https://www.googleapis.com/auth/calendar',
+      prompt: 'none',
+      include_granted_scopes: 'true',
+    });
+    const popup = window.open(url, 'gcal_silent_refresh', 'width=1,height=1,left=-2000,top=-2000');
+    if (!popup) { reject(new Error('popup_blocked')); return; }
+    const timer = setInterval(() => {
+      try {
+        if (popup.closed) { clearInterval(timer); reject(new Error('popup_closed')); return; }
+        const hash = popup.location.hash || '';
+        const search = popup.location.search || '';
+        if (hash.includes('access_token')) {
+          clearInterval(timer); popup.close();
+          const p = new URLSearchParams(hash.slice(1));
+          const token = p.get('access_token');
+          const expiry = Date.now() + (parseInt(p.get('expires_in') || '3600')) * 1000;
+          if (token) resolve({ token, expiry }); else reject(new Error('no_token'));
+        } else if (search.includes('error=')) {
+          clearInterval(timer); try { popup.close(); } catch(_) {}
+          reject(new Error('interaction_required'));
+        }
+      } catch(_) { /* cross-origin still loading */ }
+    }, 300);
+    setTimeout(() => { clearInterval(timer); try { popup.close(); } catch(_) {} reject(new Error('timeout')); }, 15000);
+  });
+}
+
 function gcalAuthPopup(clientId) {
   return new Promise((resolve, reject) => {
     const redirectUri = window.location.origin + window.location.pathname.replace(/\/+$/, '');
@@ -16834,6 +16869,28 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
   const pushRunning     = useR(false);
 
   const reloadConf = () => setConf(loadGcalConf());
+  const silentRefreshing = useR(false);
+
+  const tryAutoReconnect = useR(null);
+  tryAutoReconnect.current = async () => {
+    if (silentRefreshing.current) return false;
+    const cfg = loadGcalConf();
+    if (!cfg.clientId) return false;
+    silentRefreshing.current = true;
+    try {
+      const { token, expiry } = await gcalSilentRefresh(cfg.clientId);
+      saveGcalConf({ accessToken: token, tokenExpiry: expiry });
+      reloadConf();
+      setStatus('ok');
+      setSyncError('');
+      return true;
+    } catch(e) {
+      setStatus('expired');
+      return false;
+    } finally {
+      silentRefreshing.current = false;
+    }
+  };
 
   useE(() => {
     window._gcalSync = {
@@ -16880,9 +16937,13 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
   doPush.current = async () => {
     if (pushRunning.current) return;
     if (!pushQueueRef.current.length) return;
-    const c = loadGcalConf();
+    let c = loadGcalConf();
     if (!c.enabled || !c.accessToken) return;
-    if (c.tokenExpiry && Date.now() > c.tokenExpiry) { setStatus('expired'); return; }
+    if (c.tokenExpiry && Date.now() > c.tokenExpiry) {
+      const ok = await tryAutoReconnect.current();
+      if (!ok) return;
+      c = loadGcalConf();
+    }
 
     // Determine push calendar: prefer calendarId if set and writable, otherwise 'primary'
     const allCals  = c.allCalendars || [];
@@ -16948,9 +17009,13 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
   const doPull = useR(null);
   doPull.current = async () => {
     if (pullRunning.current) return;
-    const c = loadGcalConf();
+    let c = loadGcalConf();
     if (!c.enabled || !c.accessToken) return;
-    if (c.tokenExpiry && Date.now() > c.tokenExpiry) { setStatus('expired'); return; }
+    if (c.tokenExpiry && Date.now() > c.tokenExpiry) {
+      const ok = await tryAutoReconnect.current();
+      if (!ok) return;
+      c = loadGcalConf();
+    }
     pullRunning.current = true;
     setStatus('syncing');
     const allCals  = c.allCalendars || [];
@@ -17014,6 +17079,17 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       }
     } finally { pullRunning.current = false; }
   };
+
+  // Proactive silent refresh — fires 5 min before token expires
+  useE(() => {
+    const c = conf;
+    if (!c.enabled || !c.accessToken || !c.tokenExpiry) return;
+    const msUntilExpiry = c.tokenExpiry - Date.now();
+    const refreshAt = msUntilExpiry - 5 * 60 * 1000;
+    if (refreshAt <= 0) { tryAutoReconnect.current(); return; }
+    const t = setTimeout(() => tryAutoReconnect.current(), refreshAt);
+    return () => clearTimeout(t);
+  }, [conf.accessToken, conf.tokenExpiry]);
 
   // Pull every 60s; also run push after each pull
   useE(() => {
