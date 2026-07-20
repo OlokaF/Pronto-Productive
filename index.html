@@ -16577,7 +16577,8 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
   const [syncError, setSyncError] = useS('');
   const prevScheduleRef = useR(null);
   const pushQueueRef    = useR([]);
-  const syncRunning     = useR(false);
+  const pullRunning     = useR(false);
+  const pushRunning     = useR(false);
 
   const reloadConf = () => setConf(loadGcalConf());
 
@@ -16621,22 +16622,90 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const doSync = useR(null);
-  doSync.current = async () => {
-    if (syncRunning.current) return;
+  // ── doPush: processes push queue immediately, independent of the pull cycle ──
+  const doPush = useR(null);
+  doPush.current = async () => {
+    if (pushRunning.current) return;
+    if (!pushQueueRef.current.length) return;
     const c = loadGcalConf();
     if (!c.enabled || !c.accessToken) return;
     if (c.tokenExpiry && Date.now() > c.tokenExpiry) { setStatus('expired'); return; }
-    syncRunning.current = true;
+
+    // Determine push calendar: prefer calendarId if set and writable, otherwise 'primary'
+    const allCals  = c.allCalendars || [];
+    const writableIds = allCals.filter(x => x.accessRole === 'owner' || x.accessRole === 'writer').map(x => x.id);
+    const pushCalId = (c.calendarId && (writableIds.includes(c.calendarId) || allCals.length === 0))
+      ? c.calendarId
+      : (writableIds[0] || 'primary');
+
+    // Auto-fix: if calendarId is read-only, save the correct one so user sees it
+    if (c.calendarId && writableIds.length > 0 && !writableIds.includes(c.calendarId)) {
+      saveGcalConf({ calendarId: writableIds[0] });
+      reloadConf();
+    }
+
+    pushRunning.current = true;
+    const token = c.accessToken;
+    const queue = [...pushQueueRef.current];
+    pushQueueRef.current = [];
+    const failed = [];
+
+    for (const item of queue) {
+      try {
+        if (item.action === 'create') {
+          const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
+          const ev = await gcalFetch(token, 'POST', '/calendars/' + encodeURIComponent(pushCalId) + '/events', body);
+          if (ev?.id) {
+            const gcalEventId = ev.id;
+            const itemKey = _gcalBlockKey(item.block);
+            const itemOwner = item.block.owner || todayUser || 'oloka';
+            setSchedule(prev => {
+              const day = prev[item.dateKey] || {};
+              const col = (day[itemOwner] || []).map(b =>
+                _gcalBlockKey(b) === itemKey ? { ...b, gcalEventId } : b
+              );
+              return { ...prev, [item.dateKey]: { ...day, [itemOwner]: col } };
+            });
+          }
+        } else if (item.action === 'update' && item.block.gcalEventId) {
+          const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
+          await gcalFetch(token, 'PUT', '/calendars/' + encodeURIComponent(pushCalId) + '/events/' + item.block.gcalEventId, body);
+        } else if (item.action === 'delete' && item.gcalEventId) {
+          await gcalFetch(token, 'DELETE', '/calendars/' + encodeURIComponent(pushCalId) + '/events/' + item.gcalEventId);
+        }
+        // Mark push succeeded
+        if (status !== 'syncing') { setLastSync(new Date().toISOString()); setStatus('ok'); setSyncError(''); }
+      } catch(e) {
+        console.warn('[GCal push]', item.action, e.message);
+        failed.push(item);
+        // Show helpful error if push calendar is the problem
+        const errMsg = e.message.includes('403') || e.message.includes('forbidden') || e.message.includes('insufficientPermissions')
+          ? 'Cannot write to "' + pushCalId + '". In Settings → Google Calendar, set "Save Pronto blocks to" a calendar you own.'
+          : 'Push failed: ' + e.message;
+        setSyncError(errMsg);
+        setStatus('error');
+      }
+    }
+    // Requeue failed items so next poll retries them
+    pushQueueRef.current.push(...failed);
+    pushRunning.current = false;
+  };
+
+  // ── doPull: fetches GCal events into schedule ──
+  const doPull = useR(null);
+  doPull.current = async () => {
+    if (pullRunning.current) return;
+    const c = loadGcalConf();
+    if (!c.enabled || !c.accessToken) return;
+    if (c.tokenExpiry && Date.now() > c.tokenExpiry) { setStatus('expired'); return; }
+    pullRunning.current = true;
     setStatus('syncing');
-    // pushCalendarId = where Pronto blocks are pushed; pullCalendarIds = which calendars to pull from
-    const pushCalId = c.calendarId || 'primary';
-    const allCals   = c.allCalendars || [];
+    const allCals  = c.allCalendars || [];
     const pullCalIds = c.pullCalendarIds
       ? c.pullCalendarIds
-      : allCals.length > 0 ? allCals.map(x => x.id) : [pushCalId];
+      : allCals.length > 0 ? allCals.map(x => x.id) : [c.calendarId || 'primary'];
     const token = c.accessToken;
-    const owner = todayUser || 'oloka';
+    const pullOwner = todayUser || 'oloka';
     try {
       const base = selDate instanceof Date ? selDate : new Date();
       const pad  = n => n.toString().padStart(2,'0');
@@ -16647,7 +16716,6 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       const cur = new Date(tmin);
       while (cur <= tmax) { dates.push(fmt(cur)); cur.setDate(cur.getDate()+1); }
 
-      // Pull from all enabled calendars
       const byDate = {};
       for (const calId of pullCalIds) {
         try {
@@ -16656,63 +16724,29 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
             singleEvents: 'true', maxResults: '250', orderBy: 'startTime',
           });
           const data = await gcalFetch(token, 'GET', '/calendars/' + encodeURIComponent(calId) + '/events?' + params);
-          const events = (data?.items || []).filter(e => e.start?.dateTime || e.start?.date);
-          for (const ev of events) {
-            const desc = ev.description || '';
-            if (desc.startsWith(GCAL_TAG)) continue;  // Pronto-managed — skip pull
+          for (const ev of (data?.items || []).filter(e => e.start?.dateTime || e.start?.date)) {
+            if ((ev.description || '').startsWith(GCAL_TAG)) continue;
             const d = new Date(ev.start.dateTime || ev.start.date);
             const dk = fmt(d);
-            const blk = gcalEventToExternalBlock(ev, owner);
+            const blk = gcalEventToExternalBlock(ev, pullOwner);
             if (blk) {
               blk.gcalCalendarId = calId;
               if (!byDate[dk]) byDate[dk] = [];
-              // Deduplicate by gcalEventId across calendars
               if (!byDate[dk].some(x => x.gcalEventId === blk.gcalEventId)) byDate[dk].push(blk);
             }
           }
-        } catch(calErr) {
-          // Skip individual calendar errors (e.g. read-only calendars) — don't abort
-          console.warn('[GCal pull] calendar', calId, calErr.message);
-        }
+        } catch(calErr) { console.warn('[GCal pull]', calId, calErr.message); }
       }
 
       setSchedule(prev => {
         const next = { ...prev };
         for (const dk of dates) {
           const day = next[dk] || {};
-          const ownerCol = (day[owner] || []).filter(b => !b.isExternal);
-          next[dk] = { ...day, [owner]: [...ownerCol, ...(byDate[dk] || [])] };
+          const ownerCol = (day[pullOwner] || []).filter(b => !b.isExternal);
+          next[dk] = { ...day, [pullOwner]: [...ownerCol, ...(byDate[dk] || [])] };
         }
         return next;
       });
-
-      // Process push queue — always push to the designated push calendar
-      const queue = [...pushQueueRef.current];
-      pushQueueRef.current = [];
-      for (const item of queue) {
-        try {
-          if (item.action === 'create') {
-            const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
-            const ev = await gcalFetch(token, 'POST', '/calendars/' + encodeURIComponent(pushCalId) + '/events', body);
-            if (ev?.id) {
-              const gcalEventId = ev.id;
-              const itemKey = _gcalBlockKey(item.block);
-              setSchedule(prev => {
-                const day = prev[item.dateKey] || {};
-                const col = (day[owner] || []).map(b =>
-                  _gcalBlockKey(b) === itemKey ? { ...b, gcalEventId } : b
-                );
-                return { ...prev, [item.dateKey]: { ...day, [owner]: col } };
-              });
-            }
-          } else if (item.action === 'update' && item.block.gcalEventId) {
-            const body = blockToGcalBody(item.block, item.dateKey, tasksByDate);
-            await gcalFetch(token, 'PUT', '/calendars/' + encodeURIComponent(pushCalId) + '/events/' + item.block.gcalEventId, body);
-          } else if (item.action === 'delete' && item.gcalEventId) {
-            await gcalFetch(token, 'DELETE', '/calendars/' + encodeURIComponent(pushCalId) + '/events/' + item.gcalEventId);
-          }
-        } catch(e) { console.warn('[GCal push]', item.action, e.message); }
-      }
 
       setLastSync(new Date().toISOString());
       setStatus('ok');
@@ -16725,50 +16759,60 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
         reloadConf();
         setStatus('expired');
       }
-    } finally { syncRunning.current = false; }
+    } finally { pullRunning.current = false; }
   };
 
-  // Poll every 60s when enabled
+  // Pull every 60s; also run push after each pull
   useE(() => {
     const c = conf;
     if (!c.enabled || !c.accessToken) return;
-    doSync.current();
-    const iv = setInterval(() => doSync.current(), 60000);
+    const run = async () => { await doPull.current(); await doPush.current(); };
+    run();
+    const iv = setInterval(run, 60000);
     return () => clearInterval(iv);
   }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll, selDate]);
 
-  // Watch schedule changes — queue pushes for the current user's blocks
+  // Watch schedule changes — detect new/moved/deleted blocks from BOTH owners
   useE(() => {
     const c = loadGcalConf();
     if (!c.enabled || !c.accessToken) { prevScheduleRef.current = schedule; return; }
     const prev = prevScheduleRef.current;
     prevScheduleRef.current = schedule;
     if (!prev) return;
-    const owner = todayUser || 'oloka';
+
     const allDates = new Set([...Object.keys(schedule), ...Object.keys(prev)]);
     let dirty = false;
+
     for (const dk of allDates) {
-      const col     = (schedule[dk]?.[owner] || []).filter(b => !b.isExternal);
-      const prevCol = (prev[dk]?.[owner]     || []).filter(b => !b.isExternal);
-      const prevMap = new Map(prevCol.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
-      const curMap  = new Map(col.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
-      for (const [id, block] of curMap) {
-        const was = prevMap.get(id);
-        if (!was && !block.gcalEventId) {
-          pushQueueRef.current.push({ action:'create', block, dateKey:dk }); dirty = true;
-        } else if (was && block.gcalEventId &&
-            (was.startMin !== block.startMin || was.durationMin !== block.durationMin)) {
-          pushQueueRef.current.push({ action:'update', block, dateKey:dk }); dirty = true;
+      for (const owner of ['oloka', 'vanja']) {
+        const col     = (schedule[dk]?.[owner] || []).filter(b => !b.isExternal);
+        const prevCol = (prev[dk]?.[owner]     || []).filter(b => !b.isExternal);
+        const prevMap = new Map(prevCol.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
+        const curMap  = new Map(col.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
+
+        for (const [id, block] of curMap) {
+          const was = prevMap.get(id);
+          if (!was && !block.gcalEventId) {
+            // New block — queue for push. Attach owner so push can write it back correctly.
+            pushQueueRef.current.push({ action:'create', block: { ...block, owner }, dateKey:dk });
+            dirty = true;
+          } else if (was && block.gcalEventId &&
+              (was.startMin !== block.startMin || was.durationMin !== block.durationMin)) {
+            pushQueueRef.current.push({ action:'update', block: { ...block, owner }, dateKey:dk });
+            dirty = true;
+          }
         }
-      }
-      for (const [id, pb] of prevMap) {
-        if (!pb.gcalEventId) continue;
-        if (!curMap.has(id)) {
-          pushQueueRef.current.push({ action:'delete', gcalEventId:pb.gcalEventId, dateKey:dk }); dirty = true;
+        for (const [id, pb] of prevMap) {
+          if (!pb.gcalEventId) continue;
+          if (!curMap.has(id)) {
+            pushQueueRef.current.push({ action:'delete', gcalEventId:pb.gcalEventId, dateKey:dk });
+            dirty = true;
+          }
         }
       }
     }
-    if (dirty) setTimeout(() => doSync.current(), 1500);
+    // Push immediately — don't wait for the 60s pull cycle
+    if (dirty) setTimeout(() => doPush.current(), 800);
   }, [schedule]);
 
   return null;
