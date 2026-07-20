@@ -6338,25 +6338,26 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
 
   // ── Event colour scheme by type ──
   const getBlockScheme = (block, task) => {
-    if (!block) return { bg: T.surface, border: T.border, text: T.muted, label:"Event" };
+    if (!block) return { bg:"#f1f3f4", border:"#dadce0", solid:"#70757a", text:"#fff", label:"Event" };
+    if (block.isExternal) return { bg:"#e3f2fd", border:"#039be5", solid:"#039be5", text:"#fff", label:"Calendar" };
     if (block.isBreak) {
       const l = (block.breakLabel || "").toLowerCase();
-      if (l.includes("lunch") || l.includes("dinner")) return { bg:"#FEF9C3", border:"#CA8A04", text:"#713F12", label:"Lunch" };
-      return { bg:"#FFF7ED", border:"#F97316", text:"#9A3412", label:"Break" };
+      if (l.includes("lunch") || l.includes("dinner")) return { bg:"#fce8e6", border:"#d50000", solid:"#d50000", text:"#fff", label:"Lunch" };
+      return { bg:"#fef7e0", border:"#f09300", solid:"#f09300", text:"#fff", label:"Break" };
     }
     const cat = ((task?.category || "") + " " + (block?.qeTitle || "")).toLowerCase();
     if (cat.includes("meeting") || cat.includes("huddle") || cat.includes("sync") || cat.includes("standup"))
-      return { bg:"#DCFCE7", border:"#10B981", text:"#065F46", label:"Meeting" };
+      return { bg:"#e6f4ea", border:"#0b8043", solid:"#0b8043", text:"#fff", label:"Meeting" };
     if (cat.includes("site") || cat.includes("visit") || cat.includes("client") || cat.includes("call"))
-      return { bg:"#FEF3C7", border:"#F59E0B", text:"#92400E", label:"Site Visit" };
+      return { bg:"#e1f5fe", border:"#039be5", solid:"#039be5", text:"#fff", label:"Site Visit" };
     if (cat.includes("content") || cat.includes("social") || cat.includes("post") || cat.includes("media") || cat.includes("creative"))
-      return { bg:"#EDE9FE", border:"#8B5CF6", text:"#4C1D95", label:"Content" };
+      return { bg:"#f3e8fd", border:"#8e24aa", solid:"#8e24aa", text:"#fff", label:"Content" };
     if (cat.includes("review") || cat.includes("report") || cat.includes("analysis") || cat.includes("audit"))
-      return { bg:"#DBEAFE", border:"#3B82F6", text:"#1E40AF", label:"Review" };
+      return { bg:"#e8eaf6", border:"#3949ab", solid:"#3949ab", text:"#fff", label:"Review" };
     if (cat.includes("admin") || cat.includes("planning") || cat.includes("finance") || cat.includes("hr"))
-      return { bg:"#F3F4F6", border:"#9CA3AF", text:"#374151", label:"Admin" };
+      return { bg:"#f1f3f4", border:"#616161", solid:"#616161", text:"#fff", label:"Admin" };
     const oc = block.owner === "vanja" ? T.vanja : T.oloka;
-    return { bg: oc + "15", border: oc, text: oc, label:"Task" };
+    return { bg: oc + "20", border: oc, solid: oc, text:"#fff", label:"Task" };
   };
 
   const schedMonday = addDays(startOfWeek(selDate), schedWeekOffset * 7);
@@ -6698,9 +6699,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 <div style={{ display:"flex", border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
                   {[["day","DAY"],["week","WEEK"],["month","MONTH"]].map(([k,l]) => (
                     <button key={k} onClick={() => setSchedView(k)} style={{
-                      padding:"8px 16px", background: schedView===k ? T.navy : "transparent",
+                      padding:"8px 16px", background: schedView===k ? "#1a73e8" : "transparent",
                       border:"none", color: schedView===k ? "#fff" : T.muted,
-                      fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.08em",
+                      fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
                     }}>{l}</button>
                   ))}
                 </div>
@@ -6827,10 +6828,10 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                     const dayLeftW = Math.max(0, SCHED_END*60 - (nowW.getHours()*60+nowW.getMinutes()));
                     return (
                       <div key={wdk} onClick={() => { if(onPickDay) onPickDay(new Date(wdk+"T12:00:00")); setSchedView("day"); }}
-                        style={{ padding:"10px 8px", textAlign:"center", cursor:"pointer", borderLeft:`1px solid ${T.border}`, background: isTodayW ? T.gold+"08" : "transparent" }}>
-                        <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.1em", color:isWeekend?T.faint:T.muted, marginBottom:2 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][di]}</div>
-                        <div style={{ width:32, height:32, borderRadius:"50%", background: isTodayW ? T.gold : "transparent", color: isTodayW ? "#fff" : isWeekend ? T.muted : T.heading, fontSize:18, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 4px", fontFamily:"'ProximaNova Black', sans-serif" }}>{d.getDate()}</div>
-                        {isTodayW ? <div style={{ fontSize:9, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeftW/60)}h {dayLeftW%60}m left</div> : <div style={{ height:13 }} />}
+                        style={{ padding:"10px 8px", textAlign:"center", cursor:"pointer", borderLeft:`1px solid #dadce0`, background: isTodayW ? "#e8f0fe" : "transparent" }}>
+                        <div style={{ fontSize:9, fontWeight:600, letterSpacing:"0.08em", color:isWeekend?"#aaa":"#70757a", marginBottom:2 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][di]}</div>
+                        <div style={{ width:32, height:32, borderRadius:"50%", background: isTodayW ? "#1a73e8" : "transparent", color: isTodayW ? "#fff" : isWeekend ? "#aaa" : "#3c4043", fontSize:18, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 4px", fontFamily:"'ProximaNova Black', sans-serif" }}>{d.getDate()}</div>
+                        {isTodayW ? <div style={{ fontSize:9, color:"#1a73e8", fontWeight:600 }}>{Math.floor(dayLeftW/60)}h {dayLeftW%60}m left</div> : <div style={{ height:13 }} />}
                       </div>
                     );
                   })}
@@ -6839,10 +6840,10 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 {/* Time grid */}
                 <div style={{ display:"grid", gridTemplateColumns:"60px repeat(7,1fr)", gap:0, border:`1px solid ${T.border}`, borderTop:"none" }}>
                   {/* Time gutter */}
-                  <div style={{ position:"relative", height:colHeight, borderRight:`1px solid ${T.border}`, background:T.surface }}>
+                  <div style={{ position:"relative", height:colHeight, borderRight:"1px solid #dadce0", background:"#fff" }}>
                     {Array.from({length:SCHED_END-SCHED_START+1}, (_,i) => (
-                      <div key={i} style={{ position:"absolute", top: i*60*PX_PER_MIN - 8, right:4, left:0, display:"flex", justifyContent:"flex-end" }}>
-                        {i > 0 && <span style={{ fontSize:9, fontWeight:700, color:T.muted, background:T.surface, padding:"0 2px" }}>{fmtTime((SCHED_START+i)*60)}</span>}
+                      <div key={i} style={{ position:"absolute", top: i*60*PX_PER_MIN - 8, right:6, left:0, display:"flex", justifyContent:"flex-end" }}>
+                        {i > 0 && (() => { const h=SCHED_START+i; const hr12=h>12?h-12:h; const ampm=h<12?"AM":"PM"; return <span style={{ fontSize:9, fontWeight:400, color:"#70757a" }}>{hr12} {ampm}</span>; })()}
                       </div>
                     ))}
                   </div>
@@ -6874,9 +6875,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                           }
                           setDrag(null);
                         }}
-                        style={{ position:"relative", height:colHeight, borderLeft:`1px solid ${T.border}`, background: isWeekend2 ? T.surface : isTodayW2 ? T.gold+"05" : T.cardBg }}>
+                        style={{ position:"relative", height:colHeight, borderLeft:"1px solid #dadce0", background: isWeekend2 ? "#f8f9fa" : isTodayW2 ? "#e8f0fe" : "#fff" }}>
                         {Array.from({length:SCHED_END-SCHED_START+1}, (_,i) => (
-                          <div key={i} style={{ position:"absolute", top:i*60*PX_PER_MIN, left:0, right:0, borderTop:`1px solid ${i===0?"transparent":T.border}` }} />
+                          <div key={i} style={{ position:"absolute", top:i*60*PX_PER_MIN, left:0, right:0, borderTop:`1px solid ${i===0?"transparent":"#dadce0"}` }} />
                         ))}
                         {isTodayW2 && nowMinW2 >= SCHED_START*60 && nowMinW2 <= SCHED_END*60 && (
                           <div style={{ position:"absolute", top:(nowMinW2-SCHED_START*60)*PX_PER_MIN, left:0, right:0, height:2, background:"#EF4444", zIndex:5, display:"flex", alignItems:"center" }}>
@@ -6893,11 +6894,12 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                           if (topPx < 0 || topPx > colHeight) return null;
                           return (
                             <div key={idx} onClick={() => { if(onPickDay) onPickDay(new Date(wdk+"T12:00:00")); setSchedView("day"); setSelectedBlock({...block,_date:wdk}); }}
-                              style={{ position:"absolute", left:3, right:3, top:topPx, height:heightPx,
-                                background:scheme.bg, border:`1px solid ${scheme.border}44`, borderLeft:`3px solid ${scheme.border}`,
-                                borderRadius:5, padding:"3px 6px", cursor:"pointer", overflow:"hidden", zIndex:2 }}>
-                              <div style={{ fontSize:9, fontWeight:800, color:scheme.border, lineHeight:1 }}>{fmtTime(block.startMin)}</div>
-                              {heightPx > 28 && <div style={{ fontSize:10, fontWeight:700, color:scheme.text, lineHeight:1.2, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</div>}
+                              style={{ position:"absolute", left:2, right:2, top:topPx, height:heightPx,
+                                background:scheme.solid, border:"none",
+                                borderRadius:6, padding:"3px 6px", cursor:"pointer", overflow:"hidden", zIndex:2,
+                                boxShadow:"0 1px 3px rgba(0,0,0,0.18)" }}>
+                              <div style={{ fontSize:9, fontWeight:600, color:"rgba(255,255,255,0.85)", lineHeight:1 }}>{fmtTime(block.startMin)}</div>
+                              {heightPx > 28 && <div style={{ fontSize:10, fontWeight:700, color:"#fff", lineHeight:1.2, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</div>}
                             </div>
                           );
                         })}
@@ -6954,15 +6956,15 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
             const monthPct = monthTotal > 0 ? Math.round(monthDone/monthTotal*100) : 0;
             return (
               <div>
-                <div style={{ border:`1px solid ${T.border}`, borderRadius:"8px 8px 0 0", overflow:"hidden" }}>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
+                <div style={{ border:"1px solid #dadce0", borderRadius:"8px 8px 0 0", overflow:"hidden" }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:"#fff", borderBottom:"1px solid #dadce0" }}>
                     {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => (
-                      <div key={d} style={{ padding:"10px 0", textAlign:"center", fontSize:10, fontWeight:800, letterSpacing:"0.08em", color:i>=5?T.faint:T.muted }}>{d}</div>
+                      <div key={d} style={{ padding:"10px 0", textAlign:"center", fontSize:10, fontWeight:600, letterSpacing:"0.05em", color:i>=5?"#aaa":"#70757a" }}>{d.toUpperCase()}</div>
                     ))}
                   </div>
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
                     {cells.map((d, i) => {
-                      if (!d) return <div key={i} style={{ minHeight:100, background:T.surface2, borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}` }} />;
+                      if (!d) return <div key={i} style={{ minHeight:100, background:"#f8f9fa", borderRight:"1px solid #dadce0", borderBottom:"1px solid #dadce0" }} />;
                       const mdk = isoDate(new Date(year, month, d));
                       const isTodayM = mdk === todayKeyM;
                       const isWeekendM = i%7 >= 5;
@@ -6982,12 +6984,12 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                           onMouseDown={e=>{if(e.button===0&&d){e.preventDefault();setSpanDragStart(mdk);setSpanDragEnd(mdk);}}}
                           onMouseEnter={()=>{if(spanDragStart&&d)setSpanDragEnd(mdk);}}
                           style={{ minHeight:100, padding:"8px 6px",
-                            background: inDrag2 ? SCHED_SPAN_COLORS[0]+"22" : isTodayM ? T.gold+"08" : isWeekendM ? T.surface : T.cardBg,
-                            borderRight:`1px solid ${T.border}`, borderBottom:`1px solid ${T.border}`,
+                            background: inDrag2 ? SCHED_SPAN_COLORS[0]+"22" : isTodayM ? "#e8f0fe" : isWeekendM ? "#f8f9fa" : "#fff",
+                            borderRight:"1px solid #dadce0", borderBottom:"1px solid #dadce0",
                             cursor:"pointer" }}>
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-                            <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background:isTodayM?T.gold:"transparent", color:isTodayM?"#fff":isWeekendM?T.muted:T.ink, fontSize:12, fontWeight:isTodayM?800:500 }}>{d}</span>
-                            {isTodayM && <span style={{ fontSize:8, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeftM/60)}h left</span>}
+                            <span style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:24, height:24, borderRadius:"50%", background:isTodayM?"#1a73e8":"transparent", color:isTodayM?"#fff":isWeekendM?"#aaa":"#3c4043", fontSize:12, fontWeight:isTodayM?700:400 }}>{d}</span>
+                            {isTodayM && <span style={{ fontSize:8, color:"#1a73e8", fontWeight:600 }}>{Math.floor(dayLeftM/60)}h left</span>}
                           </div>
                           {daySpans2.map(s => {
                             const isStart = s.startDate === mdk;
@@ -7023,8 +7025,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                             const scheme = getBlockScheme(block, task);
                             return (
                               <div key={bi} onClick={e=>{e.stopPropagation();if(onPickDay)onPickDay(new Date(mdk+"T12:00:00"));setSchedView("day");setSelectedBlock({...block,_date:mdk});}}
-                                style={{ background:scheme.bg, borderLeft:`3px solid ${scheme.border}`, borderRadius:3, padding:"2px 5px", marginBottom:2, fontSize:10, fontWeight:600, color:scheme.text, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", display:"flex", gap:4, alignItems:"center", cursor:"pointer" }}>
-                                <span style={{ fontSize:8, color:scheme.border, fontWeight:800, flexShrink:0 }}>{fmtTime(block.startMin)}</span>
+                                style={{ background:scheme.solid, border:"none", borderRadius:4, padding:"2px 6px", marginBottom:2, fontSize:10, fontWeight:600, color:"#fff", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", display:"flex", gap:4, alignItems:"center", cursor:"pointer", boxShadow:"0 1px 2px rgba(0,0,0,0.15)" }}>
+                                <span style={{ fontSize:8, color:"rgba(255,255,255,0.85)", fontWeight:600, flexShrink:0 }}>{fmtTime(block.startMin)}</span>
                                 <span style={{ overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{label}</span>
                               </div>
                             );
@@ -7403,16 +7405,17 @@ function HourGutter() {
     <div style={{ position:"relative", height:(SCHED_END-SCHED_START)*60*PX_PER_MIN }}>
       {hours.map(h => {
         const top = (h - SCHED_START) * 60 * PX_PER_MIN;
+        const hr12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        const ampm = h < 12 ? "AM" : "PM";
         return (
           <div key={h} style={{
             position:"absolute", top, left:0, right:0, height:1,
-            borderTop: h === SCHED_START ? "none" : `1px solid ${T.border}`,
+            borderTop: h === SCHED_START ? "none" : "1px solid #dadce0",
           }}>
-            <span style={{
-              position:"absolute", top:-7, right:4,
-              fontSize:9, fontWeight:700, color:T.muted, letterSpacing:"0.04em",
-              background:T.surface, padding:"0 3px",
-            }}>{fmtTime(h*60)}</span>
+            {h > SCHED_START && <span style={{
+              position:"absolute", top:-8, right:6,
+              fontSize:9, fontWeight:400, color:"#70757a", letterSpacing:"0.01em",
+            }}>{hr12} {ampm}</span>}
           </div>
         );
       })}
@@ -7546,10 +7549,10 @@ function TimeColumn({
       {/* Column header */}
       <div style={{
         height:32, display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-        background:accent, color:"#fff",
+        background:"#fff", color:accent,
         fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800,
-        fontSize:12, letterSpacing:"0.12em",
-        borderBottom:`1px solid ${T.border}`,
+        fontSize:11, letterSpacing:"0.12em",
+        borderBottom:`2px solid ${accent}`,
       }}>{name.toUpperCase()}</div>
 
       {/* Drop zone */}
@@ -7591,13 +7594,13 @@ function TimeColumn({
         }}
         style={{
           position:"relative", height:colHeight,
-          background:T.cardBg,
-          backgroundImage:`repeating-linear-gradient(to bottom, transparent, transparent ${60*PX_PER_MIN - 1}px, ${T.border} ${60*PX_PER_MIN - 1}px, ${T.border} ${60*PX_PER_MIN}px)`,
+          background:"#fff",
+          backgroundImage:`repeating-linear-gradient(to bottom, transparent, transparent ${60*PX_PER_MIN - 1}px, #dadce0 ${60*PX_PER_MIN - 1}px, #dadce0 ${60*PX_PER_MIN}px)`,
         }}>
         {/* Half-hour ticks */}
         <div style={{
           position:"absolute", inset:0, pointerEvents:"none",
-          backgroundImage:`repeating-linear-gradient(to bottom, transparent, transparent ${30*PX_PER_MIN - 0.5}px, ${T.surface} ${30*PX_PER_MIN - 0.5}px, ${T.surface} ${30*PX_PER_MIN}px)`,
+          backgroundImage:`repeating-linear-gradient(to bottom, transparent, transparent ${30*PX_PER_MIN - 0.5}px, #f1f3f4 ${30*PX_PER_MIN - 0.5}px, #f1f3f4 ${30*PX_PER_MIN}px)`,
         }}></div>
 
         {/* Ghost preview while dragging */}
@@ -7749,19 +7752,18 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
   const icon = isBreak ? (block.breakLabel === "Lunch" ? "🍽 " : "☕ ") : isQuickEvent ? "📌 " : "";
 
   const bgBase = isActual
-    ? blockAccent + "30"      // actual: more saturated fill
+    ? blockAccent + "28"
     : isGhost
-      ? blockAccent + "08"    // planned ghost: very faint
-      : blockAccent + "18";   // planned normal: standard
+      ? blockAccent + "10"
+      : blockAccent;
 
-  const borderStyle = isGhost ? "dashed" : "solid";
-  const opacity = isGhost ? 0.45 : 1;
+  const opacity = isGhost ? 0.55 : 1;
+  const textColor = isGhost ? T.muted : isActual ? T.ink : "#fff";
+  const timeColor = isGhost ? blockAccent : isActual ? blockAccent : "rgba(255,255,255,0.85)";
 
   const bgPattern = isActual
     ? `repeating-linear-gradient(45deg, transparent, transparent 4px, ${blockAccent}18 4px, ${blockAccent}18 8px), ${bgBase}`
-    : isBreak
-      ? `repeating-linear-gradient(135deg, transparent, transparent 3px, ${blockAccent}12 3px, ${blockAccent}12 6px), ${bgBase}`
-      : bgBase;
+    : bgBase;
 
   return (
     <div
@@ -7779,9 +7781,9 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
         right: totalLanes > 1 ? `calc(${((totalLanes - lane - 1) / totalLanes * 100).toFixed(2)}% + ${isActual ? 3 : 2}px)` : (isActual ? 6 : 4),
         top, height,
         background: bgPattern,
-        border:`${isActual ? 2 : 1}px ${borderStyle} ${blockAccent}${isGhost ? "44" : isActual ? "cc" : "55"}`,
-        borderLeft:`3px solid ${blockAccent}${isGhost ? "55" : ""}`,
-        borderRadius:4,
+        border: isGhost ? `1px dashed ${blockAccent}66` : isActual ? `1px solid ${blockAccent}88` : "none",
+        borderRadius:6,
+        boxShadow: isGhost || isActual ? "none" : "0 1px 3px rgba(0,0,0,0.18)",
         padding: height < 36 ? "2px 5px" : "4px 7px",
         cursor: isActual ? "default" : (resizing ? "ns-resize" : "grab"),
         overflow:"hidden",
@@ -7794,14 +7796,14 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
       {height < 36 ? (
         /* Compact layout for tiny blocks — single row showing time + name */
         <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden", width:"100%" }}>
-          <span style={{ fontSize:8, fontWeight:800, color:blockAccent, flexShrink:0, lineHeight:1 }}>{fmtTime(block.startMin)}</span>
-          <span style={{ fontSize:9, color:isGhost ? T.muted : T.ink, fontWeight:600, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", flex:1, lineHeight:1 }} title={label}>{icon}{label}</span>
-          {!isActual && <button onClick={(e) => { e.stopPropagation(); onRemove(); }} title="Remove" style={{ width:12, height:12, background:"transparent", border:"none", color:blockAccent, opacity:0.7, cursor:"pointer", padding:0, fontSize:11, lineHeight:1, flexShrink:0 }}>&times;</button>}
+          <span style={{ fontSize:8, fontWeight:700, color:timeColor, flexShrink:0, lineHeight:1 }}>{fmtTime(block.startMin)}</span>
+          <span style={{ fontSize:9, color:textColor, fontWeight:600, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", flex:1, lineHeight:1 }} title={label}>{icon}{label}</span>
+          {!isActual && <button onClick={(e) => { e.stopPropagation(); onRemove(); }} title="Remove" style={{ width:12, height:12, background:"transparent", border:"none", color:isGhost ? blockAccent : "rgba(255,255,255,0.75)", opacity:0.8, cursor:"pointer", padding:0, fontSize:11, lineHeight:1, flexShrink:0 }}>&times;</button>}
         </div>
       ) : (
         <>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:4, marginBottom:2 }}>
-        <span style={{ fontSize:9, fontWeight:800, color:blockAccent, letterSpacing:"0.06em", opacity: isGhost ? 0.7 : 1 }}>
+        <span style={{ fontSize:9, fontWeight:700, color:timeColor, letterSpacing:"0.04em", opacity: isGhost ? 0.8 : 1 }}>
           {fmtTime(block.startMin)} · {block.durationMin}m
           {isActual && <span style={{ marginLeft:4, background:blockAccent, color:"#fff", borderRadius:2, padding:"0 3px", fontSize:8 }}>ACTUAL</span>}
           {isGhost && <span style={{ marginLeft:4, color:blockAccent, fontSize:8, opacity:0.7 }}>PLAN</span>}
@@ -7809,7 +7811,7 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
         {!isActual && (
           <button onClick={(e) => { e.stopPropagation(); onRemove(); }} title="Remove" style={{
             width:14, height:14, background:"transparent", border:"none",
-            color:blockAccent, opacity:0.6, cursor:"pointer", padding:0,
+            color: isGhost ? blockAccent : "rgba(255,255,255,0.75)", opacity:0.8, cursor:"pointer", padding:0,
             display:"flex", alignItems:"center", justifyContent:"center",
             fontSize:13, lineHeight:1,
           }}
@@ -7819,7 +7821,7 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
         )}
       </div>
       <p style={{
-        flex:1, fontSize:11, color:isGhost ? T.muted : T.ink, fontWeight: isBreak ? 700 : 600,
+        flex:1, fontSize:11, color:textColor, fontWeight: isBreak ? 700 : 600,
         lineHeight:1.25,
         textDecoration: task?.done ? "line-through" : "none",
         overflow:"hidden",
@@ -7836,7 +7838,7 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
           cursor:"ns-resize",
           display:"flex", alignItems:"center", justifyContent:"center",
         }}>
-          <div style={{ width:24, height:2, background:blockAccent, borderRadius:1, opacity:0.5 }}></div>
+          <div style={{ width:24, height:2, background: isGhost ? blockAccent : "rgba(255,255,255,0.5)", borderRadius:1 }}></div>
         </div>
       )}
     </div>
@@ -12984,32 +12986,31 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
 
 // ─── Mobile Schedule helpers ───────────────────────────────────────────────
 function getMobileCatScheme(block, task) {
-  if (!block) return { bg:"#F3F4F6", border:"#9CA3AF", text:"#374151", label:"Event" };
+  if (!block) return { bg:"#f1f3f4", border:"#70757a", solid:"#70757a", text:"#fff", label:"Event" };
+  if (block.isExternal) return { bg:"#e3f2fd", border:"#039be5", solid:"#039be5", text:"#fff", label:"Calendar" };
   if (block.isBreak) {
     const l = (block.breakLabel||"").toLowerCase();
-    if (l.includes("lunch")||l.includes("dinner")) return { bg:"#FEE2E2", border:"#EF4444", text:"#991B1B", label:"Lunch" };
-    return { bg:"#FFF7ED", border:"#F97316", text:"#9A3412", label:"Break" };
+    if (l.includes("lunch")||l.includes("dinner")) return { bg:"#fce8e6", border:"#d50000", solid:"#d50000", text:"#fff", label:"Lunch" };
+    return { bg:"#fef7e0", border:"#f09300", solid:"#f09300", text:"#fff", label:"Break" };
   }
-  if (block.isQuickEvent) return { bg:"#DBEAFE", border:"#3B82F6", text:"#1E40AF", label:block.qeTitle||"Event" };
+  if (block.isQuickEvent) return { bg:"#e3f2fd", border:"#039be5", solid:"#039be5", text:"#fff", label:block.qeTitle||"Event" };
   const cat = (task?.category||"").toLowerCase();
   const title = (task?.text||task?.title||"").toLowerCase();
   const combined = cat + " " + title;
   if (cat==="social post"||cat==="content capture"||combined.includes("content")||combined.includes("social")||combined.includes("post")||combined.includes("carousel")||combined.includes("caption"))
-    return { bg:"#EDE9FE", border:"#8B5CF6", text:"#4C1D95", label:"Content" };
+    return { bg:"#f3e8fd", border:"#8e24aa", solid:"#8e24aa", text:"#fff", label:"Content" };
   if (cat==="video"||combined.includes("video")||combined.includes("shoot")||combined.includes("edit"))
-    return { bg:"#CCFBF1", border:"#14B8A6", text:"#134E4A", label:"Video" };
+    return { bg:"#e0f2f1", border:"#00897b", solid:"#00897b", text:"#fff", label:"Video" };
   if (cat==="meeting"||combined.includes("meeting")||combined.includes("standup")||combined.includes("client")||combined.includes("team"))
-    return { bg:"#DBEAFE", border:"#3B82F6", text:"#1E40AF", label:"Meeting" };
+    return { bg:"#e6f4ea", border:"#0b8043", solid:"#0b8043", text:"#fff", label:"Meeting" };
   if (combined.includes("approval")||cat==="approvals")
-    return { bg:"#F3E8FF", border:"#A855F7", text:"#6B21A8", label:"Approvals" };
-  if (combined.includes("lunch")||combined.includes("personal")||combined.includes("break"))
-    return { bg:"#FEE2E2", border:"#EF4444", text:"#991B1B", label:"Personal" };
+    return { bg:"#f3e8fd", border:"#6a1b9a", solid:"#6a1b9a", text:"#fff", label:"Approvals" };
   if (combined.includes("plan")||combined.includes("review")||combined.includes("brain")||combined.includes("calendar"))
-    return { bg:"#DCFCE7", border:"#22C55E", text:"#14532D", label:"Planning" };
+    return { bg:"#e8eaf6", border:"#3949ab", solid:"#3949ab", text:"#fff", label:"Planning" };
   if (cat==="admin"||cat==="ai"||cat==="website"||combined.includes("admin"))
-    return { bg:"#FEF3C7", border:"#F59E0B", text:"#92400E", label:"Admin" };
-  const oc = block.owner==="vanja" ? "#8B5CF6" : "#10B981";
-  return { bg:oc+"22", border:oc, text:oc, label:"Task" };
+    return { bg:"#f1f3f4", border:"#616161", solid:"#616161", text:"#fff", label:"Admin" };
+  const oc = block.owner==="vanja" ? T.vanja : T.oloka;
+  return { bg:oc+"20", border:oc, solid:oc, text:"#fff", label:"Task" };
 }
 
 function buildTasksById(tasksByDate) {
@@ -13330,10 +13331,10 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
           {/* Hour grid lines */}
           {Array.from({length: MOBILE_SCHED_END - MOBILE_SCHED_START + 1}, (_, i) => (
             <div key={i} style={{ position:"absolute", top: i * MOBILE_HOUR_H, left:0, right:0, display:"flex", pointerEvents:"none", zIndex:1 }}>
-              <span style={{ width:40, fontSize:10, fontWeight:700, color:T.muted, flexShrink:0, lineHeight:"1", paddingTop:2 }}>
-                {i < MOBILE_SCHED_END - MOBILE_SCHED_START ? fmtTime((MOBILE_SCHED_START+i)*60) : ""}
+              <span style={{ width:40, fontSize:9, fontWeight:400, color:"#70757a", flexShrink:0, lineHeight:"1", paddingTop:2 }}>
+                {i < MOBILE_SCHED_END - MOBILE_SCHED_START ? (() => { const h=MOBILE_SCHED_START+i; const hr12=h>12?h-12:h; const ampm=h<12?"AM":"PM"; return `${hr12} ${ampm}`; })() : ""}
               </span>
-              <div style={{ flex:1, borderTop:`1px solid ${T.border}` }}/>
+              <div style={{ flex:1, borderTop:"1px solid #dadce0" }}/>
             </div>
           ))}
 
@@ -13388,14 +13389,13 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                   left: blockLeft,
                   ...(isOverlapping ? { width: blockWidth } : { right: 0 }),
                   height:blockH,
-                  background:scheme.bg,
-                  border:`1px solid ${scheme.border}33`,
-                  borderLeft:`3px solid ${scheme.border}`,
-                  borderRadius:"0 10px 10px 0",
+                  background:scheme.solid||scheme.border,
+                  border:"none",
+                  borderRadius:8,
                   padding:"3px 6px 16px",
                   zIndex: isActive ? 20 : 5,
                   opacity: isDrag ? 0.9 : 1,
-                  boxShadow: isActive ? "0 6px 20px rgba(0,0,0,0.25)" : "none",
+                  boxShadow: isActive ? "0 6px 20px rgba(0,0,0,0.25)" : "0 1px 3px rgba(0,0,0,0.18)",
                   cursor: block.isBreak ? "default" : "grab",
                   display:"flex", alignItems:"flex-start", justifyContent:"space-between",
                   touchAction:"none", userSelect:"none",
@@ -13404,10 +13404,10 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
                   boxSizing:"border-box",
                 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:9, fontWeight:700, color:scheme.border, lineHeight:1.2 }}>{fmtTime(displayMin)}{isResize ? ` – ${fmtTime(displayMin+displayDur)}` : ""}</div>
-                  <div style={{ fontSize:isOverlapping ? 11 : 12, fontWeight:800, color:T.heading, lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", textOverflow:"ellipsis" }}>{label}</div>
-                  {displayDur >= 45 && !isOverlapping && <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
-                  {displayDur >= 60 && isOverlapping && <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
+                  <div style={{ fontSize:9, fontWeight:600, color:"rgba(255,255,255,0.85)", lineHeight:1.2 }}>{fmtTime(displayMin)}{isResize ? ` – ${fmtTime(displayMin+displayDur)}` : ""}</div>
+                  <div style={{ fontSize:isOverlapping ? 11 : 12, fontWeight:700, color:"#fff", lineHeight:1.3, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", textOverflow:"ellipsis" }}>{label}</div>
+                  {displayDur >= 45 && !isOverlapping && <div style={{ fontSize:9, color:"rgba(255,255,255,0.7)", marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
+                  {displayDur >= 60 && isOverlapping && <div style={{ fontSize:9, color:"rgba(255,255,255,0.7)", marginTop:1 }}>{displayDur >= 60 ? `${Math.floor(displayDur/60)}h${displayDur%60?` ${displayDur%60}m`:""}` : `${displayDur}m`}</div>}
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0, marginLeft:6 }}>
                   <div style={{ width:16, height:16, borderRadius:"50%", background:ownerColor, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -14088,8 +14088,8 @@ function MobileAgendaView({ dk, schedule, tasksByDate, tasksByIdRef }) {
         return (
           <div key={adk} style={{ marginBottom:16 }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-              <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:isToday?T.gold:T.muted }}>{dayLabel}</span>
-              <div style={{ flex:1, height:1, background:T.border }}/>
+              <span style={{ fontSize:10, fontWeight:700, letterSpacing:"0.08em", color:isToday?"#1a73e8":T.muted }}>{dayLabel}</span>
+              <div style={{ flex:1, height:1, background:"#dadce0" }}/>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {blocks.map((block,bi) => {
@@ -14097,16 +14097,13 @@ function MobileAgendaView({ dk, schedule, tasksByDate, tasksByIdRef }) {
                 const scheme = getMobileCatScheme(block, task);
                 const label = block.isBreak ? block.breakLabel : (task?.text || task?.title || block.qeTitle || "Event");
                 return (
-                  <div key={bi} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
-                    <div style={{ width:48, flexShrink:0, paddingTop:10, textAlign:"right" }}>
-                      <span style={{ fontSize:11, fontWeight:700, color:T.muted }}>{fmtTime(block.startMin)}</span>
+                  <div key={bi} style={{ display:"flex", gap:10, alignItems:"center" }}>
+                    <div style={{ width:44, flexShrink:0, textAlign:"right" }}>
+                      <span style={{ fontSize:10, fontWeight:400, color:"#70757a" }}>{fmtTime(block.startMin)}</span>
                     </div>
-                    <div style={{ flex:1, background:scheme.bg, borderLeft:`3px solid ${scheme.border}`, borderRadius:"0 10px 10px 0", padding:"10px 12px" }}>
-                      <div style={{ fontSize:13, fontWeight:800, color:T.heading, marginBottom:3 }}>{label}</div>
-                      <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-                        <span style={{ fontSize:9, fontWeight:700, color:scheme.border, background:scheme.border+"18", padding:"1px 6px", borderRadius:20 }}>{scheme.label.toUpperCase()}</span>
-                        <span style={{ fontSize:9, color:T.muted }}>{block.durationMin||30}m</span>
-                      </div>
+                    <div style={{ flex:1, background:scheme.solid||scheme.border, border:"none", borderRadius:8, padding:"9px 12px", boxShadow:"0 1px 3px rgba(0,0,0,0.15)" }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:"#fff", marginBottom:2 }}>{label}</div>
+                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.8)" }}>{block.durationMin||30}m · {scheme.label}</div>
                     </div>
                   </div>
                 );
