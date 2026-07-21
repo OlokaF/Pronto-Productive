@@ -7765,7 +7765,7 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
   const isBreak = block.isBreak;
   const isQuickEvent = block.isQuickEvent;
   const BREAK_COLORS = { "Lunch": "#EF4444", "Break": "#F97316" };
-  const blockAccent = isBreak ? (BREAK_COLORS[block.breakLabel] || "#888") : isQuickEvent ? "#E76F1B" : accent;
+  const blockAccent = isBreak ? (BREAK_COLORS[block.breakLabel] || "#888") : isQuickEvent ? "#E76F1B" : block.calendarId ? (() => { try { const _gcf=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); const _c=(_gcf.allCalendars||[]).find(c=>c.id===block.calendarId); return _c&&_c.backgroundColor ? _c.backgroundColor : accent; } catch(_) { return accent; } })() : accent;
   const subtaskLabel = block.subtaskId && task
     ? (task.subtasks||[]).find(s => s.id === block.subtaskId)?.text
     : null;
@@ -7802,7 +7802,7 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
         right: totalLanes > 1 ? `calc(${((totalLanes - lane - 1) / totalLanes * 100).toFixed(2)}% + ${isActual ? 3 : 2}px)` : (isActual ? 6 : 4),
         top, height,
         background: bgPattern,
-        border: isGhost ? `1px dashed ${blockAccent}66` : isActual ? `1px solid ${blockAccent}88` : "none",
+        border: isGhost ? `1px dashed ${blockAccent}66` : isActual ? `1px solid ${blockAccent}88` : `1px solid ${blockAccent}CC`,
         borderRadius:6,
         boxShadow: isGhost || isActual ? "none" : "0 1px 3px rgba(0,0,0,0.18)",
         padding: height < 36 ? "2px 5px" : "4px 7px",
