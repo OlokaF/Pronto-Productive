@@ -6079,7 +6079,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [gcalCalFilter, setGcalCalFilter] = useSh([]);
   const visBlocks = (blocks) => {
     if (!gcalCalFilter.length) return blocks || [];
-    return (blocks || []).filter(b => !b.calendarId || gcalCalFilter.includes(b.calendarId));
+    // Only filter external GCal events — never hide Pronto-planned blocks
+    return (blocks || []).filter(b => !b.isExternal || !b.calendarId || gcalCalFilter.includes(b.calendarId));
   };
   const dayScrollRef  = useRh(null);
   const weekScrollRef = useRh(null);
