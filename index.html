@@ -16987,6 +16987,7 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
       repushAll: () => doRepushAll.current(),
       cleanupNow: () => { saveGcalConf({ gcalCleanedAt: null }); doCleanup.current(); },
+      recoverNow: (onMsg) => doRecover.current(onMsg),
       listCalendars: async (token) => {
         const data = await gcalFetch(token, 'GET', '/users/me/calendarList');
         return (data?.items || []).map(c => ({
@@ -17095,6 +17096,70 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       }
     }
     setTimeout(() => doPush.current(), 500);
+  };
+
+  // ── doRecover: read Pronto-tagged GCal events and rebuild Firebase schedule ──
+  const doRecover = useR(null);
+  doRecover.current = async (onMsg) => {
+    const c = loadGcalConf();
+    if (!c.enabled || !c.accessToken) { onMsg && onMsg('Error: GCal not connected'); return; }
+    const allCals2 = c.allCalendars || [];
+    const searchCalIds = allCals2.length > 0 ? allCals2.map(x => x.id) : [c.calendarId || 'primary'];
+    const token = c.accessToken;
+    const pad = n => n.toString().padStart(2,'0');
+    const fmt = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+    const tmin = new Date(); tmin.setDate(tmin.getDate()-90);
+    const tmax = new Date(); tmax.setDate(tmax.getDate()+90);
+    onMsg && onMsg('Searching Google Calendar for Pronto events…');
+    try {
+      const byDate = {};
+      for (const calId of searchCalIds) {
+        try {
+          let allEvs = [], pt = null;
+          do {
+            const params = new URLSearchParams({ timeMin:fmt(tmin)+'T00:00:00Z', timeMax:fmt(tmax)+'T23:59:59Z', singleEvents:'true', maxResults:'250', ...(pt?{pageToken:pt}:{}) });
+            const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(calId)+'/events?'+params);
+            allEvs = [...allEvs, ...(data?.items||[])];
+            pt = data?.nextPageToken||null;
+          } while (pt);
+          for (const ev of allEvs) {
+            if (!(ev.description||'').startsWith(GCAL_TAG)) continue;
+            if (!ev.start?.dateTime) continue;
+            const parts = (ev.description||'').split(':'); // ['prontoHQ', owner, blockId]
+            const owner = (parts[1] === 'vanja' || parts[1] === 'oloka') ? parts[1] : 'oloka';
+            const blockId = parts[2] || ('rec_' + ev.id);
+            const start = new Date(ev.start.dateTime);
+            const end = ev.end?.dateTime ? new Date(ev.end.dateTime) : new Date(start.getTime() + 30*60000);
+            const startMin = start.getHours()*60 + start.getMinutes();
+            const durationMin = Math.max(15, Math.round((end - start)/60000));
+            const dk = fmt(start);
+            if (!byDate[dk]) byDate[dk] = {};
+            if (!byDate[dk][owner]) byDate[dk][owner] = [];
+            if (!byDate[dk][owner].some(b => b.blockId === blockId || b.gcalEventId === ev.id)) {
+              byDate[dk][owner].push({ blockId, qeId: blockId, isQuickEvent:true, qeTitle: ev.summary||'Event', startMin, durationMin, owner, gcalEventId: ev.id, calendarId: calId });
+            }
+          }
+        } catch(_) {}
+      }
+      const totalDays = Object.keys(byDate).length;
+      let totalBlocks = 0;
+      Object.values(byDate).forEach(d => Object.values(d).forEach(arr => totalBlocks += arr.length));
+      if (totalBlocks === 0) { onMsg && onMsg('No recoverable Pronto events found in Google Calendar.'); return; }
+      setSchedule(prev => {
+        const next = { ...prev };
+        for (const dk of Object.keys(byDate)) {
+          const day = next[dk] || {};
+          for (const owner of Object.keys(byDate[dk])) {
+            const existing = (day[owner] || []);
+            const existingIds = new Set([...existing.map(b => b.blockId), ...existing.map(b => b.gcalEventId)].filter(Boolean));
+            const fresh = byDate[dk][owner].filter(b => !existingIds.has(b.blockId) && !existingIds.has(b.gcalEventId));
+            next[dk] = { ...day, [owner]: [...existing.filter(b => !b.isExternal), ...fresh] };
+          }
+        }
+        return next;
+      });
+      onMsg && onMsg('Recovered ' + totalBlocks + ' block' + (totalBlocks!==1?'s':'') + ' across ' + totalDays + ' day' + (totalDays!==1?'s':'') + '.');
+    } catch(e) { onMsg && onMsg('Error: ' + e.message); }
   };
 
   // ── doCleanup: delete all Pronto-tagged GCal events, then re-push ──
@@ -17482,6 +17547,12 @@ function GCalSettingsCard() {
             }} style={{ background:"transparent", border:`1px solid #1a73e8`,
               borderRadius:6, color:"#1a73e8", padding:"8px 14px", fontSize:11, fontWeight:700,
               cursor:"pointer", fontFamily:"inherit" }}>Re-push All</button>
+            <button onClick={() => { window._gcalSync?.recoverNow(m => setMsg(m)); setTimeout(() => setMsg(''), 10000); }}
+              style={{ background:"transparent", border:`1px solid #0E9F6E`,
+              borderRadius:6, color:"#0E9F6E", padding:"8px 14px", fontSize:11, fontWeight:700,
+              cursor:"pointer", fontFamily:"inherit" }}>
+              Recover from GCal
+            </button>
             <button onClick={() => { window._gcalSync?.cleanupNow(); setMsg('Cleaning up duplicates…'); setTimeout(() => setMsg(''), 8000); }}
               style={{ background:"transparent", border:`1px solid #EF4444`,
               borderRadius:6, color:"#EF4444", padding:"8px 14px", fontSize:11, fontWeight:700,
