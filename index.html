@@ -15812,6 +15812,11 @@ function App({ onSwitchWorkspace = () => {} }) {
         selDate={selDate}
         todayUser={todayUser}
       />
+      <GoogleTasksSyncEngine
+        tasksByDate={tasksByDate}
+        setTasksByDate={setTasksByDate}
+        todayUser={todayUser}
+      />
     </div>
   );
 }
@@ -17570,6 +17575,305 @@ function GCalSettingsCard() {
   );
 }
 
+// ── Google Tasks Sync ─────────────────────────────────────────────────────────
+const GTASKS_LS  = 'prontoHQ.gtasks.v1';
+const GTASKS_API = 'https://tasks.googleapis.com/tasks/v1';
+
+function loadGtasksConf() {
+  try { return JSON.parse(localStorage.getItem(GTASKS_LS) || 'null') || {}; } catch(_) { return {}; }
+}
+function saveGtasksConf(patch) {
+  try {
+    const cur = loadGtasksConf();
+    localStorage.setItem(GTASKS_LS, JSON.stringify({ ...cur, ...patch }));
+  } catch(_) {}
+}
+
+async function gtasksFetch(token, method, path, body) {
+  const opts = { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(GTASKS_API + path, opts);
+  if (r.status === 204) return null;
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error?.message || 'HTTP ' + r.status);
+  return data;
+}
+
+function gtasksAuthPopup(clientId) {
+  return new Promise((resolve, reject) => {
+    const redirectUri = window.location.origin + window.location.pathname.replace(/\/+$/, '');
+    const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'token',
+      scope: 'https://www.googleapis.com/auth/tasks',
+      state: Math.random().toString(36).slice(2),
+      include_granted_scopes: 'true',
+    });
+    const popup = window.open(url, 'gtasks_oauth', 'width=520,height=640,left=200,top=100');
+    if (!popup) { reject(new Error('Popup blocked — allow popups for this site and try again.')); return; }
+    const timer = setInterval(() => {
+      try {
+        if (popup.closed) { clearInterval(timer); reject(new Error('Popup was closed')); return; }
+        const hash = popup.location.hash;
+        if (hash && hash.includes('access_token')) {
+          clearInterval(timer); popup.close();
+          const p = new URLSearchParams(hash.slice(1));
+          const token = p.get('access_token');
+          const expiry = Date.now() + (parseInt(p.get('expires_in') || '3600')) * 1000;
+          if (token) resolve({ token, expiry }); else reject(new Error('No token in response'));
+        }
+      } catch(_) {}
+    }, 300);
+    setTimeout(() => { clearInterval(timer); try { popup.close(); } catch(_) {} reject(new Error('Timed out')); }, 30000);
+  });
+}
+
+function GoogleTasksSyncEngine({ tasksByDate, setTasksByDate, todayUser }) {
+  const [conf, setConf] = useS(loadGtasksConf);
+  const pullRunning = useR(false);
+  const tasksByDateRef = useR(null);
+  useE(() => { tasksByDateRef.current = tasksByDate; }, [tasksByDate]);
+
+  const reloadConf = () => setConf(loadGtasksConf());
+
+  const doPull = useR(null);
+  doPull.current = async () => {
+    if (pullRunning.current) return;
+    const c = loadGtasksConf();
+    if (!c.enabled || !c.accessToken) return;
+    if (c.tokenExpiry && Date.now() > c.tokenExpiry) return;
+    pullRunning.current = true;
+    const token = c.accessToken;
+    const pad = n => n.toString().padStart(2, '0');
+    const fmt = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+    try {
+      // Fetch all task lists
+      const listsData = await gtasksFetch(token, 'GET', '/users/@me/lists?maxResults=100');
+      const lists = listsData?.items || [];
+      const selectedListIds = c.taskListIds || lists.map(l => l.id);
+      const now = new Date();
+      const tmin = new Date(now); tmin.setDate(tmin.getDate() - 30);
+      const tmax = new Date(now); tmax.setDate(tmax.getDate() + 90);
+
+      // Build existing gTaskId index from all dates
+      const existingGTaskIds = new Set();
+      const tbd = tasksByDateRef.current || {};
+      for (const dk of Object.keys(tbd)) {
+        for (const t of (tbd[dk] || [])) {
+          if (t.gTaskId) existingGTaskIds.add(t.gTaskId);
+        }
+      }
+
+      const toAdd = {}; // dk -> [tasks]
+      for (const list of lists) {
+        if (!selectedListIds.includes(list.id)) continue;
+        try {
+          const params = new URLSearchParams({
+            dueMin: tmin.toISOString(), dueMax: tmax.toISOString(),
+            showCompleted: 'false', showHidden: 'false', maxResults: '100',
+          });
+          const data = await gtasksFetch(token, 'GET', '/tasklists/' + encodeURIComponent(list.id) + '/tasks?' + params);
+          for (const t of (data?.items || [])) {
+            if (!t.due || !t.title || t.status === 'completed') continue;
+            if (existingGTaskIds.has(t.id)) continue;
+            const dk = t.due.substring(0, 10);
+            if (!toAdd[dk]) toAdd[dk] = [];
+            toAdd[dk].push({
+              id: 'gtask_' + t.id,
+              gTaskId: t.id,
+              gTaskListId: list.id,
+              text: t.title,
+              notes: t.notes || '',
+              owner: todayUser || 'oloka',
+              category: 'Admin',
+              priority: 'Normal',
+              done: false,
+              updatedAt: t.updated ? new Date(t.updated).getTime() : Date.now(),
+            });
+          }
+        } catch(_) {}
+      }
+
+      if (Object.keys(toAdd).length > 0) {
+        setTasksByDate(prev => {
+          const next = { ...prev };
+          for (const dk of Object.keys(toAdd)) {
+            // Re-check for duplicates in case state changed
+            const existing = next[dk] || [];
+            const existIds = new Set(existing.map(t => t.gTaskId).filter(Boolean));
+            const fresh = toAdd[dk].filter(t => !existIds.has(t.gTaskId));
+            if (fresh.length > 0) next[dk] = [...existing, ...fresh];
+          }
+          return next;
+        });
+      }
+    } catch(e) { console.warn('[GTasks pull]', e.message); }
+    finally { pullRunning.current = false; }
+  };
+
+  // Expose API
+  useE(() => {
+    window._gtasksSync = {
+      connect: async (clientId) => {
+        const { token, expiry } = await gtasksAuthPopup(clientId);
+        saveGtasksConf({ clientId, accessToken: token, tokenExpiry: expiry, enabled: true });
+        reloadConf();
+        return token;
+      },
+      disconnect: () => {
+        saveGtasksConf({ accessToken: null, tokenExpiry: 0, enabled: false });
+        reloadConf();
+      },
+      saveConfig: (patch) => { saveGtasksConf(patch); reloadConf(); },
+      pullNow: () => doPull.current(),
+      listTaskLists: async (token) => {
+        const data = await gtasksFetch(token || loadGtasksConf().accessToken, 'GET', '/users/@me/lists?maxResults=100');
+        return data?.items || [];
+      },
+    };
+    return () => { try { delete window._gtasksSync; } catch(_) {} };
+  }, []);
+
+  // Auto-pull on mount + every 5 min
+  useE(() => {
+    const c = loadGtasksConf();
+    if (!c.enabled || !c.accessToken) return;
+    doPull.current();
+    const iv = setInterval(() => doPull.current(), 5 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, [conf.enabled, conf.accessToken]);
+
+  return null;
+}
+
+function GTasksSettingsPanel() {
+  const [conf, setConf] = useS(loadGtasksConf);
+  const [clientIdInput, setClientIdInput] = useS('');
+  const [connecting, setConnecting] = useS(false);
+  const [loadingLists, setLoadingLists] = useS(false);
+  const [msg, setMsg] = useS('');
+
+  const reloadConf = () => setConf(loadGtasksConf());
+  const isConnected = !!(conf.enabled && conf.accessToken);
+  const allLists = conf.taskLists || [];
+  const selectedListIds = conf.taskListIds || allLists.map(l => l.id);
+
+  const refreshLists = async (token) => {
+    setLoadingLists(true);
+    try {
+      const lists = await window._gtasksSync.listTaskLists(token || conf.accessToken);
+      saveGtasksConf({ taskLists: lists, taskListIds: lists.map(l => l.id) });
+      reloadConf();
+    } catch(e) { setMsg('Could not load task lists: ' + e.message); }
+    finally { setLoadingLists(false); }
+  };
+
+  const handleConnect = async () => {
+    // Pre-fill client ID from GCal if available
+    const gcalConf = loadGcalConf();
+    const cid = (clientIdInput || conf.clientId || gcalConf.clientId || '').trim();
+    if (!cid) { setMsg('Paste your Google OAuth Client ID first.'); return; }
+    setConnecting(true); setMsg('Opening Google sign-in…');
+    try {
+      const token = await window._gtasksSync.connect(cid);
+      await refreshLists(token);
+      setMsg('Connected! Tasks will sync automatically.');
+    } catch(e) { setMsg('Error: ' + e.message); }
+    finally { setConnecting(false); }
+  };
+
+  const handleDisconnect = () => {
+    window._gtasksSync?.disconnect();
+    reloadConf();
+    setMsg('Disconnected.');
+  };
+
+  const toggleList = (listId) => {
+    const next = selectedListIds.includes(listId) ? selectedListIds.filter(x => x !== listId) : [...selectedListIds, listId];
+    saveGtasksConf({ taskListIds: next });
+    reloadConf();
+  };
+
+  const gcalConf = loadGcalConf();
+  const prefillClientId = conf.clientId || gcalConf.clientId || '';
+
+  return (
+    <div>
+      <p style={{ fontSize:12, color:T.muted, marginBottom:12, lineHeight:1.6 }}>
+        Sync with Google Tasks — tasks you add on your phone (with a due date) appear in Pronto on that day automatically. Uses the same Google OAuth Client ID as Google Calendar.
+      </p>
+
+      {!isConnected ? (
+        <div>
+          <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:4 }}>GOOGLE OAUTH CLIENT ID</p>
+          <input
+            value={clientIdInput || prefillClientId}
+            onChange={e => setClientIdInput(e.target.value)}
+            placeholder="xxxxxxxx.apps.googleusercontent.com"
+            style={{ width:'100%', background:T.surface, border:`1px solid ${T.border}`, borderRadius:6,
+              padding:"8px 12px", fontSize:12, color:T.ink, fontFamily:"inherit",
+              boxSizing:"border-box", marginBottom:8 }}
+          />
+          {prefillClientId && (
+            <p style={{ fontSize:10.5, color:'#0E9F6E', marginBottom:10 }}>
+              Using the same Client ID as Google Calendar. Make sure <strong>Google Tasks API</strong> is also enabled in your Google Cloud Console.
+            </p>
+          )}
+          <button onClick={handleConnect} disabled={connecting} style={{
+            background:'#1a73e8', border:"none", borderRadius:6, color:"#fff",
+            padding:"9px 18px", fontSize:11, fontWeight:700,
+            cursor: connecting ? "wait" : "pointer", fontFamily:"inherit", opacity: connecting ? 0.7 : 1,
+          }}>
+            {connecting ? 'Connecting…' : 'Connect Google Tasks'}
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, padding:"10px 14px", background:'#0E9F6E18', border:'1px solid #0E9F6E44', borderRadius:8 }}>
+            <span style={{ fontSize:14 }}>✓</span>
+            <span style={{ fontSize:12, fontWeight:700, color:'#0E9F6E' }}>Connected to Google Tasks</span>
+          </div>
+
+          {allLists.length > 0 && (
+            <div style={{ marginBottom:16 }}>
+              <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>SYNC FROM THESE LISTS</p>
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {allLists.map(list => (
+                  <label key={list.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
+                    <input type="checkbox"
+                      checked={selectedListIds.includes(list.id)}
+                      onChange={() => toggleList(list.id)}
+                      style={{ accentColor:'#1a73e8', width:14, height:14 }}
+                    />
+                    <span style={{ fontSize:12, color:T.ink }}>📋 {list.title}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p style={{ fontSize:11, color:T.muted, marginBottom:14, lineHeight:1.6 }}>
+            Tasks must have a <strong>due date</strong> set in Google Tasks to appear in Pronto. After sync, set the category and owner in Pronto.
+          </p>
+
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <button onClick={() => { window._gtasksSync?.pullNow(); setMsg('Syncing tasks…'); setTimeout(() => setMsg(''), 4000); }}
+              style={{ background:'#1a73e8', border:"none", borderRadius:6,
+                color:"#fff", padding:"8px 16px", fontSize:11, fontWeight:700,
+                cursor:"pointer", fontFamily:"inherit" }}>Sync Now</button>
+            <button onClick={handleDisconnect}
+              style={{ background:"transparent", border:`1px solid ${T.border}`,
+                borderRadius:6, color:T.muted, padding:"8px 14px", fontSize:11,
+                cursor:"pointer", fontFamily:"inherit" }}>Disconnect</button>
+          </div>
+        </div>
+      )}
+      {msg && <p style={{ fontSize:11.5, color: msg.startsWith('Error') ? '#EF4444' : '#1a73e8', marginTop:10, fontWeight:700 }}>{msg}</p>}
+    </div>
+  );
+}
+
 // ── Settings View ──
 function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels }) {
   const [newCat, setNewCat] = useS("");
@@ -17770,6 +18074,12 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
       <Card>
         <SectionTitle>GOOGLE CALENDAR</SectionTitle>
         <GCalSettingsCard />
+      </Card>
+
+      {/* Google Tasks */}
+      <Card>
+        <SectionTitle>GOOGLE TASKS</SectionTitle>
+        <GTasksSettingsPanel />
       </Card>
 
       {/* Password */}
