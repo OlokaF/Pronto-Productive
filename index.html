@@ -6889,7 +6889,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                           const scheme = getBlockScheme(block, task);
                           if (topPx < 0 || topPx > colHeight) return null;
                           return (
-                            <div key={idx} onClick={e => { e.stopPropagation(); if (!spanDragStart) setMonthPopupDate(wdk); }}
+                            <div key={idx} onClick={e => { e.stopPropagation(); if (!spanDragStart) setSelectedBlock({...block, _date:wdk}); }}
                               style={{ position:"absolute", left:2, right:2, top:topPx, height:heightPx,
                                 background:scheme.solid, border:"none",
                                 borderRadius:6, padding:"3px 6px", cursor:"pointer", overflow:"hidden", zIndex:2,
@@ -7178,6 +7178,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   </div>
                 </div>
               )}
+              {block && (() => { try { const _gcf=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); const _cals=_gcf.enabled?(_gcf.allCalendars||[]).filter(c=>c.accessRole==='owner'||c.accessRole==='writer'):[]; if(!_cals.length) return null; return (<div style={{ marginBottom:16 }}><p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>CALENDAR</p><div style={{ display:"flex", alignItems:"center", gap:6 }}>{(() => { const _cur=_cals.find(c=>c.id===block.calendarId); return _cur ? <span style={{ width:10, height:10, borderRadius:2, background:_cur.backgroundColor||T.muted, display:"inline-block", flexShrink:0 }} /> : null; })()}<select value={block.calendarId||''} onChange={e=>{ const v=e.target.value||null; updateBlock(sb.owner,sb.taskId,{calendarId:v},sb.breakId,sb.qeId,block.blockId); setSelectedBlock(p=>({...p,calendarId:v})); }} style={{ flex:1, padding:"7px 8px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:12, color:T.ink, background:T.bg, fontFamily:"inherit", outline:"none" }}><option value="">Default</option>{_cals.map(c=><option key={c.id} value={c.id}>{c.summary||c.id}</option>)}</select></div></div>); } catch(_) { return null; } })()}
               <div style={{ marginBottom:20 }}>
                 <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:10 }}>ACTIONS</p>
                 <div style={{ display:"flex", gap:8 }}>
@@ -7216,6 +7217,61 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
         })()}
 
       </div>{/* end 3-PANE LAYOUT */}
+
+      {/* Block detail popup — shown as floating modal outside day view */}
+      {selectedBlock && schedView !== "day" && (() => {
+        const sb = selectedBlock;
+        const dayScheduleHere = (schedule[sb._date || dk] || {});
+        const block = sb.taskId ? (dayScheduleHere[sb.owner] || []).find(b => b.taskId === sb.taskId) : null;
+        const task = sb.taskId ? tasksByIdRef[sb.taskId] : null;
+        const label = sb.isBreak ? sb.breakLabel : (task?.text || sb.qeTitle || "Event");
+        const scheme = getBlockScheme(sb, task);
+        const endMin = (block?.startMin||0) + (block?.durationMin||30);
+        const dH = Math.floor((block?.durationMin||30)/60), dM = (block?.durationMin||30) % 60;
+        const durationStr = dH > 0 ? `${dH}h ${dM > 0 ? dM+"m" : ""}`.trim() : `${dM}m`;
+        return (
+          <div onClick={() => setSelectedBlock(null)} style={{ position:"fixed", inset:0, zIndex:2000, background:"rgba(15,27,58,0.35)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:12, width:"100%", maxWidth:380, boxShadow:"0 20px 50px rgba(15,27,58,0.3)", borderTop:`3px solid ${scheme.border}` }}>
+              <div style={{ padding:"14px 18px 12px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <p style={{ fontSize:10, fontWeight:800, letterSpacing:"0.12em", color:scheme.border }}>{scheme.label.toUpperCase()} · {sb._date || dk}</p>
+                <button onClick={() => setSelectedBlock(null)} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18, lineHeight:1 }}>×</button>
+              </div>
+              <div style={{ padding:"16px 18px", display:"flex", flexDirection:"column", gap:12 }}>
+                <div style={{ padding:"12px 14px", background:scheme.bg, borderRadius:8, border:`1px solid ${scheme.border}44` }}>
+                  <div style={{ fontSize:15, fontWeight:800, color:T.ink, lineHeight:1.2, marginBottom:4 }}>{label}</div>
+                  <div style={{ fontSize:11, color:scheme.border, fontWeight:700 }}>{fmtTime(block?.startMin||0)} – {fmtTime(endMin)} · {durationStr}</div>
+                </div>
+                {task?.owner && (
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <div style={{ width:26, height:26, borderRadius:"50%", background:task.owner==="vanja"?T.vanja:T.oloka, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:12, fontWeight:800 }}>{task.owner[0].toUpperCase()}</div>
+                    <span style={{ fontSize:12, color:T.ink, fontWeight:600 }}>{task.owner==="vanja"?"Vanja":"Oloka"}</span>
+                  </div>
+                )}
+                {block && (() => { try { const _gcf=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); const _cals=_gcf.enabled?(_gcf.allCalendars||[]).filter(c=>c.accessRole==='owner'||c.accessRole==='writer'):[]; if(!_cals.length) return null; return (<div><p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>CALENDAR</p><div style={{ display:"flex", alignItems:"center", gap:6 }}>{(() => { const _cur=_cals.find(c=>c.id===block.calendarId); return _cur ? <span style={{ width:10, height:10, borderRadius:2, background:_cur.backgroundColor||T.muted, display:"inline-block", flexShrink:0 }} /> : null; })()}<select value={block.calendarId||''} onChange={e=>{ const v=e.target.value||null; setSchedule(prev=>{ const next={...prev}; const dateKey=sb._date||dk; const day={...(next[dateKey]||{})}; day[sb.owner]=(day[sb.owner]||[]).map(b=>b.blockId===block.blockId||b.taskId===sb.taskId?{...b,calendarId:v}:b); next[dateKey]=day; return next; }); setSelectedBlock(p=>({...p,calendarId:v})); }} style={{ flex:1, padding:"7px 8px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:12, color:T.ink, background:T.bg, fontFamily:"inherit", outline:"none" }}><option value="">Default</option>{_cals.map(c=><option key={c.id} value={c.id}>{c.summary||c.id}</option>)}</select></div></div>); } catch(_) { return null; } })()}
+              </div>
+              <div style={{ padding:"12px 18px", borderTop:`1px solid ${T.border}`, display:"flex", gap:8, background:T.surface, borderRadius:"0 0 12px 12px" }}>
+                {task && block && (
+                  <button onClick={() => { setEditing({ owner: sb.owner, taskId: sb.taskId }); setSelectedBlock(null); }} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:6, padding:"8px 14px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:7, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, color:T.ink }}>✏ Edit Task</button>
+                )}
+                {block && (
+                  <button onClick={() => {
+                    setSchedule(prev => {
+                      const next = {...prev};
+                      const dateKey = sb._date || dk;
+                      const day = {...(next[dateKey]||{})};
+                      if (sb.breakId) { day[sb.owner] = (day[sb.owner]||[]).filter(b => b.breakId !== sb.breakId); }
+                      else { day[sb.owner] = (day[sb.owner]||[]).filter(b => b.taskId !== sb.taskId); }
+                      next[dateKey] = day;
+                      return next;
+                    });
+                    setSelectedBlock(null);
+                  }} style={{ width:36, height:36, background:"#FEF2F2", border:`1px solid #FCA5A5`, borderRadius:7, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>🗑</button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Month day popup */}
       {monthPopupDate && (
