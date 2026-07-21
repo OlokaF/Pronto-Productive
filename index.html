@@ -6889,7 +6889,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                           const scheme = getBlockScheme(block, task);
                           if (topPx < 0 || topPx > colHeight) return null;
                           return (
-                            <div key={idx} onClick={() => { if(onPickDay) onPickDay(new Date(wdk+"T12:00:00")); setSchedView("day"); setSelectedBlock({...block,_date:wdk}); }}
+                            <div key={idx} onClick={e => { e.stopPropagation(); if (!spanDragStart) setMonthPopupDate(wdk); }}
                               style={{ position:"absolute", left:2, right:2, top:topPx, height:heightPx,
                                 background:scheme.solid, border:"none",
                                 borderRadius:6, padding:"3px 6px", cursor:"pointer", overflow:"hidden", zIndex:2,
