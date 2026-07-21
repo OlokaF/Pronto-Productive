@@ -6105,6 +6105,23 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [sidebarFilter, setSidebarFilter] = useSh("all");        // all|unscheduled|overdue|scheduled|completed
   const [showSubtasks, setShowSubtasks] = useSh(false);          // expand subtasks in backlog
   const [monthPopupDate, setMonthPopupDate] = useSh(null);       // date key for month day popup
+  const dayScrollRef  = useRh(null);
+  const weekScrollRef = useRh(null);
+
+  useEh(() => {
+    if (schedView === 'day' && dayScrollRef.current) {
+      const n = new Date();
+      const targetMin = dk === isoDate(today())
+        ? Math.max(0, n.getHours()*60 + n.getMinutes() - 60)
+        : 6 * 60;
+      dayScrollRef.current.scrollTop = Math.max(0, targetMin * PX_PER_MIN - 32);
+    }
+    if (schedView === 'week' && weekScrollRef.current) {
+      const n = new Date();
+      const targetMin = Math.max(0, n.getHours()*60 + n.getMinutes() - 60);
+      weekScrollRef.current.scrollTop = Math.max(0, targetMin * PX_PER_MIN);
+    }
+  }, [schedView, dk]);
 
   const allOpenTasks = useMh(() => {
     const out = [];
@@ -6839,7 +6856,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 </div>
 
                 {/* Time grid */}
-                <div style={{ display:"grid", gridTemplateColumns:"60px repeat(7,1fr)", gap:0, border:`1px solid ${T.border}`, borderTop:"none" }}>
+                <div ref={weekScrollRef} style={{ display:"grid", gridTemplateColumns:"60px repeat(7,1fr)", gap:0, border:`1px solid ${T.border}`, borderTop:"none", maxHeight:"calc(100vh - 310px)", overflowY:"auto" }}>
                   {/* Time gutter */}
                   <div style={{ position:"relative", height:colHeight, borderRight:"1px solid #dadce0", background:"#fff" }}>
                     {Array.from({length:SCHED_END-SCHED_START+1}, (_,i) => (
@@ -7091,9 +7108,10 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
               };
 
               return (
-                <div style={{ display:"grid", gridTemplateColumns: gridCols, gap:0, border:`1px solid ${T.border}`, borderRadius:8, background:T.cardBg, alignSelf:"start" }}>
+                <div ref={dayScrollRef} style={{ border:`1px solid ${T.border}`, borderRadius:8, maxHeight:"calc(100vh - 250px)", overflowY:"auto" }}>
+                <div style={{ display:"grid", gridTemplateColumns: gridCols, gap:0, background:T.cardBg }}>
                   <div style={{ borderRight:`1px solid ${T.border}`, background:T.surface }}>
-                    <div style={{ height:32, borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <div style={{ height:32, borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"center", position:"sticky", top:0, zIndex:3, background:T.surface }}>
                       {dk === isoDate(today()) && (() => {
                         const n = new Date();
                         return <span style={{ fontSize:9, fontWeight:800, color:"#EF4444" }}>{fmtTime(n.getHours()*60+n.getMinutes())}</span>;
@@ -7127,6 +7145,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   ) : (
                     makeTimeColNew(activeUser, null, null, daySchedule[activeUser]||[], dayActual[activeUser]||[], false, false)
                   )}
+                </div>
                 </div>
               );
             })()}
@@ -7574,6 +7593,7 @@ function TimeColumn({
         fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800,
         fontSize:11, letterSpacing:"0.12em",
         borderBottom:`2px solid ${accent}`,
+        position:"sticky", top:0, zIndex:2,
       }}>{name.toUpperCase()}</div>
 
       {/* Drop zone */}
@@ -16867,6 +16887,9 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
   const pushQueueRef    = useR([]);
   const pullRunning     = useR(false);
   const pushRunning     = useR(false);
+  const scheduleRef     = useR(null);
+
+  useE(() => { scheduleRef.current = schedule; }, [schedule]);
 
   const reloadConf = () => setConf(loadGcalConf());
   const silentRefreshing = useR(false);
@@ -16912,6 +16935,19 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       },
       syncNow: () => setConf(c => ({ ...c, _forcePoll: Date.now() })),
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
+      repushAll: () => {
+        pushQueueRef.current = [];
+        const sched = scheduleRef.current || {};
+        for (const [dk2, day] of Object.entries(sched)) {
+          for (const owner2 of ['oloka', 'vanja']) {
+            for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
+              const id = _gcalBlockKey(b);
+              if (id) pushQueueRef.current.push({ action:'create', block:{...b, gcalEventId:undefined, owner:owner2}, dateKey:dk2 });
+            }
+          }
+        }
+        setTimeout(() => doPush.current(), 200);
+      },
       listCalendars: async (token) => {
         const data = await gcalFetch(token, 'GET', '/users/me/calendarList');
         return (data?.items || []).map(c => ({
@@ -17060,8 +17096,11 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
         const next = { ...prev };
         for (const dk of dates) {
           const day = next[dk] || {};
-          const ownerCol = (day[pullOwner] || []).filter(b => !b.isExternal);
-          next[dk] = { ...day, [pullOwner]: [...ownerCol, ...(byDate[dk] || [])] };
+          const prontoBlocks = (day[pullOwner] || []).filter(b => !b.isExternal);
+          // Don't show pulled events that are already tracked as Pronto blocks
+          const prontoGcalIds = new Set(prontoBlocks.map(b => b.gcalEventId).filter(Boolean));
+          const dedupedPulled = (byDate[dk] || []).filter(b => !prontoGcalIds.has(b.gcalEventId));
+          next[dk] = { ...day, [pullOwner]: [...prontoBlocks, ...dedupedPulled] };
         }
         return next;
       });
@@ -17153,7 +17192,38 @@ function GCalSettingsCard() {
   const [msg, setMsg]                     = useS('');
   const [loadingCals, setLoadingCals]     = useS(false);
   const [connecting, setConnecting]       = useS(false);
+  const [cleaningUp, setCleaningUp]       = useS(false);
   const reloadConf = () => setConf(loadGcalConf());
+
+  const handleCleanup = async () => {
+    if (!isConnected) return;
+    setCleaningUp(true);
+    setMsg('Scanning Google Calendar for duplicate Pronto events…');
+    try {
+      const token = conf.accessToken;
+      const calId = pushCalId;
+      const pad = n => n.toString().padStart(2,'0');
+      const fmt = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+      const tmin = new Date(); tmin.setDate(tmin.getDate()-90);
+      const tmax = new Date(); tmax.setDate(tmax.getDate()+90);
+      let allEvs = [], pageToken = null;
+      do {
+        const p = new URLSearchParams({ timeMin:fmt(tmin)+'T00:00:00Z', timeMax:fmt(tmax)+'T23:59:59Z', singleEvents:'true', maxResults:'250', ...(pageToken?{pageToken}:{}) });
+        const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(calId)+'/events?'+p);
+        allEvs = [...allEvs, ...(data?.items||[])];
+        pageToken = data?.nextPageToken||null;
+      } while (pageToken);
+      const prontoEvs = allEvs.filter(ev => (ev.description||'').startsWith(GCAL_TAG));
+      if (prontoEvs.length === 0) { setMsg('Nothing to clean up — no duplicate Pronto events found.'); return; }
+      let deleted = 0;
+      for (const ev of prontoEvs) {
+        try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(calId)+'/events/'+ev.id); deleted++; }
+        catch(e) { console.warn('[cleanup]', e.message); }
+      }
+      setMsg(`Cleaned up ${deleted} event${deleted!==1?'s':''}. Click Re-push All to re-sync your schedule.`);
+    } catch(e) { setMsg('Cleanup failed: '+e.message); }
+    finally { setCleaningUp(false); }
+  };
 
   const isConnected = !!(conf.accessToken && conf.tokenExpiry > Date.now());
   const bridgeStatus = window._gcalSync?.getStatus?.() || {};
@@ -17315,6 +17385,18 @@ function GCalSettingsCard() {
             }} style={{ background:'#1a73e8', border:"none", borderRadius:6,
               color:"#fff", padding:"8px 16px", fontSize:11, fontWeight:700,
               cursor:"pointer", fontFamily:"inherit" }}>SYNC NOW</button>
+            <button onClick={() => {
+              window._gcalSync?.repushAll();
+              setMsg('Re-pushing all scheduled blocks…');
+              setTimeout(() => setMsg(''), 5000);
+            }} style={{ background:"transparent", border:`1px solid #1a73e8`,
+              borderRadius:6, color:"#1a73e8", padding:"8px 14px", fontSize:11, fontWeight:700,
+              cursor:"pointer", fontFamily:"inherit" }}>Re-push All</button>
+            <button onClick={handleCleanup} disabled={cleaningUp} style={{ background:"transparent", border:`1px solid #EF4444`,
+              borderRadius:6, color:"#EF4444", padding:"8px 14px", fontSize:11, fontWeight:700,
+              cursor: cleaningUp ? "wait" : "pointer", fontFamily:"inherit", opacity: cleaningUp ? 0.6 : 1 }}>
+              {cleaningUp ? 'Cleaning…' : 'Clean up Duplicates'}
+            </button>
             <button onClick={handleDisconnect} style={{ background:"transparent", border:`1px solid ${T.border}`,
               borderRadius:6, color:T.muted, padding:"8px 14px", fontSize:11,
               cursor:"pointer", fontFamily:"inherit" }}>Disconnect</button>
