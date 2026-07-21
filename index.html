@@ -4845,35 +4845,6 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
             </div>
           </div>
 
-          {/* RIGHT: OVERDUE */}
-          <div style={{ background:T.cardBg, border:`1px solid #FCA5A5`, borderRadius:12, overflow:"hidden" }}>
-            <div style={{ padding:"14px 16px 12px", borderBottom:`1px solid #FCA5A5`, display:"flex", alignItems:"center", justifyContent:"space-between", background:"#FEF2F2" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <span style={{ fontSize:14 }}>🔴</span>
-                <p style={{ fontWeight:800, fontSize:12.5, color:"#991B1B", letterSpacing:"0.06em", margin:0 }}>OVERDUE ({overdueItems.length})</p>
-              </div>
-            </div>
-            <div style={{ padding:"8px 0" }}>
-              {overdueItems.length === 0
-                ? <p style={{ fontSize:12, color:T.faint, fontStyle:"italic", padding:"12px 16px" }}>All caught up! 🎉</p>
-                : overdueItems.map((t,i) => (
-                  <button key={t.id} onClick={() => onJumpTask(t.date)} style={{ width:"100%", display:"flex", alignItems:"flex-start", gap:10, padding:"9px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, cursor:"pointer", textAlign:"left", fontFamily:"inherit" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#FEF2F2"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                  >
-                    <div style={{ width:14, height:14, borderRadius:3, border:"1.5px solid #FCA5A5", flexShrink:0, marginTop:2, background:"#FFF" }}></div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.3 }}>{t.text}</p>
-                      <p style={{ fontSize:10, color:"#EF4444", fontWeight:700, marginTop:2, letterSpacing:"0.04em" }}>
-                        Due {t.date === isoDate(new Date(todayD - 86400000)) ? "Yesterday" : t.date} · {t.owner === "vanja" ? "Vanja" : "Oloka"}
-                      </p>
-                    </div>
-                  </button>
-                ))
-              }
-              <button onClick={() => onJumpTask(dk)} style={{ width:"100%", padding:"10px 16px", background:"transparent", border:"none", borderTop:`1px solid ${T.border}`, color:"#EF4444", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", textAlign:"left", letterSpacing:"0.04em" }}>View all overdue →</button>
-            </div>
-          </div>
 
         </div>
       </div>
@@ -6105,6 +6076,11 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const [sidebarFilter, setSidebarFilter] = useSh("all");        // all|unscheduled|overdue|scheduled|completed
   const [showSubtasks, setShowSubtasks] = useSh(false);          // expand subtasks in backlog
   const [monthPopupDate, setMonthPopupDate] = useSh(null);       // date key for month day popup
+  const [gcalCalFilter, setGcalCalFilter] = useSh([]);
+  const visBlocks = (blocks) => {
+    if (!gcalCalFilter.length) return blocks || [];
+    return (blocks || []).filter(b => !b.calendarId || gcalCalFilter.includes(b.calendarId));
+  };
   const dayScrollRef  = useRh(null);
   const weekScrollRef = useRh(null);
 
@@ -6358,6 +6334,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const getBlockScheme = (block, task) => {
     if (!block) return { bg:"#f1f3f4", border:"#dadce0", solid:"#70757a", text:"#fff", label:"Event" };
     if (block.isExternal) return { bg:"#e3f2fd", border:"#039be5", solid:"#039be5", text:"#fff", label:"Calendar" };
+    if (block.calendarId) { try { const _gcf=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); const _c=(_gcf.allCalendars||[]).find(c=>c.id===block.calendarId); if(_c&&_c.backgroundColor) return { bg:_c.backgroundColor+'20', border:_c.backgroundColor, solid:_c.backgroundColor, text:"#fff", label:_c.summary||"Task" }; } catch(_){} }
     if (block.isBreak) {
       const l = (block.breakLabel || "").toLowerCase();
       if (l.includes("lunch") || l.includes("dinner")) return { bg:"#fce8e6", border:"#d50000", solid:"#d50000", text:"#fff", label:"Lunch" };
@@ -6548,7 +6525,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
 
                 {/* Filter pills */}
                 <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
-                  {[["all","All"],["unscheduled","Unscheduled"],["overdue","Overdue"],["scheduled","Scheduled"],["completed","Done"],["today_done","Today Done"]].map(([k,l])=>(
+                  {[["all","All"],["unscheduled","Unscheduled"],["scheduled","Scheduled"],["completed","Done"],["today_done","Today Done"]].map(([k,l])=>(
                     <button key={k} onClick={()=>setSidebarFilter(k)}
                       style={{ padding:"3px 8px", background:sidebarFilter===k?T.gold+"22":"transparent", border:`1px solid ${sidebarFilter===k?T.gold:T.border}`, borderRadius:20, color:sidebarFilter===k?T.gold:T.muted, fontSize:9.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}
                     >{l}</button>
@@ -6592,7 +6569,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                                 }
                               }) : undefined}
                               onDragEnd={() => setDrag(null)}
-                              style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", paddingLeft:isSubtask?20:8, background:tScheduled?T.surface:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, marginBottom:4, cursor:canDrag?"grab":"default", opacity:t.done&&sidebarFilter!=="today_done"?0.5:1 }}
+                              style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 8px", paddingLeft:isSubtask?20:8, background:tScheduled?T.surface:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${ac}`, borderRadius:6, marginBottom:4, cursor:canDrag?"grab":"default", opacity:t.done&&sidebarFilter!=="today_done"?0.5:1 }}
                               onMouseEnter={e=>e.currentTarget.style.borderColor=ac+"60"}
                               onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
                             >
@@ -6776,6 +6753,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   Show tasks from other days
                 </label>
               </div>
+              {(() => { try { const _gcf=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); const _cals=(_gcf.allCalendars||[]); if(!_gcf.enabled||_cals.length<2) return null; return (<div><p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:8, letterSpacing:"0.1em" }}>CALENDAR</p><div style={{ display:"flex", flexDirection:"column", gap:5 }}>{_cals.map(cal => { const isActive=gcalCalFilter.length===0||gcalCalFilter.includes(cal.id); return (<label key={cal.id} style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:11, color:T.ink }}><input type="checkbox" checked={isActive} onChange={e=>{ if(e.target.checked){setGcalCalFilter(prev=>{const n=prev.filter(id=>id!==cal.id);return n.length===_cals.length-1?[]:n;});}else{setGcalCalFilter(prev=>{const all=_cals.map(c=>c.id);const cur=prev.length===0?all:prev;return cur.filter(id=>id!==cal.id);});} }} style={{ accentColor:cal.backgroundColor||T.gold }} /><span style={{ width:10, height:10, borderRadius:2, background:cal.backgroundColor||T.muted, display:"inline-block", flexShrink:0 }} /><span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:140 }}>{cal.summary||cal.id}</span></label>); })}</div></div>); } catch(_) { return null; } })()}
               <button onClick={() => setShowFilters(false)} style={{ marginLeft:"auto", alignSelf:"flex-start", marginTop:2, background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:16 }}>×</button>
             </div>
           )}
@@ -6845,7 +6823,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                     const nowW = new Date();
                     const dayLeftW = Math.max(0, SCHED_END*60 - (nowW.getHours()*60+nowW.getMinutes()));
                     return (
-                      <div key={wdk} onClick={() => { if(onPickDay) onPickDay(new Date(wdk+"T12:00:00")); setSchedView("day"); }}
+                      <div key={wdk} onClick={() => !spanDragStart && setMonthPopupDate(wdk)}
                         style={{ padding:"10px 8px", textAlign:"center", cursor:"pointer", borderLeft:`1px solid #dadce0`, background: isTodayW ? "#e8f0fe" : "transparent" }}>
                         <div style={{ fontSize:9, fontWeight:600, letterSpacing:"0.08em", color:isWeekend?"#aaa":"#70757a", marginBottom:2 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][di]}</div>
                         <div style={{ width:32, height:32, borderRadius:"50%", background: isTodayW ? "#1a73e8" : "transparent", color: isTodayW ? "#fff" : isWeekend ? "#aaa" : "#3c4043", fontSize:18, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 4px", fontFamily:"'ProximaNova Black', sans-serif" }}>{d.getDate()}</div>
@@ -7134,16 +7112,16 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   </div>
                   {showSideBySide ? (
                     <>
-                      {makeTimeColNew(activeUser, "PLANNED", activeUser==="vanja"?T.vanja:T.oloka, daySchedule[activeUser]||[], [], false, false)}
+                      {makeTimeColNew(activeUser, "PLANNED", activeUser==="vanja"?T.vanja:T.oloka, visBlocks(daySchedule[activeUser]||[]), [], false, false)}
                       {makeTimeColNew(activeUser, "ACTUAL", "#0E9F6E", dayActual[activeUser]||[], [], false, true)}
                     </>
                   ) : activeUser === "both" ? (
                     <>
-                      {makeTimeColNew("vanja", null, null, daySchedule.vanja||[], dayActual.vanja||[], actualMode, false)}
-                      {makeTimeColNew("oloka", null, null, daySchedule.oloka||[], dayActual.oloka||[], actualMode, false)}
+                      {makeTimeColNew("vanja", null, null, visBlocks(daySchedule.vanja||[]), dayActual.vanja||[], actualMode, false)}
+                      {makeTimeColNew("oloka", null, null, visBlocks(daySchedule.oloka||[]), dayActual.oloka||[], actualMode, false)}
                     </>
                   ) : (
-                    makeTimeColNew(activeUser, null, null, daySchedule[activeUser]||[], dayActual[activeUser]||[], false, false)
+                    makeTimeColNew(activeUser, null, null, visBlocks(daySchedule[activeUser]||[]), dayActual[activeUser]||[], false, false)
                   )}
                 </div>
                 </div>
@@ -7306,9 +7284,11 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
           startMin={quickAdd.startMin}
           isActual={quickAdd.isActual}
           tasks={(tasksByDate[dk]||[]).filter(t=>t.owner===quickAdd.owner&&!t.done)}
-          onConfirm={({ title, taskId, durationMin }) => {
+          gcalCalendars={(() => { try { const _c=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); return _c.enabled ? (_c.allCalendars||[]).filter(x=>x.accessRole==='owner'||x.accessRole==='writer') : []; } catch(_) { return []; } })()}
+          defaultCalendarId={(() => { try { const _c=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); return _c.calendarId||null; } catch(_) { return null; } })()}
+          onConfirm={({ title, taskId, durationMin, calendarId }) => {
             const o=quickAdd.owner;const sm=quickAdd.startMin;const dm=durationMin||30;
-            if(taskId){if(quickAdd.isActual){addActualBlock(o,taskId,sm);updateActualBlock(o,taskId,{durationMin:dm});}else{addBlock(o,taskId,sm);updateBlock(o,taskId,{durationMin:dm});}}
+            if(taskId){if(quickAdd.isActual){addActualBlock(o,taskId,sm);updateActualBlock(o,taskId,{durationMin:dm});}else{addBlock(o,taskId,sm);updateBlock(o,taskId,{durationMin:dm,...(calendarId?{calendarId}:{})});}}
             else if(title){if(quickAdd.isActual)addActualQuickEvent(o,title,sm,dm);else addQuickEvent(o,title,sm,dm);}
             setQuickAdd(null);
           }}
@@ -7889,17 +7869,18 @@ function ScheduleBlock({ task, block, top, height, accent, owner, isGhost, isAct
 // ─────────────────────────────────────────────────────────────────────────────
 // QuickAddPopover — click empty timeline → add a block
 // ─────────────────────────────────────────────────────────────────────────────
-function QuickAddPopover({ owner, startMin, isActual, tasks, onConfirm, onClose, defaultDuration }) {
+function QuickAddPopover({ owner, startMin, isActual, tasks, onConfirm, onClose, defaultDuration, gcalCalendars, defaultCalendarId }) {
   const [mode, setMode] = useSh(tasks.length > 0 ? "task" : "event"); // "task" | "event"
   const [title, setTitle] = useSh("");
   const [taskId, setTaskId] = useSh(tasks[0]?.id || null);
   const [dur, setDur] = useSh(defaultDuration || 30);
+  const [calendarId, setCalendarId] = useSh(defaultCalendarId || null);
   const ownerColor = owner === "vanja" ? T.vanja : T.oloka;
   const ownerName  = owner === "vanja" ? "Vanja" : "Oloka";
 
   const confirm = () => {
-    if (mode === "task" && taskId) onConfirm({ taskId: Number(taskId), durationMin: dur });
-    else if (mode === "event" && title.trim()) onConfirm({ title: title.trim(), durationMin: dur });
+    if (mode === "task" && taskId) onConfirm({ taskId: Number(taskId), durationMin: dur, calendarId });
+    else if (mode === "event" && title.trim()) onConfirm({ title: title.trim(), durationMin: dur, calendarId });
   };
 
   return (
@@ -7969,6 +7950,16 @@ function QuickAddPopover({ owner, startMin, isActual, tasks, onConfirm, onClose,
             </select>
             <p style={{ fontSize:11, color:T.faint, whiteSpace:"nowrap" }}>ends {fmtTime(startMin + dur)}</p>
           </div>
+          {gcalCalendars && gcalCalendars.length > 1 && (
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <p style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:"0.08em", whiteSpace:"nowrap" }}>CALENDAR</p>
+              <select value={calendarId||""} onChange={e=>setCalendarId(e.target.value||null)}
+                style={{ flex:1, padding:"7px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, color:T.ink, background:T.bg, fontFamily:"inherit", outline:"none" }}>
+                <option value="">Default</option>
+                {gcalCalendars.map(c => <option key={c.id} value={c.id}>{c.summary||c.id}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <div style={{ padding:"12px 18px", borderTop:`1px solid ${T.border}`, display:"flex", gap:8, justifyContent:"flex-end", background:T.surface, borderRadius:"0 0 10px 10px" }}>
           <button onClick={onClose} style={{
@@ -16725,9 +16716,11 @@ function MonthDayPopup({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, a
             startMin={quickAdd.startMin}
             isActual={false}
             tasks={(tasksByDate[dk]||[]).filter(t => t.owner===quickAdd.owner && !t.done)}
-            onConfirm={({ title, taskId, durationMin }) => {
+            gcalCalendars={(() => { try { const _c=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); return _c.enabled ? (_c.allCalendars||[]).filter(x=>x.accessRole==='owner'||x.accessRole==='writer') : []; } catch(_) { return []; } })()}
+            defaultCalendarId={(() => { try { const _c=JSON.parse(localStorage.getItem('prontoHQ.gcal.v1')||'{}'); return _c.calendarId||null; } catch(_) { return null; } })()}
+            onConfirm={({ title, taskId, durationMin, calendarId }) => {
               const o=quickAdd.owner, sm=quickAdd.startMin, dm=durationMin||30;
-              if (taskId) { addBlock(o,taskId,sm); updateBlock(o,taskId,{durationMin:dm}); }
+              if (taskId) { addBlock(o,taskId,sm); updateBlock(o,taskId,{durationMin:dm,...(calendarId?{calendarId}:{})}); }
               else if (title) { addQuickEvent(o,title,sm,dm); }
               setQuickAdd(null);
             }}
