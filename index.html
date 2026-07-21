@@ -6388,7 +6388,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
       <div className="sched-cols" style={{ display:"flex", gap:0, alignItems:"flex-start", flexDirection: isMobile ? "column" : "row" }}>
 
         {/* ── LEFT SIDEBAR ── */}
-        <div className="sched-sidebar" style={{ width: isMobile ? "100%" : 260, flexShrink:0, paddingRight: isMobile ? 0 : 20, borderRight: isMobile ? "none" : `1px solid ${T.border}`, borderBottom: isMobile ? `1px solid ${T.border}` : "none", marginRight: isMobile ? 0 : 24, marginBottom: isMobile ? 20 : 0, paddingBottom: isMobile ? 16 : 0 }}>
+        <div className="sched-sidebar" style={{ width: isMobile ? "100%" : 260, flexShrink:0, paddingRight: isMobile ? 0 : 20, borderRight: isMobile ? "none" : `1px solid ${T.border}`, borderBottom: isMobile ? `1px solid ${T.border}` : "none", marginRight: isMobile ? 0 : 24, marginBottom: isMobile ? 20 : 0, paddingBottom: isMobile ? 16 : 0, maxHeight: isMobile ? undefined : "calc(100vh - 220px)", overflowY: isMobile ? undefined : "auto" }}>
 
           {/* Sidebar mini-calendar */}
           {(() => {
@@ -16921,7 +16921,7 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
         setStatus('connecting');
         try {
           const { token, expiry } = await gcalAuthPopup(clientId);
-          saveGcalConf({ clientId, accessToken: token, tokenExpiry: expiry, enabled: true });
+          saveGcalConf({ clientId, accessToken: token, tokenExpiry: expiry, enabled: true, gcalCleanedAt: null });
           reloadConf();
           setStatus('ok');
           return token;
@@ -16935,19 +16935,8 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       },
       syncNow: () => setConf(c => ({ ...c, _forcePoll: Date.now() })),
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
-      repushAll: () => {
-        pushQueueRef.current = [];
-        const sched = scheduleRef.current || {};
-        for (const [dk2, day] of Object.entries(sched)) {
-          for (const owner2 of ['oloka', 'vanja']) {
-            for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
-              const id = _gcalBlockKey(b);
-              if (id) pushQueueRef.current.push({ action:'create', block:{...b, gcalEventId:undefined, owner:owner2}, dateKey:dk2 });
-            }
-          }
-        }
-        setTimeout(() => doPush.current(), 200);
-      },
+      repushAll: () => doRepushAll.current(),
+      cleanupNow: () => { saveGcalConf({ gcalCleanedAt: null }); doCleanup.current(); },
       listCalendars: async (token) => {
         const data = await gcalFetch(token, 'GET', '/users/me/calendarList');
         return (data?.items || []).map(c => ({
@@ -17042,6 +17031,53 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
   };
 
   // ── doPull: fetches GCal events into schedule ──
+  // ── doRepushAll: queue every Pronto block for fresh creation in GCal ──
+  const doRepushAll = useR(null);
+  doRepushAll.current = () => {
+    pushQueueRef.current = [];
+    const sched = scheduleRef.current || {};
+    for (const [dk2, day] of Object.entries(sched)) {
+      for (const owner2 of ['oloka', 'vanja']) {
+        for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
+          const id = _gcalBlockKey(b);
+          if (id) pushQueueRef.current.push({ action:'create', block:{...b, gcalEventId:undefined, owner:owner2}, dateKey:dk2 });
+        }
+      }
+    }
+    setTimeout(() => doPush.current(), 500);
+  };
+
+  // ── doCleanup: delete all Pronto-tagged GCal events, then re-push ──
+  const doCleanup = useR(null);
+  doCleanup.current = async () => {
+    const c = loadGcalConf();
+    if (!c.enabled || !c.accessToken) return;
+    const allCals2 = c.allCalendars || [];
+    const writableIds2 = allCals2.filter(x => x.accessRole === 'owner' || x.accessRole === 'writer').map(x => x.id);
+    const pushCalId2 = (c.calendarId && (writableIds2.includes(c.calendarId) || allCals2.length === 0))
+      ? c.calendarId : (writableIds2[0] || 'primary');
+    const token = c.accessToken;
+    const pad = n => n.toString().padStart(2,'0');
+    const fmt = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+    const tmin = new Date(); tmin.setDate(tmin.getDate()-90);
+    const tmax = new Date(); tmax.setDate(tmax.getDate()+90);
+    try {
+      let allEvs = [], pt = null;
+      do {
+        const params = new URLSearchParams({ timeMin:fmt(tmin)+'T00:00:00Z', timeMax:fmt(tmax)+'T23:59:59Z', singleEvents:'true', maxResults:'250', ...(pt?{pageToken:pt}:{}) });
+        const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(pushCalId2)+'/events?'+params);
+        allEvs = [...allEvs, ...(data?.items||[])];
+        pt = data?.nextPageToken||null;
+      } while (pt);
+      const prontoEvs = allEvs.filter(ev => (ev.description||'').startsWith(GCAL_TAG));
+      for (const ev of prontoEvs) {
+        try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(pushCalId2)+'/events/'+ev.id); } catch(_) {}
+      }
+      saveGcalConf({ gcalCleanedAt: Date.now() });
+      if (prontoEvs.length > 0) doRepushAll.current();
+    } catch(e) { console.warn('[GCal cleanup]', e.message); }
+  };
+
   const doPull = useR(null);
   doPull.current = async () => {
     if (pullRunning.current) return;
@@ -17108,6 +17144,10 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       setLastSync(new Date().toISOString());
       setStatus('ok');
       setSyncError('');
+      // Auto-cleanup: runs once to remove stale/duplicate Pronto events from GCal
+      if (!loadGcalConf().gcalCleanedAt) {
+        doCleanup.current();
+      }
     } catch(e) {
       setStatus('error');
       setSyncError(e.message);
@@ -17392,10 +17432,11 @@ function GCalSettingsCard() {
             }} style={{ background:"transparent", border:`1px solid #1a73e8`,
               borderRadius:6, color:"#1a73e8", padding:"8px 14px", fontSize:11, fontWeight:700,
               cursor:"pointer", fontFamily:"inherit" }}>Re-push All</button>
-            <button onClick={handleCleanup} disabled={cleaningUp} style={{ background:"transparent", border:`1px solid #EF4444`,
+            <button onClick={() => { window._gcalSync?.cleanupNow(); setMsg('Cleaning up duplicates…'); setTimeout(() => setMsg(''), 8000); }}
+              style={{ background:"transparent", border:`1px solid #EF4444`,
               borderRadius:6, color:"#EF4444", padding:"8px 14px", fontSize:11, fontWeight:700,
-              cursor: cleaningUp ? "wait" : "pointer", fontFamily:"inherit", opacity: cleaningUp ? 0.6 : 1 }}>
-              {cleaningUp ? 'Cleaning…' : 'Clean up Duplicates'}
+              cursor:"pointer", fontFamily:"inherit" }}>
+              Clean up Duplicates
             </button>
             <button onClick={handleDisconnect} style={{ background:"transparent", border:`1px solid ${T.border}`,
               borderRadius:6, color:T.muted, padding:"8px 14px", fontSize:11,
