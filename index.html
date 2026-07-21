@@ -17685,7 +17685,7 @@ function GoogleTasksSyncEngine({ tasksByDate, setTasksByDate, todayUser }) {
               gTaskListId: list.id,
               text: t.title,
               notes: t.notes || '',
-              owner: todayUser || 'oloka',
+              owner: loadGtasksConf().syncOwner || 'oloka',
               category: 'Admin',
               priority: 'Normal',
               done: false,
@@ -17833,6 +17833,19 @@ function GTasksSettingsPanel() {
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, padding:"10px 14px", background:'#0E9F6E18', border:'1px solid #0E9F6E44', borderRadius:8 }}>
             <span style={{ fontSize:14 }}>✓</span>
             <span style={{ fontSize:12, fontWeight:700, color:'#0E9F6E' }}>Connected to Google Tasks</span>
+          </div>
+
+          <div style={{ marginBottom:16 }}>
+            <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:8 }}>ADD TASKS TO</p>
+            <div style={{ display:"flex", gap:8 }}>
+              {[["oloka","Oloka",T.oloka],["vanja","Vanja",T.vanja]].map(([k,l,c]) => (
+                <button key={k} onClick={() => { saveGtasksConf({ syncOwner: k }); reloadConf(); }}
+                  style={{ padding:"6px 16px", borderRadius:6, border:`1px solid ${(conf.syncOwner||'oloka')===k ? c : T.border}`,
+                    background: (conf.syncOwner||'oloka')===k ? c+'20' : T.surface,
+                    color: (conf.syncOwner||'oloka')===k ? c : T.muted,
+                    fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
+              ))}
+            </div>
           </div>
 
           {allLists.length > 0 && (
