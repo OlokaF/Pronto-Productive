@@ -14998,6 +14998,69 @@ function App({ onSwitchWorkspace = () => {} }) {
     return () => { try { delete window._prontoAddTask; } catch(_) {} };
   }, []);
 
+  // ── Auto-backup to localStorage — keeps 7 daily snapshots ──
+  const AUTO_BACKUP_KEY = 'prontoHQ.autoBackup';
+  const saveAutoBackup = useR(null);
+  saveAutoBackup.current = () => {
+    try {
+      const today = isoDate(today());
+      const raw = localStorage.getItem(AUTO_BACKUP_KEY);
+      const store = raw ? JSON.parse(raw) : { backups: [] };
+      const existing = store.backups || [];
+      const filtered = existing.filter(b => b.date !== today);
+      filtered.unshift({ date: today, savedAt: new Date().toISOString(), snapshot: fullState() });
+      localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify({ backups: filtered.slice(0, 7) }));
+    } catch(e) { console.warn('[AutoBackup]', e.message); }
+  };
+
+  // Save on load + at midnight each day
+  useE(() => {
+    saveAutoBackup.current();
+    const msUntilMidnight = () => { const n = new Date(); return (new Date(n.getFullYear(), n.getMonth(), n.getDate()+1) - n); };
+    const scheduleMidnight = () => {
+      const t = setTimeout(() => { saveAutoBackup.current(); scheduleMidnight(); }, msUntilMidnight());
+      return t;
+    };
+    const t = scheduleMidnight();
+    return () => clearTimeout(t);
+  }, []);
+
+  const getAutoBackups = () => { try { return (JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'{}').backups)||[]; } catch(_) { return []; } };
+
+  useE(() => {
+    window._prontoAutoBackup = {
+      getBackups: getAutoBackups,
+      restore: (snapshot) => {
+        const s = snapshot;
+        if (!s || typeof s !== 'object') return false;
+        if (s.tasksByDate) setTasksByDate(s.tasksByDate);
+        if (s.schedule) setSchedule(s.schedule);
+        if (s.dayNotes) setDayNotes(s.dayNotes);
+        if (s.content) setContent(s.content);
+        if (s.ideas) setIdeas(s.ideas);
+        if (s.suppliers) setSuppliers(s.suppliers);
+        if (s.budget) setBudget(s.budget);
+        if (s.onboarding) setOnboarding(s.onboarding);
+        if (s.courses) setCourses(s.courses);
+        if (s.testimonials) setTestimonials(s.testimonials);
+        if (s.photos) setPhotos(s.photos);
+        if (s.plan) setPlan(s.plan);
+        if (s.staff) setStaff(s.staff);
+        if (s.lunches) setLunches(s.lunches);
+        if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
+        if (s.ongoingJobs) setOngoingJobs(s.ongoingJobs);
+        if (s.toBeCompleted) setToBeCompleted(s.toBeCompleted);
+        if (s.postApprovals) setPostApprovals(s.postApprovals);
+        if (s.videoEvents) setVideoEvents(s.videoEvents);
+        if (s.toPostList) setToPostList(s.toPostList);
+        if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
+        if (s.activityLog) setActivityLog(s.activityLog);
+        if (s.schedSpans) setSchedSpans(s.schedSpans);
+        return true;
+      },
+    };
+  });
+
   // ── Export current state to a JSON file download ──
   const exportState = () => {
     const blob = new Blob([JSON.stringify(fullState(), null, 2)], { type: "application/json" });
@@ -17957,6 +18020,74 @@ function GTasksSettingsPanel() {
   );
 }
 
+// ── Auto Backup Card ──
+function AutoBackupCard() {
+  const T = useTheme();
+  const AUTO_BACKUP_KEY = 'prontoHQ.autoBackup';
+  const [backups, setBackups] = useS(() => {
+    try { return (JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'{}').backups)||[]; } catch(_) { return []; }
+  });
+  const [restoreMsg, setRestoreMsg] = useS('');
+
+  const refresh = () => {
+    try { setBackups((JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'{}').backups)||[]); } catch(_) { setBackups([]); }
+  };
+
+  const downloadBackup = (b) => {
+    const blob = new Blob([JSON.stringify(b.snapshot, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pronto-backup-${b.date}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const restoreBackup = (b) => {
+    if (!confirm(`Restore backup from ${b.date}? This will overwrite all current data.`)) return;
+    if (!window._prontoAutoBackup) { setRestoreMsg('Restore not available — reload page and try again.'); return; }
+    const ok = window._prontoAutoBackup.restore(b.snapshot);
+    setRestoreMsg(ok ? `Restored from ${b.date}` : 'Restore failed — invalid backup data.');
+    setTimeout(() => setRestoreMsg(''), 4000);
+  };
+
+  const lastBackup = backups[0];
+
+  return (
+    <div>
+      <p style={{ fontSize:12, color:T.muted, marginBottom:14, lineHeight:1.5 }}>
+        Daily snapshots of all your data are saved automatically. Up to 7 days are kept. Use Download to save a file, or Restore to roll back to that day's state.
+      </p>
+      {lastBackup ? (
+        <p style={{ fontSize:11, color:T.muted, marginBottom:12 }}>
+          Last backup: <span style={{ color:T.ink, fontWeight:700 }}>{lastBackup.savedAt ? new Date(lastBackup.savedAt).toLocaleString() : lastBackup.date}</span>
+        </p>
+      ) : (
+        <p style={{ fontSize:11, color:'#EF4444', marginBottom:12, fontWeight:700 }}>No backups yet — one will be saved when you next load the app.</p>
+      )}
+      {backups.length > 0 && (
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {backups.map((b, i) => (
+            <div key={b.date} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, padding:'8px 12px' }}>
+              <div>
+                <span style={{ fontSize:12, fontWeight:700, color:T.ink }}>{b.date}</span>
+                {i === 0 && <span style={{ fontSize:10, color:T.oloka, fontWeight:800, marginLeft:7 }}>LATEST</span>}
+                {b.savedAt && <span style={{ fontSize:10, color:T.muted, marginLeft:7 }}>{new Date(b.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>}
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                <button onClick={() => downloadBackup(b)} style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, padding:'4px 10px', fontSize:10, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>DOWNLOAD</button>
+                <button onClick={() => restoreBackup(b)} style={{ background:T.gold, border:'none', borderRadius:5, color:'#fff', padding:'4px 10px', fontSize:10, fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>RESTORE</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {restoreMsg && <p style={{ fontSize:11.5, fontWeight:700, color:restoreMsg.includes('Restored') ? '#16a34a' : '#EF4444', marginTop:10 }}>{restoreMsg}</p>}
+      <button onClick={refresh} style={{ marginTop:12, background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, padding:'5px 12px', fontSize:10, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>REFRESH</button>
+    </div>
+  );
+}
+
 // ── Settings View ──
 function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels }) {
   const [newCat, setNewCat] = useS("");
@@ -18163,6 +18294,12 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
       <Card>
         <SectionTitle>GOOGLE TASKS</SectionTitle>
         <GTasksSettingsPanel />
+      </Card>
+
+      {/* Auto Backup */}
+      <Card>
+        <SectionTitle>AUTO BACKUP</SectionTitle>
+        <AutoBackupCard />
       </Card>
 
       {/* Password */}
