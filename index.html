@@ -6047,10 +6047,13 @@ function BreakBlockStrip({ drag, setDrag, addBreakBlock, activeUser, daySchedule
 // ScheduleView
 // ─────────────────────────────────────────────────────────────────────────────
 const SCHED_SPAN_COLORS = ["#F59E0B","#3B82F6","#10B981","#EF4444","#8B5CF6","#F97316","#EC4899","#14B8A6"];
-function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans, onPickDay, todayUser, isMobile = false }) {
+function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans, onPickDay, todayUser, isMobile = false, externalGcalEvents = {} }) {
   const dk = isoDate(selDate);
   const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event" && !t.recurring);
-  const daySchedule = schedule[dk] || { vanja: [], oloka: [] };
+  const daySchedule = {
+    vanja: [...((schedule[dk]||{}).vanja||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[dk]||{}).vanja||[])],
+    oloka: [...((schedule[dk]||{}).oloka||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[dk]||{}).oloka||[])],
+  };
   const dayActual   = ((actualSchedule || {})[dk]) || { vanja: [], oloka: [] };
 
   const [actualMode, setActualMode] = useSh(false);
@@ -6770,7 +6773,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
             let weekTotalMin = 0, weekTaskCount = 0;
             weekDays.forEach(d => {
               const wdk = isoDate(d);
-              const blocks = [...((schedule[wdk]||{}).vanja||[]), ...((schedule[wdk]||{}).oloka||[])];
+              const blocks = [...((schedule[wdk]||{}).vanja||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[wdk]||{}).vanja||[]), ...((schedule[wdk]||{}).oloka||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[wdk]||{}).oloka||[])];
               weekTotalMin += blocks.reduce((s,b) => s + (b.durationMin||30), 0);
               weekTaskCount += blocks.filter(b => !b.isBreak).length;
             });
@@ -6853,8 +6856,10 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                     const nowW2 = new Date();
                     const nowMinW2 = nowW2.getHours()*60 + nowW2.getMinutes();
                     const allBlocksW = [
-                      ...(activeUser !== "oloka" ? ((schedule[wdk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})) : []),
-                      ...(activeUser !== "vanja" ? ((schedule[wdk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})) : []),
+                      ...(activeUser !== "oloka" ? ((schedule[wdk]||{}).vanja||[]).filter(b=>!b.isExternal).map(b=>({...b,owner:"vanja"})) : []),
+                      ...(activeUser !== "oloka" ? ((externalGcalEvents[wdk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})) : []),
+                      ...(activeUser !== "vanja" ? ((schedule[wdk]||{}).oloka||[]).filter(b=>!b.isExternal).map(b=>({...b,owner:"oloka"})) : []),
+                      ...(activeUser !== "vanja" ? ((externalGcalEvents[wdk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})) : []),
                     ];
                     return (
                       <div key={wdk}
@@ -14780,6 +14785,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [lunches, setLunches] = useS(() => loadOr("lunches", () => JSON.parse(JSON.stringify(LUNCHES))));
   // Schedule planner — date → { vanja: [{taskId,startMin,durationMin}], oloka: [...] }
   const [schedule, setSchedule] = useS(() => loadOr("schedule", () => ({})));
+  const [externalGcalEvents, setExternalGcalEvents] = useS(() => ({}));
   // Actual schedule — same shape; records what really happened vs planned
   const [actualSchedule, setActualSchedule] = useS(() => loadOr("actualSchedule", () => ({})));
   // Day notes — morning plan + daily review per date key
@@ -15714,7 +15720,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           <MonthView selDate={selDate} tasksByDate={tasksByDate} content={content} onPickDate={onPickDate} onMoveTask={onMoveTask} onAdd={onAdd}/>
         )}
         {tab === "schedule" && (
-          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser} isMobile={isMobile}/>
+          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser} isMobile={isMobile} externalGcalEvents={externalGcalEvents}/>
         )}
         {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent}
           toPostList={toPostList} setToPostList={setToPostList}
@@ -15808,6 +15814,7 @@ function App({ onSwitchWorkspace = () => {} }) {
       <GoogleCalSyncEngine
         schedule={schedule}
         setSchedule={setSchedule}
+        setExternalGcalEvents={setExternalGcalEvents}
         tasksByDate={tasksByDate}
         selDate={selDate}
         todayUser={todayUser}
@@ -16933,7 +16940,7 @@ function _gcalBlockKey(b) {
   return b.blockId || b.qeId || (b.taskId ? b.taskId + '|' + b.startMin : null);
 }
 
-function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, todayUser }) {
+function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tasksByDate, selDate, todayUser }) {
   const [conf, setConf]     = useS(loadGcalConf);
   const [status, setStatus] = useS('idle');
   const [lastSync, setLastSync]   = useS(null);
@@ -17227,6 +17234,8 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
       while (cur <= tmax) { dates.push(fmt(cur)); cur.setDate(cur.getDate()+1); }
 
       const byDate = {};
+      let calFetchedCount = 0;
+      let authFailed = false;
       for (const calId of pullCalIds) {
         try {
           const params = new URLSearchParams({
@@ -17245,20 +17254,56 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
               if (!byDate[dk].some(x => x.gcalEventId === blk.gcalEventId)) byDate[dk].push(blk);
             }
           }
-        } catch(calErr) { console.warn('[GCal pull]', calId, calErr.message); }
+          calFetchedCount++;
+        } catch(calErr) {
+          console.warn('[GCal pull]', calId, calErr.message);
+          if (calErr.message.includes('401') || calErr.message.toLowerCase().includes('invalid_token') || calErr.message.toLowerCase().includes('unauthorized')) {
+            authFailed = true;
+          }
+        }
       }
 
+      // Never wipe the schedule if no calendar succeeded — that would delete visible blocks
+      if (calFetchedCount === 0) {
+        if (authFailed) {
+          // Token expired: mark expired without clearing the token (user can reconnect)
+          saveGcalConf({ tokenExpiry: 0 });
+          reloadConf();
+          setStatus('expired');
+          setSyncError('Google Calendar session expired — click Sign In again to reconnect.');
+        } else {
+          setStatus('error');
+          setSyncError('Could not reach Google Calendar — schedule unchanged.');
+        }
+        return;
+      }
+
+      // Store external events in local state only — never write them to Firebase
+      if (setExternalGcalEvents) {
+        setExternalGcalEvents(prev => {
+          const next = { ...prev };
+          for (const dk of dates) {
+            next[dk] = { ...next[dk], [pullOwner]: byDate[dk] || [] };
+          }
+          return next;
+        });
+      }
+      // Clean any external events that were previously stored in Firebase
       setSchedule(prev => {
         const next = { ...prev };
-        for (const dk of dates) {
-          const day = next[dk] || {};
-          const prontoBlocks = (day[pullOwner] || []).filter(b => !b.isExternal);
-          // Don't show pulled events that are already tracked as Pronto blocks
-          const prontoGcalIds = new Set(prontoBlocks.map(b => b.gcalEventId).filter(Boolean));
-          const dedupedPulled = (byDate[dk] || []).filter(b => !prontoGcalIds.has(b.gcalEventId));
-          next[dk] = { ...day, [pullOwner]: [...prontoBlocks, ...dedupedPulled] };
+        let changed = false;
+        for (const dk of Object.keys(next)) {
+          for (const owner of ['oloka', 'vanja']) {
+            const blocks = next[dk]?.[owner];
+            if (!blocks) continue;
+            const cleaned = blocks.filter(b => !b.isExternal);
+            if (cleaned.length !== blocks.length) {
+              next[dk] = { ...next[dk], [owner]: cleaned };
+              changed = true;
+            }
+          }
         }
-        return next;
+        return changed ? next : prev;
       });
 
       setLastSync(new Date().toISOString());
@@ -17271,8 +17316,9 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
     } catch(e) {
       setStatus('error');
       setSyncError(e.message);
+      // Don't clear the token — just mark expired so user can reconnect without re-entering client ID
       if (e.message.includes('401') || e.message.toLowerCase().includes('invalid')) {
-        saveGcalConf({ accessToken: null, tokenExpiry: 0 });
+        saveGcalConf({ tokenExpiry: 0 });
         reloadConf();
         setStatus('expired');
       }
@@ -17290,14 +17336,12 @@ function GoogleCalSyncEngine({ schedule, setSchedule, tasksByDate, selDate, toda
     return () => clearTimeout(t);
   }, [conf.accessToken, conf.tokenExpiry]);
 
-  // Pull every 60s; also run push after each pull
+  // Pull once on load / when config changes — manual Sync Now for subsequent pulls
   useE(() => {
     const c = conf;
     if (!c.enabled || !c.accessToken) return;
     const run = async () => { await doPull.current(); await doPush.current(); };
     run();
-    const iv = setInterval(run, 60000);
-    return () => clearInterval(iv);
   }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll, selDate]);
 
   // Watch schedule changes — detect new/moved/deleted blocks from BOTH owners
@@ -17642,21 +17686,22 @@ function GoogleTasksSyncEngine({ tasksByDate, setTasksByDate, todayUser }) {
     if (pullRunning.current) return;
     const c = loadGtasksConf();
     if (!c.enabled || !c.accessToken) return;
-    if (c.tokenExpiry && Date.now() > c.tokenExpiry) return;
+    if (c.tokenExpiry && Date.now() > c.tokenExpiry) {
+      saveGtasksConf({ _lastError: 'Token expired — reconnect Google Tasks in Settings.' });
+      return;
+    }
     pullRunning.current = true;
     const token = c.accessToken;
     const pad = n => n.toString().padStart(2, '0');
     const fmt = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+    const now = new Date();
+    const cutoffPast = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30));
+    const cutoffFuture = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90));
     try {
-      // Fetch all task lists
       const listsData = await gtasksFetch(token, 'GET', '/users/@me/lists?maxResults=100');
       const lists = listsData?.items || [];
       const selectedListIds = c.taskListIds || lists.map(l => l.id);
-      const now = new Date();
-      const tmin = new Date(now); tmin.setDate(tmin.getDate() - 30);
-      const tmax = new Date(now); tmax.setDate(tmax.getDate() + 90);
 
-      // Build existing gTaskId index from all dates
       const existingGTaskIds = new Set();
       const tbd = tasksByDateRef.current || {};
       for (const dk of Object.keys(tbd)) {
@@ -17665,41 +17710,49 @@ function GoogleTasksSyncEngine({ tasksByDate, setTasksByDate, todayUser }) {
         }
       }
 
-      const toAdd = {}; // dk -> [tasks]
+      const toAdd = {};
+      let totalFetched = 0;
       for (const list of lists) {
         if (!selectedListIds.includes(list.id)) continue;
         try {
-          const params = new URLSearchParams({
-            dueMin: tmin.toISOString(), dueMax: tmax.toISOString(),
-            showCompleted: 'false', showHidden: 'false', maxResults: '100',
-          });
-          const data = await gtasksFetch(token, 'GET', '/tasklists/' + encodeURIComponent(list.id) + '/tasks?' + params);
-          for (const t of (data?.items || [])) {
-            if (!t.due || !t.title || t.status === 'completed') continue;
-            if (existingGTaskIds.has(t.id)) continue;
-            const dk = t.due.substring(0, 10);
-            if (!toAdd[dk]) toAdd[dk] = [];
-            toAdd[dk].push({
-              id: 'gtask_' + t.id,
-              gTaskId: t.id,
-              gTaskListId: list.id,
-              text: t.title,
-              notes: t.notes || '',
-              owner: loadGtasksConf().syncOwner || 'oloka',
-              category: 'Admin',
-              priority: 'Normal',
-              done: false,
-              updatedAt: t.updated ? new Date(t.updated).getTime() : Date.now(),
-            });
-          }
-        } catch(_) {}
+          // Fetch all tasks (no dueMin/dueMax — filter client-side, more reliable)
+          let pageToken = null;
+          do {
+            const params = new URLSearchParams({ showCompleted: 'false', maxResults: '100', ...(pageToken ? { pageToken } : {}) });
+            const data = await gtasksFetch(token, 'GET', '/tasklists/' + encodeURIComponent(list.id) + '/tasks?' + params);
+            for (const t of (data?.items || [])) {
+              totalFetched++;
+              if (!t.due || !t.title || t.status === 'completed') continue;
+              // Extract YYYY-MM-DD from the due date (always stored as midnight UTC in GTasks)
+              const dk = t.due.substring(0, 10);
+              if (dk < cutoffPast || dk > cutoffFuture) continue;
+              if (existingGTaskIds.has(t.id)) continue;
+              if (!toAdd[dk]) toAdd[dk] = [];
+              toAdd[dk].push({
+                id: 'gtask_' + t.id,
+                gTaskId: t.id,
+                gTaskListId: list.id,
+                text: t.title,
+                notes: t.notes || '',
+                owner: loadGtasksConf().syncOwner || 'oloka',
+                category: 'Admin',
+                priority: 'Normal',
+                done: false,
+                updatedAt: t.updated ? new Date(t.updated).getTime() : Date.now(),
+              });
+            }
+            pageToken = data?.nextPageToken || null;
+          } while (pageToken);
+        } catch(listErr) { console.warn('[GTasks] list error', listErr.message); }
       }
 
-      if (Object.keys(toAdd).length > 0) {
+      const addedCount = Object.values(toAdd).reduce((s, a) => s + a.length, 0);
+      saveGtasksConf({ _lastSync: new Date().toISOString(), _lastCount: addedCount, _lastError: null });
+
+      if (addedCount > 0) {
         setTasksByDate(prev => {
           const next = { ...prev };
           for (const dk of Object.keys(toAdd)) {
-            // Re-check for duplicates in case state changed
             const existing = next[dk] || [];
             const existIds = new Set(existing.map(t => t.gTaskId).filter(Boolean));
             const fresh = toAdd[dk].filter(t => !existIds.has(t.gTaskId));
@@ -17708,8 +17761,10 @@ function GoogleTasksSyncEngine({ tasksByDate, setTasksByDate, todayUser }) {
           return next;
         });
       }
-    } catch(e) { console.warn('[GTasks pull]', e.message); }
-    finally { pullRunning.current = false; }
+    } catch(e) {
+      console.warn('[GTasks pull]', e.message);
+      saveGtasksConf({ _lastError: e.message });
+    } finally { pullRunning.current = false; }
   };
 
   // Expose API
@@ -17869,6 +17924,21 @@ function GTasksSettingsPanel() {
           <p style={{ fontSize:11, color:T.muted, marginBottom:14, lineHeight:1.6 }}>
             Tasks must have a <strong>due date</strong> set in Google Tasks to appear in Pronto. After sync, set the category and owner in Pronto.
           </p>
+
+          {/* Sync status */}
+          {conf._lastError && (
+            <div style={{ marginBottom:12, padding:"8px 12px", background:"#FEE2E2", border:"1px solid #EF4444", borderRadius:6 }}>
+              <p style={{ fontSize:11, fontWeight:700, color:"#EF4444", margin:0 }}>Error: {conf._lastError}</p>
+            </div>
+          )}
+          {conf._lastSync && !conf._lastError && (
+            <div style={{ marginBottom:12, padding:"8px 12px", background:"#F0FDF4", border:"1px solid #0E9F6E44", borderRadius:6 }}>
+              <p style={{ fontSize:11, color:"#0E9F6E", margin:0, fontWeight:600 }}>
+                Last sync: {new Date(conf._lastSync).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
+                {conf._lastCount > 0 ? ` — added ${conf._lastCount} task${conf._lastCount !== 1 ? 's' : ''}` : ' — no new tasks found'}
+              </p>
+            </div>
+          )}
 
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             <button onClick={() => { window._gtasksSync?.pullNow(); setMsg('Syncing tasks…'); setTimeout(() => setMsg(''), 4000); }}
