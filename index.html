@@ -6051,8 +6051,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const dk = isoDate(selDate);
   const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event" && !t.recurring);
   const daySchedule = {
-    vanja: [...((schedule[dk]||{}).vanja||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[dk]||{}).vanja||[])],
-    oloka: [...((schedule[dk]||{}).oloka||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[dk]||{}).oloka||[])],
+    vanja: [...(schedule[dk]?.vanja||[]), ...((externalGcalEvents[dk]?.vanja||[]).filter(b=>!(schedule[dk]?.vanja||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))],
+    oloka: [...(schedule[dk]?.oloka||[]), ...((externalGcalEvents[dk]?.oloka||[]).filter(b=>!(schedule[dk]?.oloka||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))],
   };
   const dayActual   = ((actualSchedule || {})[dk]) || { vanja: [], oloka: [] };
 
@@ -6773,7 +6773,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
             let weekTotalMin = 0, weekTaskCount = 0;
             weekDays.forEach(d => {
               const wdk = isoDate(d);
-              const blocks = [...((schedule[wdk]||{}).vanja||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[wdk]||{}).vanja||[]), ...((schedule[wdk]||{}).oloka||[]).filter(b=>!b.isExternal), ...((externalGcalEvents[wdk]||{}).oloka||[])];
+              const blocks = [...(schedule[wdk]?.vanja||[]), ...((externalGcalEvents[wdk]?.vanja||[]).filter(b=>!(schedule[wdk]?.vanja||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId))), ...(schedule[wdk]?.oloka||[]), ...((externalGcalEvents[wdk]?.oloka||[]).filter(b=>!(schedule[wdk]?.oloka||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))];
               weekTotalMin += blocks.reduce((s,b) => s + (b.durationMin||30), 0);
               weekTaskCount += blocks.filter(b => !b.isBreak).length;
             });
@@ -6856,10 +6856,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                     const nowW2 = new Date();
                     const nowMinW2 = nowW2.getHours()*60 + nowW2.getMinutes();
                     const allBlocksW = [
-                      ...(activeUser !== "oloka" ? ((schedule[wdk]||{}).vanja||[]).filter(b=>!b.isExternal).map(b=>({...b,owner:"vanja"})) : []),
-                      ...(activeUser !== "oloka" ? ((externalGcalEvents[wdk]||{}).vanja||[]).map(b=>({...b,owner:"vanja"})) : []),
-                      ...(activeUser !== "vanja" ? ((schedule[wdk]||{}).oloka||[]).filter(b=>!b.isExternal).map(b=>({...b,owner:"oloka"})) : []),
-                      ...(activeUser !== "vanja" ? ((externalGcalEvents[wdk]||{}).oloka||[]).map(b=>({...b,owner:"oloka"})) : []),
+                      ...(activeUser !== "oloka" ? [...(schedule[wdk]?.vanja||[]), ...((externalGcalEvents[wdk]?.vanja||[]).filter(b=>!(schedule[wdk]?.vanja||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))].map(b=>({...b,owner:"vanja"})) : []),
+                      ...(activeUser !== "vanja" ? [...(schedule[wdk]?.oloka||[]), ...((externalGcalEvents[wdk]?.oloka||[]).filter(b=>!(schedule[wdk]?.oloka||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))].map(b=>({...b,owner:"oloka"})) : []),
                     ];
                     return (
                       <div key={wdk}
@@ -14785,7 +14783,9 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [lunches, setLunches] = useS(() => loadOr("lunches", () => JSON.parse(JSON.stringify(LUNCHES))));
   // Schedule planner — date → { vanja: [{taskId,startMin,durationMin}], oloka: [...] }
   const [schedule, setSchedule] = useS(() => loadOr("schedule", () => ({})));
-  const [externalGcalEvents, setExternalGcalEvents] = useS(() => ({}));
+  const GCAL_CACHE_KEY = 'prontoHQ.gcalEventsCache';
+  const [externalGcalEvents, setExternalGcalEvents] = useS(() => { try { return JSON.parse(localStorage.getItem(GCAL_CACHE_KEY)||'{}'); } catch(_) { return {}; } });
+  useE(() => { try { localStorage.setItem(GCAL_CACHE_KEY, JSON.stringify(externalGcalEvents)); } catch(_) {} }, [externalGcalEvents]);
   // Actual schedule — same shape; records what really happened vs planned
   const [actualSchedule, setActualSchedule] = useS(() => loadOr("actualSchedule", () => ({})));
   // Day notes — morning plan + daily review per date key
@@ -17341,7 +17341,7 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
         return;
       }
 
-      // Store external events in local state only — never write them to Firebase
+      // Store external events in local state (localStorage cache) for instant load
       if (setExternalGcalEvents) {
         setExternalGcalEvents(prev => {
           const next = { ...prev };
@@ -17351,22 +17351,14 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
           return next;
         });
       }
-      // Clean any external events that were previously stored in Firebase
+      // Also write to Firebase so Vanja can see them — replaces old isExternal blocks for these dates
       setSchedule(prev => {
         const next = { ...prev };
-        let changed = false;
-        for (const dk of Object.keys(next)) {
-          for (const owner of ['oloka', 'vanja']) {
-            const blocks = next[dk]?.[owner];
-            if (!blocks) continue;
-            const cleaned = blocks.filter(b => !b.isExternal);
-            if (cleaned.length !== blocks.length) {
-              next[dk] = { ...next[dk], [owner]: cleaned };
-              changed = true;
-            }
-          }
+        for (const dk of dates) {
+          const existing = (next[dk]?.[pullOwner] || []).filter(b => !b.isExternal);
+          next[dk] = { ...next[dk], [pullOwner]: [...existing, ...(byDate[dk] || [])] };
         }
-        return changed ? next : prev;
+        return next;
       });
 
       setLastSync(new Date().toISOString());
