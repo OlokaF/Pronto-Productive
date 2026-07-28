@@ -6051,8 +6051,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const dk = isoDate(selDate);
   const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event" && !t.recurring);
   const daySchedule = {
-    vanja: [...(schedule[dk]?.vanja||[]), ...((externalGcalEvents[dk]?.vanja||[]).filter(b=>!(schedule[dk]?.vanja||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))],
-    oloka: [...(schedule[dk]?.oloka||[]), ...((externalGcalEvents[dk]?.oloka||[]).filter(b=>!(schedule[dk]?.oloka||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))],
+    vanja: [...(schedule[dk]?.vanja||[])],
+    oloka: [...(schedule[dk]?.oloka||[])],
   };
   const dayActual   = ((actualSchedule || {})[dk]) || { vanja: [], oloka: [] };
 
@@ -6773,7 +6773,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
             let weekTotalMin = 0, weekTaskCount = 0;
             weekDays.forEach(d => {
               const wdk = isoDate(d);
-              const blocks = [...(schedule[wdk]?.vanja||[]), ...((externalGcalEvents[wdk]?.vanja||[]).filter(b=>!(schedule[wdk]?.vanja||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId))), ...(schedule[wdk]?.oloka||[]), ...((externalGcalEvents[wdk]?.oloka||[]).filter(b=>!(schedule[wdk]?.oloka||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))];
+              const blocks = [...(schedule[wdk]?.vanja||[]), ...(schedule[wdk]?.oloka||[])];
               weekTotalMin += blocks.reduce((s,b) => s + (b.durationMin||30), 0);
               weekTaskCount += blocks.filter(b => !b.isBreak).length;
             });
@@ -6856,8 +6856,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                     const nowW2 = new Date();
                     const nowMinW2 = nowW2.getHours()*60 + nowW2.getMinutes();
                     const allBlocksW = [
-                      ...(activeUser !== "oloka" ? [...(schedule[wdk]?.vanja||[]), ...((externalGcalEvents[wdk]?.vanja||[]).filter(b=>!(schedule[wdk]?.vanja||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))].map(b=>({...b,owner:"vanja"})) : []),
-                      ...(activeUser !== "vanja" ? [...(schedule[wdk]?.oloka||[]), ...((externalGcalEvents[wdk]?.oloka||[]).filter(b=>!(schedule[wdk]?.oloka||[]).some(fb=>fb.gcalEventId&&fb.gcalEventId===b.gcalEventId)))].map(b=>({...b,owner:"oloka"})) : []),
+                      ...(activeUser !== "oloka" ? (schedule[wdk]?.vanja||[]).map(b=>({...b,owner:"vanja"})) : []),
+                      ...(activeUser !== "vanja" ? (schedule[wdk]?.oloka||[]).map(b=>({...b,owner:"oloka"})) : []),
                     ];
                     return (
                       <div key={wdk}
@@ -9910,7 +9910,10 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
 
   const updateLunch = (i, patch) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch, updatedAt: Date.now() } : l));
   const toggleLunchHad = (i) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, had: !l.had, updatedAt: Date.now() } : l));
-  const deleteLunch = (id) => setLunches(prev => prev.filter(l => (l.id || l) !== id));
+  const deleteLunch = (id) => {
+    if (typeof id === 'number') setLunches(prev => prev.filter((_, idx) => idx !== id));
+    else setLunches(prev => prev.filter(l => l.id !== id));
+  };
   const addLunch = () => setLunches(prev => [...prev, { id: Date.now() + "_" + Math.random().toString(36).slice(2,6), name:"", date: new Date().toISOString().slice(0,10), type:"Photo", had: false, updatedAt: Date.now() }]);
 
   const filtered = staff.map((s, i) => ({ s, i })).filter(({ s }) => {
