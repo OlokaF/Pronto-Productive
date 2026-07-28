@@ -14726,6 +14726,26 @@ function App({ onSwitchWorkspace = () => {} }) {
     }
     return cleaned;
   });
+  // One-time cleanup: strip Social Stories tasks from Firebase after it loads
+  const _ssCleanedRef = useR(false);
+  useE(() => {
+    if (_ssCleanedRef.current) return;
+    const SS = new Set(["social stories","social stories - casual","social stories - machine hire","social stories - machine for sale","social stories – casual","social stories – machine hire","social stories – machine for sale"]);
+    let hasAny = false;
+    for (const tasks of Object.values(tasksByDate)) {
+      if ((tasks||[]).some(t => SS.has((t.text||'').toLowerCase().trim()))) { hasAny = true; break; }
+    }
+    if (!hasAny) { _ssCleanedRef.current = true; return; }
+    _ssCleanedRef.current = true;
+    setTasksByDate(prev => {
+      const next = {};
+      for (const [dk, tasks] of Object.entries(prev)) {
+        const filtered = (tasks||[]).filter(t => !SS.has((t.text||'').toLowerCase().trim()));
+        if (filtered.length > 0) next[dk] = filtered;
+      }
+      return next;
+    });
+  }, [tasksByDate]);
   const [content, setContent] = useS(() => {
     // Seed from RAW_CONTENT then merge stored data on top (stored wins by updatedAt per item)
     const built = buildContentState();
