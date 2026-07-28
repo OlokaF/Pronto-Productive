@@ -14709,7 +14709,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     const loaded = loadOr("tasksByDate", () => buildTasks());
     // Migration: strip any recurring-template tasks that were auto-injected by old code
     const RECUR_TEXTS = new Set([
-      "social post -", "social stories - casual", "social stories - machine hire",
+      "social post -", "social stories", "social stories - casual", "social stories - machine hire",
       "social stories - machine for sale", "social stories – casual",
       "social stories – machine hire", "social stories – machine for sale",
     ]);
