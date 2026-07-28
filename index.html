@@ -17400,7 +17400,7 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
     if (!c.enabled || !c.accessToken) return;
     const run = async () => { await doPull.current(); await doPush.current(); };
     run();
-  }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll, selDate]);
+  }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll]);
 
   // Watch schedule changes — detect new/moved/deleted blocks from BOTH owners
   useE(() => {
