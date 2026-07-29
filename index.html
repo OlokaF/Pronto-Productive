@@ -17428,9 +17428,10 @@ function GCalPushButton() {
   if (!window._gcalSync) return null;
   return (
     <button onClick={() => {
+      window._gcalSync.repushAll();
       window._gcalSync.syncNow();
-      setMsg('Syncing…');
-      setTimeout(() => setMsg(''), 4000);
+      setMsg('Pushing…');
+      setTimeout(() => setMsg(''), 5000);
     }} style={{
       display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
       background:"#1a73e8", border:"none", borderRadius:8, cursor:"pointer",
