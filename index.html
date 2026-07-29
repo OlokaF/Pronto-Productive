@@ -17088,30 +17088,31 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
       pushDay: async (dk) => {
         const c = loadGcalConf();
         if (!c.enabled || !c.accessToken) return;
+        const token = c.accessToken;
         const allCals2 = c.allCalendars || [];
         const writableIds2 = allCals2.filter(x => x.accessRole === 'owner' || x.accessRole === 'writer').map(x => x.id);
-        const pushCalId2 = (c.calendarId && (writableIds2.includes(c.calendarId) || allCals2.length === 0)) ? c.calendarId : (writableIds2[0] || 'primary');
-        const token = c.accessToken;
-        // Step 1: delete all existing Pronto-tagged events for this day
-        try {
-          const tzOff = new Date().getTimezoneOffset();
-          const sign = tzOff <= 0 ? '+' : '-';
-          const absOff = Math.abs(tzOff);
-          const tzStr = sign + String(Math.floor(absOff/60)).padStart(2,'0') + ':' + String(absOff%60).padStart(2,'0');
-          const params = new URLSearchParams({ timeMin: dk+'T00:00:00'+tzStr, timeMax: dk+'T23:59:59'+tzStr, singleEvents:'true', maxResults:'250' });
-          const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(pushCalId2)+'/events?'+params);
-          const toDelete = (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG));
-          for (const ev of toDelete) {
-            try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(pushCalId2)+'/events/'+ev.id); } catch(_) {}
-          }
-        } catch(_) {}
-        // Step 2: create fresh events for all current blocks (runs after awaits above)
+        if (!writableIds2.length) writableIds2.push(c.calendarId || 'primary');
+        const pushCalId2 = (c.calendarId && writableIds2.includes(c.calendarId)) ? c.calendarId : writableIds2[0];
+        // Wide time window — covers full local day regardless of timezone offset
+        const base = new Date(dk + 'T00:00:00');
+        const timeMin = new Date(base.getTime() - 14*60*60*1000).toISOString();
+        const timeMax = new Date(base.getTime() + 38*60*60*1000).toISOString();
+        // Step 1: delete ALL Pronto-tagged events from ALL writable calendars for this day
+        for (const calId of writableIds2) {
+          try {
+            const params = new URLSearchParams({ timeMin, timeMax, singleEvents:'true', maxResults:'250' });
+            const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(calId)+'/events?'+params);
+            for (const ev of (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG))) {
+              try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(calId)+'/events/'+ev.id); } catch(_) {}
+            }
+          } catch(_) {}
+        }
+        // Step 2: recreate all current blocks fresh
         const sched = scheduleRef.current || {};
         const day = sched[dk] || {};
         for (const owner2 of ['oloka', 'vanja']) {
           for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
-            const id = _gcalBlockKey(b);
-            if (!id) continue;
+            if (!_gcalBlockKey(b)) continue;
             const body = blockToGcalBody({...b, gcalEventId:undefined, owner:owner2}, dk, tasksByDate);
             try { await gcalFetch(token, 'POST', '/calendars/'+encodeURIComponent(pushCalId2)+'/events', body); } catch(_) {}
           }
