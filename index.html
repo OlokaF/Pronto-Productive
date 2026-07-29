@@ -17092,25 +17092,31 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
         const writableIds2 = allCals2.filter(x => x.accessRole === 'owner' || x.accessRole === 'writer').map(x => x.id);
         const pushCalId2 = (c.calendarId && (writableIds2.includes(c.calendarId) || allCals2.length === 0)) ? c.calendarId : (writableIds2[0] || 'primary');
         const token = c.accessToken;
-        // Step 1: delete all existing Pronto-tagged events for this day from GCal
+        // Fetch existing Pronto events for this day and build blockId → gcalEventId map
+        const existingMap = {};
         try {
           const params = new URLSearchParams({ timeMin: dk+'T00:00:00Z', timeMax: dk+'T23:59:59Z', singleEvents:'true', maxResults:'100' });
           const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(pushCalId2)+'/events?'+params);
-          const prontoEvs = (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG));
-          for (const ev of prontoEvs) {
-            try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(pushCalId2)+'/events/'+ev.id); } catch(_) {}
+          for (const ev of (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG))) {
+            const blockId = (ev.description||'').split(':').slice(2).join(':');
+            if (blockId) existingMap[blockId] = ev.id;
           }
         } catch(_) {}
-        // Step 2: create fresh events for all current blocks on this day
+        // Queue update if block already exists in GCal, otherwise create
         const sched = scheduleRef.current || {};
         const day = sched[dk] || {};
         for (const owner2 of ['oloka', 'vanja']) {
           for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
-            const id = _gcalBlockKey(b);
-            if (id) pushQueueRef.current.push({ action:'create', block:{...b, gcalEventId:undefined, owner:owner2}, dateKey:dk });
+            const blockId = b.blockId || b.qeId || '';
+            const existingId = existingMap[blockId];
+            if (existingId) {
+              pushQueueRef.current.push({ action:'update', block:{...b, gcalEventId:existingId, owner:owner2}, dateKey:dk });
+            } else {
+              pushQueueRef.current.push({ action:'create', block:{...b, owner:owner2}, dateKey:dk });
+            }
           }
         }
-        setTimeout(() => doPush.current(), 300);
+        doPush.current();
       },
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
       repushAll: () => doRepushAll.current(),
