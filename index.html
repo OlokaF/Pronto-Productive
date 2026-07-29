@@ -6715,7 +6715,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 }}>&#x229E; Filters</button>
 
                 {/* Push to GCal — manual only */}
-                <GCalPushButton />
+                <GCalPushButton dk={dk} />
 
                 {/* Plan New Day */}
                 <button onClick={() => setPlanDayModal(true)} style={{
@@ -17085,6 +17085,17 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
         setSyncError('');
       },
       syncNow: () => setConf(c => ({ ...c, _forcePoll: Date.now() })),
+      pushDay: (dk) => {
+        const sched = scheduleRef.current || {};
+        const day = sched[dk] || {};
+        for (const owner2 of ['oloka', 'vanja']) {
+          for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
+            const id = _gcalBlockKey(b);
+            if (id) pushQueueRef.current.push({ action:'create', block:{...b, gcalEventId:undefined, owner:owner2}, dateKey:dk });
+          }
+        }
+        setTimeout(() => doPush.current(), 300);
+      },
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
       repushAll: () => doRepushAll.current(),
       cleanupNow: () => { saveGcalConf({ gcalCleanedAt: null }); doCleanup.current(); },
@@ -17423,15 +17434,16 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
   return null;
 }
 
-function GCalPushButton() {
+function GCalPushButton({ dk }) {
   const [msg, setMsg] = useS('');
   const conf = loadGcalConf();
   if (!conf.enabled || !conf.accessToken) return null;
   return (
     <button onClick={() => {
-      if (!window._gcalSync) { setMsg('Not ready — try again'); setTimeout(() => setMsg(''), 3000); return; }
-      setMsg('Pushing…');
-      window._gcalSync.repushAll();
+      if (!window._gcalSync) { setMsg('Not ready'); setTimeout(() => setMsg(''), 3000); return; }
+      setMsg('Syncing…');
+      window._gcalSync.syncNow();
+      if (dk) window._gcalSync.pushDay(dk);
       setTimeout(() => setMsg('Done ✓'), 2000);
       setTimeout(() => setMsg(''), 5000);
     }} style={{
@@ -17439,7 +17451,7 @@ function GCalPushButton() {
       background:"#1a73e8", border:"none", borderRadius:8, cursor:"pointer",
       fontFamily:"inherit", fontSize:11, fontWeight:700, color:"#fff",
     }}>
-      {msg || '↑ Push to GCal'}
+      {msg || '↕ Sync GCal'}
     </button>
   );
 }
