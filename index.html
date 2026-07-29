@@ -6714,16 +6714,6 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   color: showFilters ? T.navy : T.ink,
                 }}>&#x229E; Filters</button>
 
-                {/* Outlook Calendar Sync */}
-                {schedView === "day" && window.OutlookSyncButton && (
-                  <window.OutlookSyncButton
-                    dk={dk}
-                    daySchedule={daySchedule}
-                    taskNamesById={tasksByIdRef}
-                    todayUser={todayUser}
-                  />
-                )}
-
                 {/* Push to GCal — manual only */}
                 <GCalPushButton />
 
