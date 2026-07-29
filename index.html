@@ -6724,6 +6724,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   />
                 )}
 
+                {/* Push to GCal — manual only */}
+                <GCalPushButton />
+
                 {/* Plan New Day */}
                 <button onClick={() => setPlanDayModal(true)} style={{
                   display:"flex", alignItems:"center", gap:6, padding:"8px 18px",
@@ -12282,13 +12285,11 @@ const DEFAULT_TABS = [
   { key:"schedule",   label:"SCHEDULE",    on:true },
   { key:"content",    label:"CONTENT",     on:true },
   { key:"approvals",  label:"APPROVALS",   on:true },
-  { key:"emails",     label:"EMAILS",      on:false },
   { key:"video",      label:"VIDEO SCHED", on:true },
   { key:"plan",       label:"PLAN 2026",   on:true },
   { key:"team",       label:"TEAM",        on:true },
   { key:"uniform",    label:"UNIFORM",     on:true },
   { key:"resources",  label:"RESOURCES",   on:true },
-  { key:"analytics",  label:"ANALYTICS",   on:false },
   // settings is accessible via ⚙ gear icon in header — not in tab bar by default
   { key:"settings",   label:"SETTINGS",    on:false },
 ];
@@ -17424,50 +17425,28 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
     run();
   }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll]);
 
-  // Watch schedule changes — detect new/moved/deleted blocks from BOTH owners
-  useE(() => {
-    const c = loadGcalConf();
-    if (!c.enabled || !c.accessToken) { prevScheduleRef.current = schedule; return; }
-    const prev = prevScheduleRef.current;
-    prevScheduleRef.current = schedule;
-    if (!prev) return;
-
-    const allDates = new Set([...Object.keys(schedule), ...Object.keys(prev)]);
-    let dirty = false;
-
-    for (const dk of allDates) {
-      for (const owner of ['oloka', 'vanja']) {
-        const col     = (schedule[dk]?.[owner] || []).filter(b => !b.isExternal);
-        const prevCol = (prev[dk]?.[owner]     || []).filter(b => !b.isExternal);
-        const prevMap = new Map(prevCol.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
-        const curMap  = new Map(col.map(b => [_gcalBlockKey(b), b]).filter(([k]) => k));
-
-        for (const [id, block] of curMap) {
-          const was = prevMap.get(id);
-          if (!was && !block.gcalEventId) {
-            // New block — queue for push. Attach owner so push can write it back correctly.
-            pushQueueRef.current.push({ action:'create', block: { ...block, owner }, dateKey:dk });
-            dirty = true;
-          } else if (was && block.gcalEventId &&
-              (was.startMin !== block.startMin || was.durationMin !== block.durationMin)) {
-            pushQueueRef.current.push({ action:'update', block: { ...block, owner }, dateKey:dk });
-            dirty = true;
-          }
-        }
-        for (const [id, pb] of prevMap) {
-          if (!pb.gcalEventId) continue;
-          if (!curMap.has(id)) {
-            pushQueueRef.current.push({ action:'delete', gcalEventId:pb.gcalEventId, dateKey:dk });
-            dirty = true;
-          }
-        }
-      }
-    }
-    // Push immediately — don't wait for the 60s pull cycle
-    if (dirty) setTimeout(() => doPush.current(), 800);
-  }, [schedule]);
+  // Auto-push disabled — use the manual Push to GCal button in the Schedule tab instead
 
   return null;
+}
+
+function GCalPushButton() {
+  const T = useTheme();
+  const [msg, setMsg] = useS('');
+  if (!window._gcalSync) return null;
+  return (
+    <button onClick={() => {
+      window._gcalSync.syncNow();
+      setMsg('Syncing…');
+      setTimeout(() => setMsg(''), 4000);
+    }} style={{
+      display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
+      background:"#1a73e8", border:"none", borderRadius:8, cursor:"pointer",
+      fontFamily:"inherit", fontSize:11, fontWeight:700, color:"#fff",
+    }}>
+      {msg || '↑ Push to GCal'}
+    </button>
+  );
 }
 
 function GCalSettingsCard() {
