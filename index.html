@@ -17425,12 +17425,14 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
 
 function GCalPushButton() {
   const [msg, setMsg] = useS('');
-  if (!window._gcalSync) return null;
+  const conf = loadGcalConf();
+  if (!conf.enabled || !conf.accessToken) return null;
   return (
     <button onClick={() => {
-      window._gcalSync.repushAll();
-      window._gcalSync.syncNow();
+      if (!window._gcalSync) { setMsg('Not ready — try again'); setTimeout(() => setMsg(''), 3000); return; }
       setMsg('Pushing…');
+      window._gcalSync.repushAll();
+      setTimeout(() => setMsg('Done ✓'), 2000);
       setTimeout(() => setMsg(''), 5000);
     }} style={{
       display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
