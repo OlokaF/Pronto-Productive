@@ -1413,9 +1413,10 @@ function _mergeState(myState, theirState, myIdentity) {
     toBeCompleted: _mergeById(myState.toBeCompleted, theirState.toBeCompleted),
     ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
     toPostList: _mergeById(myState.toPostList, theirState.toPostList),
-    lunches: _mergeById(
-      (myState.lunches||[]).map(l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) }),
-      (theirState.lunches||[]).map(l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) })
+    lunches: (() => { const _ei = l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) }; return _mergeById((myState.lunches||[]).map(_ei).filter(l=>!lunchBlocked(l)),(theirState.lunches||[]).map(_ei).filter(l=>!lunchBlocked(l))); })(),
+    staff: _mergeById(
+      (myState.staff||[]).map(s => s.id ? s : { ...s, id: ('staff_'+(s.name||'').replace(/[^a-z0-9]/gi,'_').slice(0,20)+'_'+(s.started||s._addedAt||'')).slice(0,48) }),
+      (theirState.staff||[]).map(s => s.id ? s : { ...s, id: ('staff_'+(s.name||'').replace(/[^a-z0-9]/gi,'_').slice(0,20)+'_'+(s.started||s._addedAt||'')).slice(0,48) })
     ),
     categories: [...new Set([...(myState.categories||[]), ...(theirState.categories||[])])],
     uniform: _mergeUniform(myState.uniform, theirState.uniform),
@@ -9893,30 +9894,38 @@ function StaffCard({ staff, idx, onChange, onDelete }) {
   );
 }
 
+const DELETED_LUNCHES_KEY = 'prontoHQ.deletedLunchIds';
+// Module-level set — always current, no React timing issues
+const _deletedLunchIds = (() => { try { return new Set(JSON.parse(localStorage.getItem(DELETED_LUNCHES_KEY)||'[]')); } catch(_) { return new Set(); } })();
+const blockLunchId = (id) => { if (!id) return; _deletedLunchIds.add(id); try { localStorage.setItem(DELETED_LUNCHES_KEY, JSON.stringify([..._deletedLunchIds])); } catch(_) {} };
+const lunchBlocked = (l) => { const id = l.id || ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40); return id && _deletedLunchIds.has(id); };
+
 function TeamView({ staff, setStaff, lunches, setLunches }) {
   const [filter, setFilter] = useSt("All");
   const filters = ["All", "Male", "Female"];
 
   const [newStaffIdx, setNewStaffIdx] = useSt(null); // index of most-recently-added member
-  const updateStaff = (i, next) => setStaff(prev => prev.map((s, idx) => idx === i ? next : s));
-  const delStaff = (i) => { setStaff(prev => prev.filter((_, idx) => idx !== i)); if (newStaffIdx === i) setNewStaffIdx(null); };
+  const updateStaff = (i, next) => setStaff(prev => prev.map((s, idx) => idx === i ? { ...next, updatedAt: Date.now() } : s));
+  const delStaff = (i) => { setStaff(prev => prev.map((s, idx) => idx === i ? { ...s, deleted: true, updatedAt: Date.now() } : s)); if (newStaffIdx === i) setNewStaffIdx(null); };
   const addStaff = () => {
     setFilter("All");
     setStaff(prev => {
       setNewStaffIdx(prev.length);
-      return [...prev, { gender:"", name:"New team member", dob:"", started:"", about:"", personality:"", _addedAt: Date.now() }];
+      return [...prev, { id: 'staff_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), gender:"", name:"New team member", dob:"", started:"", about:"", personality:"", _addedAt: Date.now(), updatedAt: Date.now() }];
     });
   };
 
   const updateLunch = (i, patch) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch, updatedAt: Date.now() } : l));
   const toggleLunchHad = (i) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, had: !l.had, updatedAt: Date.now() } : l));
-  const deleteLunch = (id) => {
-    if (typeof id === 'number') setLunches(prev => prev.filter((_, idx) => idx !== id));
-    else setLunches(prev => prev.filter(l => l.id !== id));
+  const deleteLunchItem = (l) => {
+    const sid = l.id || ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40);
+    blockLunchId(sid);
+    setLunches(prev => prev.filter(x => !lunchBlocked(x)));
   };
   const addLunch = () => setLunches(prev => [...prev, { id: Date.now() + "_" + Math.random().toString(36).slice(2,6), name:"", date: new Date().toISOString().slice(0,10), type:"Photo", had: false, updatedAt: Date.now() }]);
 
   const filtered = staff.map((s, i) => ({ s, i })).filter(({ s }) => {
+    if (s.deleted) return false;
     if (filter === "All") return true;
     return (s.gender || "").toLowerCase() === filter.toLowerCase();
   }).sort((a, b) => {
@@ -9932,7 +9941,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
   const todayD = today();
   const upcoming = [];
   for (const s of staff) {
-    if (!s.dob) continue;
+    if (s.deleted || !s.dob) continue;
     const m = s.dob.match(/^\d{4}-(\d{2})-(\d{2})$/);
     if (!m) continue;
     const month = parseInt(m[1]), day = parseInt(m[2]);
@@ -9947,7 +9956,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
     <div>
       <div style={{ marginBottom:24, display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:14 }}>
         <div>
-          <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{staff.length} STAFF · CLICK ANY FIELD TO EDIT</p>
+          <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{staff.filter(s=>!s.deleted).length} STAFF · CLICK ANY FIELD TO EDIT</p>
           <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>THE TEAM</h1>
           <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Everyone at Pronto. Birthdays, start dates, personality colors and the things they're into.</p>
         </div>
@@ -10074,7 +10083,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:18, background:T.gold }}></span>
           <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>LUNCH WINNERS</h2>
-          <span style={{ color:T.muted, fontSize:11 }}>· {lunches.filter(l=>!l.had).length} remaining · {lunches.filter(l=>l.had).length} done</span>
+          <span style={{ color:T.muted, fontSize:11 }}>· {lunches.filter(l=>!lunchBlocked(l)&&!l.had).length} remaining · {lunches.filter(l=>!lunchBlocked(l)&&l.had).length} done</span>
         </div>
         <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", background:T.cardBg }}>
           {/* Header row */}
@@ -10086,10 +10095,10 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
             <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>STATUS</span>
             <span></span>
           </div>
-          {lunches.length === 0 && (
+          {lunches.filter(l=>!lunchBlocked(l)).length === 0 && (
             <p style={{ padding:"16px 14px", fontSize:11, color:T.faint, fontStyle:"italic" }}>No lunch winners yet — add one below</p>
           )}
-          {[...lunches]
+          {[...lunches].filter(l=>!lunchBlocked(l))
             .sort((a, b) => {
               const da = a.date || "", db = b.date || "";
               if (da < db) return -1; if (da > db) return 1; return 0;
@@ -10135,7 +10144,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
                     {l.had ? "DONE ✓" : "PENDING"}
                   </span>
                   {/* Delete */}
-                  <button onClick={() => deleteLunch(l.id || origIdx)} title="Remove row" style={{
+                  <button onClick={() => deleteLunchItem(l)} title="Remove row" style={{
                     background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:15,
                     padding:"0 4px", lineHeight:1, justifySelf:"center",
                   }} onMouseEnter={e=>e.currentTarget.style.color="#EF4444"} onMouseLeave={e=>e.currentTarget.style.color=T.faint}>×</button>
@@ -14727,16 +14736,16 @@ function App({ onSwitchWorkspace = () => {} }) {
     return cleaned;
   });
   // One-time cleanup: strip Social Stories tasks from Firebase after it loads
-  const _ssCleanedRef = useR(false);
   useE(() => {
-    if (_ssCleanedRef.current) return;
+    if (localStorage.getItem('prontoHQ.ssCleaned3')) return;
+    if (Object.keys(tasksByDate).length === 0) return; // wait for Firebase to load
     const SS = new Set(["social stories","social stories - casual","social stories - machine hire","social stories - machine for sale","social stories – casual","social stories – machine hire","social stories – machine for sale"]);
     let hasAny = false;
     for (const tasks of Object.values(tasksByDate)) {
       if ((tasks||[]).some(t => SS.has((t.text||'').toLowerCase().trim()))) { hasAny = true; break; }
     }
-    if (!hasAny) { _ssCleanedRef.current = true; return; }
-    _ssCleanedRef.current = true;
+    localStorage.setItem('prontoHQ.ssCleaned3', '1');
+    if (!hasAny) return;
     setTasksByDate(prev => {
       const next = {};
       for (const [dk, tasks] of Object.entries(prev)) {
@@ -15172,10 +15181,15 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.testimonials) setTestimonials(s.testimonials);
     if (s.photos) setPhotos(s.photos);
     if (s.plan) setPlan(s.plan);
-    if (s.staff) setStaff(s.staff);
+    if (s.staff) setStaff(prev => {
+      const ensureId = m => m.id ? m : { ...m, id: ('staff_'+(m.name||'').replace(/[^a-z0-9]/gi,'_').slice(0,20)+'_'+(m.started||m._addedAt||'')).slice(0,48) };
+      const incoming = (Array.isArray(s.staff)?s.staff:Object.values(s.staff||{})).map(ensureId);
+      return _mergeById((prev||[]).map(ensureId), incoming).filter(m => !m.deleted);
+    });
     if (s.lunches) setLunches(prev => {
       const ensureId = l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) };
-      return _mergeById((prev||[]).map(ensureId), (Array.isArray(s.lunches)?s.lunches:Object.values(s.lunches||{})).map(ensureId));
+      const incoming = (Array.isArray(s.lunches)?s.lunches:Object.values(s.lunches||{})).map(ensureId).filter(l => !lunchBlocked(l));
+      return _mergeById((prev||[]).map(ensureId), incoming).filter(l => !lunchBlocked(l));
     });
     if (s.schedule) setSchedule(s.schedule);
     if (s.actualSchedule) setActualSchedule(s.actualSchedule);
