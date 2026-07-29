@@ -17092,31 +17092,26 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
         const writableIds2 = allCals2.filter(x => x.accessRole === 'owner' || x.accessRole === 'writer').map(x => x.id);
         const pushCalId2 = (c.calendarId && (writableIds2.includes(c.calendarId) || allCals2.length === 0)) ? c.calendarId : (writableIds2[0] || 'primary');
         const token = c.accessToken;
-        // Fetch existing Pronto events for this day and build blockId → gcalEventId map
-        const existingMap = {};
+        // Step 1: delete all existing Pronto-tagged events for this day
         try {
-          const params = new URLSearchParams({ timeMin: dk+'T00:00:00Z', timeMax: dk+'T23:59:59Z', singleEvents:'true', maxResults:'100' });
+          const params = new URLSearchParams({ timeMin: dk+'T00:00:00Z', timeMax: dk+'T23:59:59Z', singleEvents:'true', maxResults:'250' });
           const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(pushCalId2)+'/events?'+params);
-          for (const ev of (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG))) {
-            const blockId = (ev.description||'').split(':').slice(2).join(':');
-            if (blockId) existingMap[blockId] = ev.id;
+          const toDelete = (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG));
+          for (const ev of toDelete) {
+            try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(pushCalId2)+'/events/'+ev.id); } catch(_) {}
           }
         } catch(_) {}
-        // Queue update if block already exists in GCal, otherwise create
+        // Step 2: create fresh events for all current blocks (runs after awaits above)
         const sched = scheduleRef.current || {};
         const day = sched[dk] || {};
         for (const owner2 of ['oloka', 'vanja']) {
           for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
-            const blockId = b.blockId || b.qeId || '';
-            const existingId = existingMap[blockId];
-            if (existingId) {
-              pushQueueRef.current.push({ action:'update', block:{...b, gcalEventId:existingId, owner:owner2}, dateKey:dk });
-            } else {
-              pushQueueRef.current.push({ action:'create', block:{...b, owner:owner2}, dateKey:dk });
-            }
+            const id = _gcalBlockKey(b);
+            if (!id) continue;
+            const body = blockToGcalBody({...b, gcalEventId:undefined, owner:owner2}, dk, tasksByDate);
+            try { await gcalFetch(token, 'POST', '/calendars/'+encodeURIComponent(pushCalId2)+'/events', body); } catch(_) {}
           }
         }
-        doPush.current();
       },
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
       repushAll: () => doRepushAll.current(),
@@ -17464,8 +17459,11 @@ function GCalPushButton({ dk }) {
     <button onClick={() => {
       if (!window._gcalSync) { setMsg('Not ready'); setTimeout(() => setMsg(''), 3000); return; }
       setMsg('Syncing…');
-      window._gcalSync.syncNow();
-      if (dk) window._gcalSync.pushDay(dk);
+      if (dk) {
+        window._gcalSync.pushDay(dk).then(() => setMsg('Done ✓')).catch(() => setMsg('Error'));
+      } else {
+        window._gcalSync.syncNow();
+      }
       setTimeout(() => setMsg('Done ✓'), 2000);
       setTimeout(() => setMsg(''), 5000);
     }} style={{
