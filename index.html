@@ -6052,8 +6052,8 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
   const dk = isoDate(selDate);
   const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event" && !t.recurring);
   const daySchedule = {
-    vanja: [...(schedule[dk]?.vanja||[])],
-    oloka: [...(schedule[dk]?.oloka||[])],
+    vanja: [...(schedule[dk]?.vanja||[]), ...(externalGcalEvents[dk]?.vanja||[])],
+    oloka: [...(schedule[dk]?.oloka||[]), ...(externalGcalEvents[dk]?.oloka||[])],
   };
   const dayActual   = ((actualSchedule || {})[dk]) || { vanja: [], oloka: [] };
 
