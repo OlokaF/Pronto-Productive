@@ -17091,7 +17091,12 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
         for (const owner2 of ['oloka', 'vanja']) {
           for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
             const id = _gcalBlockKey(b);
-            if (id) pushQueueRef.current.push({ action:'create', block:{...b, gcalEventId:undefined, owner:owner2}, dateKey:dk });
+            if (!id) continue;
+            if (b.gcalEventId) {
+              pushQueueRef.current.push({ action:'update', block:{...b, owner:owner2}, dateKey:dk });
+            } else {
+              pushQueueRef.current.push({ action:'create', block:{...b, owner:owner2}, dateKey:dk });
+            }
           }
         }
         setTimeout(() => doPush.current(), 300);
