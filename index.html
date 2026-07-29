@@ -17388,16 +17388,6 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
           return next;
         });
       }
-      // Also write to Firebase so Vanja can see them — replaces old isExternal blocks for these dates
-      setSchedule(prev => {
-        const next = { ...prev };
-        for (const dk of dates) {
-          const existing = (next[dk]?.[pullOwner] || []).filter(b => !b.isExternal);
-          next[dk] = { ...next[dk], [pullOwner]: [...existing, ...(byDate[dk] || [])] };
-        }
-        return next;
-      });
-
       setLastSync(new Date().toISOString());
       setStatus('ok');
       setSyncError('');
