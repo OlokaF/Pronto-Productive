@@ -17094,7 +17094,11 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
         const token = c.accessToken;
         // Step 1: delete all existing Pronto-tagged events for this day
         try {
-          const params = new URLSearchParams({ timeMin: dk+'T00:00:00Z', timeMax: dk+'T23:59:59Z', singleEvents:'true', maxResults:'250' });
+          const tzOff = new Date().getTimezoneOffset();
+          const sign = tzOff <= 0 ? '+' : '-';
+          const absOff = Math.abs(tzOff);
+          const tzStr = sign + String(Math.floor(absOff/60)).padStart(2,'0') + ':' + String(absOff%60).padStart(2,'0');
+          const params = new URLSearchParams({ timeMin: dk+'T00:00:00'+tzStr, timeMax: dk+'T23:59:59'+tzStr, singleEvents:'true', maxResults:'250' });
           const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(pushCalId2)+'/events?'+params);
           const toDelete = (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG));
           for (const ev of toDelete) {
