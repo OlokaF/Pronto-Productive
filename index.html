@@ -6048,7 +6048,7 @@ function BreakBlockStrip({ drag, setDrag, addBreakBlock, activeUser, daySchedule
 // ScheduleView
 // ─────────────────────────────────────────────────────────────────────────────
 const SCHED_SPAN_COLORS = ["#F59E0B","#3B82F6","#10B981","#EF4444","#8B5CF6","#F97316","#EC4899","#14B8A6"];
-function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans, onPickDay, todayUser, isMobile = false, externalGcalEvents = {} }) {
+function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, setDayNotes, actualSchedule, setActualSchedule, schedSpans = [], setSchedSpans, onPickDay, todayUser, isMobile = false, externalGcalEvents = {}, setExternalGcalEvents }) {
   const dk = isoDate(selDate);
   const tasksToday = (tasksByDate[dk] || []).filter(t => t.category !== "Event" && t.owner !== "event" && !t.recurring);
   const daySchedule = {
@@ -7730,7 +7730,16 @@ function TimeColumn({
               lane={li.lane} totalLanes={li.totalLanes}
               onResize={(dur) => onUpdate(owner, b.taskId, { durationMin: dur }, b.breakId, b.qeId, b.blockId)}
               onMoveStart={(min) => onUpdate(owner, b.taskId, { startMin: min }, b.breakId, b.qeId, b.blockId)}
-              onRemove={() => onRemove(owner, b.taskId, b.breakId, b.qeId, b.blockId)}
+              onRemove={() => b.isExternal
+                ? setExternalGcalEvents && setExternalGcalEvents(prev => {
+                    const copy = { ...prev, [dk]: { ...(prev[dk]||{}) } };
+                    for (const ow of ['oloka','vanja']) {
+                      if (copy[dk][ow]) copy[dk][ow] = copy[dk][ow].filter(x => x !== b);
+                    }
+                    return copy;
+                  })
+                : onRemove(owner, b.taskId, b.breakId, b.qeId, b.blockId)
+              }
               onOpen={() => !b.isBreak && onOpenEdit && onOpenEdit(b.taskId)}
               onDragStart={() => setDrag({ taskId: b.taskId, blockId: b.blockId, breakId: b.breakId, isBreak: b.isBreak, breakLabel: b.breakLabel, qeId: b.qeId, isQuickEvent: b.isQuickEvent, qeTitle: b.qeTitle, durationMin: b.durationMin, fromOwner: owner, fromCol: "sched" })}
               onDragEnd={() => setDrag(null)}
@@ -15809,7 +15818,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           <MonthView selDate={selDate} tasksByDate={tasksByDate} content={content} onPickDate={onPickDate} onMoveTask={onMoveTask} onAdd={onAdd}/>
         )}
         {tab === "schedule" && (
-          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser} isMobile={isMobile} externalGcalEvents={externalGcalEvents}/>
+          <ScheduleView selDate={selDate} tasksByDate={tasksByDate} schedule={schedule} setSchedule={setSchedule} dayNotes={dayNotes} setDayNotes={setDayNotes} actualSchedule={actualSchedule} setActualSchedule={setActualSchedule} schedSpans={schedSpans} setSchedSpans={setSchedSpans} onPickDay={setSelDate} todayUser={todayUser} isMobile={isMobile} externalGcalEvents={externalGcalEvents} setExternalGcalEvents={setExternalGcalEvents}/>
         )}
         {tab === "content" && <ContentCalendar selDate={selDate} content={content} onSetContent={setContent}
           toPostList={toPostList} setToPostList={setToPostList}
@@ -17085,6 +17094,7 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
         setSyncError('');
       },
       syncNow: () => setConf(c => ({ ...c, _forcePoll: Date.now() })),
+      pullNow: () => doPull.current(true),
       pushDay: async (dk) => {
         const c = loadGcalConf();
         if (!c.enabled || !c.accessToken) return;
@@ -17458,23 +17468,34 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
 
 function GCalPushButton({ dk }) {
   const [msg, setMsg] = useS('');
+  const [running, setRunning] = useS(false);
   const conf = loadGcalConf();
   if (!conf.enabled || !conf.accessToken) return null;
   return (
-    <button onClick={() => {
-      if (!window._gcalSync) { setMsg('Not ready'); setTimeout(() => setMsg(''), 3000); return; }
+    <button disabled={running} onClick={() => {
+      if (!window._gcalSync || running) return;
+      setRunning(true);
       setMsg('Syncing…');
       if (dk) {
-        window._gcalSync.pushDay(dk).then(() => setMsg('Done ✓')).catch(() => setMsg('Error'));
+        window._gcalSync.pushDay(dk)
+          .then(() => {
+            setMsg('Done ✓');
+            // Refresh external events so deleted GCal events disappear
+            window._gcalSync.pullNow && window._gcalSync.pullNow();
+          })
+          .catch(() => setMsg('Error'))
+          .finally(() => { setRunning(false); setTimeout(() => setMsg(''), 4000); });
       } else {
         window._gcalSync.syncNow();
+        setRunning(false);
+        setTimeout(() => setMsg(''), 3000);
       }
-      setTimeout(() => setMsg('Done ✓'), 2000);
-      setTimeout(() => setMsg(''), 5000);
     }} style={{
       display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
-      background:"#1a73e8", border:"none", borderRadius:8, cursor:"pointer",
+      background: running ? "#666" : "#1a73e8", border:"none", borderRadius:8,
+      cursor: running ? "default" : "pointer",
       fontFamily:"inherit", fontSize:11, fontWeight:700, color:"#fff",
+      opacity: running ? 0.7 : 1,
     }}>
       {msg || '↕ Sync GCal'}
     </button>
