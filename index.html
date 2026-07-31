@@ -5489,22 +5489,25 @@ function PlanView({ plan, setPlan }) {
     "Staff Challenges": T.oloka,
   };
 
-  // group items
+  const todayD = today();
+  const [planYear, setPlanYear] = useSh(todayD.getFullYear() >= 2026 ? todayD.getFullYear() : 2026);
+
+  // group items for current year (items without year field default to 2026)
   const grouped = {};
   for (const sec of PLAN_SECTIONS) grouped[sec.key] = Array.from({ length:12 }, () => []);
   for (const it of plan.items) {
+    if ((it.year || 2026) !== planYear) continue;
     if (!grouped[it.section]) grouped[it.section] = Array.from({ length:12 }, () => []);
     grouped[it.section][it.monthIdx].push(it);
   }
 
-  const todayD = today();
-  const curMonth = todayD.getMonth();
+  const curMonth = planYear === todayD.getFullYear() ? todayD.getMonth() : -1;
 
   const updateItem = (id, text) => setPlan(p => ({ ...p, items: p.items.map(it => it.id === id ? { ...it, text } : it) }));
   const delItem = (id) => setPlan(p => ({ ...p, items: p.items.filter(it => it.id !== id) }));
   const addItem = (section, monthIdx) => setPlan(p => {
     const id = Date.now();
-    return { ...p, items: [...p.items, { id, section, monthIdx, text: "" }] };
+    return { ...p, items: [...p.items, { id, section, monthIdx, text: "", year: planYear }] };
   });
 
   const updateChallenge = (i, patch) => setPlan(p => ({ ...p, challenges: p.challenges.map((c, idx) => idx === i ? { ...c, ...patch } : c) }));
@@ -5515,7 +5518,13 @@ function PlanView({ plan, setPlan }) {
     <div>
       <div style={{ marginBottom:24 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>FOUR QUARTERS · TWELVE MONTHS · CLICK ANY CELL TO EDIT</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:8 }}>MARKETING PLAN 2026</h1>
+        <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:8 }}>
+          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>YEARLY PLAN {planYear}</h1>
+          <div style={{ display:"flex", gap:4, alignItems:"center", paddingTop:6 }}>
+            <button onClick={() => setPlanYear(y => y - 1)} style={{ width:32, height:32, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:16, fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+            <button onClick={() => setPlanYear(y => y + 1)} style={{ width:32, height:32, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:16, fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+          </div>
+        </div>
         <p style={{ color:T.muted, fontSize:13.5 }}>Holidays, campaigns, supporting content and team challenges across the year. Hover any cell to add new items.</p>
       </div>
 
@@ -9050,7 +9059,7 @@ function MachinesToPushPanel({ machinesToPush, setMachinesToPush, compact }) {
   );
 }
 
-function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, dayNotes, setDayNotes, view: viewProp, setView: setViewProp, machinesToPush, setMachinesToPush }) {
+function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPostList, dayNotes, setDayNotes, view: viewProp, setView: setViewProp, machinesToPush, setMachinesToPush, setSelDate }) {
   const [viewLocal, setViewLocal] = useSc("week");
   const view = viewProp !== undefined ? viewProp : viewLocal;
   const setView = setViewProp || setViewLocal;
@@ -9209,6 +9218,20 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
               border:`1px solid ${showMachinesPanel ? T.navy : T.border}`,
               borderRadius:6, fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em",
             }}>🚜 MACHINES{(machinesToPush||[]).filter(m=>!m.deleted).length > 0 ? ` (${(machinesToPush||[]).filter(m=>!m.deleted).length})` : ""}</button>
+          )}
+          {setSelDate && (
+            <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
+              {[[-1,"‹"],[1,"›"]].map(([delta, label]) => (
+                <button key={delta} onClick={() => {
+                  if (calView === "month") setSelDate(d => { const nd = new Date(d); nd.setMonth(nd.getMonth() + delta); return nd; });
+                  else setSelDate(d => addDays(d, delta * 7));
+                }} style={{
+                  padding:"7px 12px", border:"none", background:T.surface, color:T.ink,
+                  cursor:"pointer", fontFamily:"inherit", fontSize:15, lineHeight:1,
+                  borderRight: delta < 0 ? `1px solid ${T.border}` : "none",
+                }}>{label}</button>
+              ))}
+            </div>
           )}
           <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden" }}>
             {calViewBtn("week","Week")}
@@ -12285,7 +12308,7 @@ const DEFAULT_TABS = [
   { key:"content",    label:"CONTENT",     on:true },
   { key:"approvals",  label:"APPROVALS",   on:true },
   { key:"video",      label:"VIDEO SCHED", on:true },
-  { key:"plan",       label:"PLAN 2026",   on:true },
+  { key:"plan",       label:"YEARLY PLAN", on:true },
   { key:"team",       label:"TEAM",        on:true },
   { key:"uniform",    label:"UNIFORM",     on:true },
   { key:"resources",  label:"RESOURCES",   on:true },
@@ -15824,7 +15847,8 @@ function App({ onSwitchWorkspace = () => {} }) {
           toPostList={toPostList} setToPostList={setToPostList}
           dayNotes={dayNotes} setDayNotes={setDayNotes}
           view={contentView} setView={setContentView}
-          machinesToPush={machinesToPush} setMachinesToPush={setMachinesToPush}/>}
+          machinesToPush={machinesToPush} setMachinesToPush={setMachinesToPush}
+          setSelDate={setSelDate}/>}
         {tab === "approvals" && <PostApprovalView postApprovals={postApprovals} setPostApprovals={setPostApprovals} todayUser={todayUser} avatars={avatars}/>}
         {(() => {
           const MEMBER_COLORS = { vanja: T.vanja, oloka: T.oloka };
@@ -18404,6 +18428,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
         date: new Date().toISOString().slice(0,10),
         staff: issueStaff,
         item: issueModal.itemLabel,
+        itemKey: issueModal.itemKey,
         size: size || null,
         qty: issueQty,
         sec,
@@ -18592,11 +18617,30 @@ function UniformView({ uniform, setUniform, staff = [] }) {
     : issueLog.map((e, i) => ({ e, i }));
 
   const deleteLogEntry = (origIdx) => {
+    const entry = issueLog[origIdx];
     setUniform(prev => {
       const next = { ...prev };
+      // Restore stock for this issuance
+      if (entry && entry.qty && entry.sec) {
+        let itemKey = entry.itemKey;
+        if (!itemKey) {
+          const sectionItems = entry.sec === 'mens' ? MENS_ITEMS : entry.sec === 'womens' ? WOMENS_ITEMS : entry.sec === 'merch' ? MERCH_ITEMS : [];
+          const found = sectionItems.find(it => entry.item === `${it.label} (${entry.size})` || entry.item === it.label);
+          itemKey = found ? found.key : null;
+        }
+        if (itemKey) {
+          const k = entry.size || "__qty__";
+          const s = { ...(next[entry.sec] || {}) };
+          const it = { ...(s[itemKey] || {}) };
+          it[k] = (it[k] || 0) + (entry.qty || 1);
+          s[itemKey] = it;
+          next[entry.sec] = s;
+        }
+      }
       const log = [...(next.log || [])];
       log.splice(origIdx, 1);
       next.log = log;
+      next._updatedAt = Date.now();
       return next;
     });
   };
