@@ -2252,10 +2252,10 @@ function recRuleMatchesDate(rule, dateKey) {
 
 // ── TASK ADD MODAL ────────────────────────────────────────────────────────────
 function TaskAddModal({ onClose, onAdd, dateKey, defaultOwner }) {
-  const [text,     setText]     = useSh('');
-  const [priority, setPriority] = useSh('Normal');
-  const [category, setCategory] = useSh((window.prontoCats||CATS)[0]||'Social Post');
-  const [owner,    setOwner]    = useSh(defaultOwner || 'oloka');
+  const [text,     setText]     = useStateV('');
+  const [priority, setPriority] = useStateV('Normal');
+  const [category, setCategory] = useStateV((window.prontoCats||CATS)[0]||'Social Post');
+  const [owner,    setOwner]    = useStateV(defaultOwner || 'oloka');
 
   const submit = () => {
     if (!text.trim()) return;
@@ -2316,15 +2316,15 @@ const FREQ_OPTS = [
 ];
 
 function RecurringRuleModal({ onClose, onSave, editRule }) {
-  const [text,     setText]     = useSh(editRule?.text || '');
-  const [category, setCategory] = useSh(editRule?.category || (window.prontoCats||CATS)[0]||'Social Post');
-  const [priority, setPriority] = useSh(editRule?.priority || 'Normal');
-  const [owner,    setOwner]    = useSh(editRule?.owner || 'oloka');
-  const [freq,     setFreq]     = useSh(editRule?.freq || 'weekly');
-  const [dow,      setDow]      = useSh(editRule?.dow ?? 1);
-  const [nth,      setNth]      = useSh(editRule?.nth || 1);
-  const [refDate,  setRefDate]  = useSh(editRule?.refDate || new Date().toISOString().slice(0,10));
-  const [dates,    setDates]    = useSh((editRule?.dates||[]).join(', '));
+  const [text,     setText]     = useStateV(editRule?.text || '');
+  const [category, setCategory] = useStateV(editRule?.category || (window.prontoCats||CATS)[0]||'Social Post');
+  const [priority, setPriority] = useStateV(editRule?.priority || 'Normal');
+  const [owner,    setOwner]    = useStateV(editRule?.owner || 'oloka');
+  const [freq,     setFreq]     = useStateV(editRule?.freq || 'weekly');
+  const [dow,      setDow]      = useStateV(editRule?.dow ?? 1);
+  const [nth,      setNth]      = useStateV(editRule?.nth || 1);
+  const [refDate,  setRefDate]  = useStateV(editRule?.refDate || new Date().toISOString().slice(0,10));
+  const [dates,    setDates]    = useStateV((editRule?.dates||[]).join(', '));
 
   const handleSave = () => {
     if (!text.trim()) return;
@@ -2425,7 +2425,7 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
 
 // ── RECURRING RULES MANAGER (shown at bottom of day view) ───────────────────
 function RecurringRulesManager({ rules, onEdit, onDelete }) {
-  const [open, setOpen] = useSh(false);
+  const [open, setOpen] = useStateV(false);
   if (!rules.length) return null;
   return (
     <div style={{ marginTop:24, border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden' }}>
