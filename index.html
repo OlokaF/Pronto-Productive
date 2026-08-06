@@ -2261,7 +2261,12 @@ function recRuleMatchesDate(rule, dateKey) {
     }
     case 'month_end_offset': {
       const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      return d.getDate() === lastDay - Number(rule.endOffset || 7);
+      const target = new Date(d.getFullYear(), d.getMonth(), lastDay - Number(rule.endOffset || 7));
+      const dow = target.getDay();
+      const fireDate = dow === 0 ? new Date(target.getFullYear(), target.getMonth(), target.getDate() + 1)
+                     : dow === 6 ? new Date(target.getFullYear(), target.getMonth(), target.getDate() - 1)
+                     : target;
+      return d.getDate() === fireDate.getDate() && d.getMonth() === fireDate.getMonth();
     }
     case 'specific': return (rule.dates||[]).includes(dateKey);
     default: return false;
