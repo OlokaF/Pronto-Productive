@@ -2466,7 +2466,7 @@ function RecurringRulesManager({ rules, onEdit, onDelete }) {
 }
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars }) {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars }) {
   const [personView, setPersonView] = useStateV("both"); // "both"|"vanja"|"oloka"
   const [viewFilter, setViewFilter] = useStateV("all");
   const [activeTag, setActiveTag] = useStateV(null);
@@ -2874,7 +2874,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 tasks={vanjaFiltered} allTasks={vanjaAll} dateKey={dateKey}
                 selectedTaskId={selectedTaskId} onSelectTask={setSelectedTaskId}
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
-                onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
+                onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeProject={onChangeProject} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
                 selectMode={selectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds}
@@ -2883,7 +2883,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 tasks={olokaFiltered} allTasks={olokaAll} dateKey={dateKey}
                 selectedTaskId={selectedTaskId} onSelectTask={setSelectedTaskId}
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
-                onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeSubtasks={onChangeSubtasks}
+                onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeProject={onChangeProject} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
                 onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
                 selectMode={selectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds}
@@ -3091,7 +3091,7 @@ function SharedTasksPanel({ dateKey, dayNotes, setDayNotes, recurringTasks, toBe
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars, selectMode, selectedIds, setSelectedIds }) {
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars, selectMode, selectedIds, setSelectedIds }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
@@ -3171,13 +3171,24 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                 }} style={{ marginTop:10, accentColor:accent, width:16, height:16, flexShrink:0, cursor:"pointer" }} />
               )}
               <div style={{ flex:1, minWidth:0 }}>
-              {t.project && t.project !== 'all' && (
-                <div style={{ marginBottom:3 }}>
-                  <span style={{ fontSize:9, fontWeight:800, padding:"1px 7px", borderRadius:10, background:t.project==='pronto'?T.navy+"18":t.project==='trade'?T.gold+"22":"#8B5CF618", color:t.project==='pronto'?T.navy:t.project==='trade'?T.gold:"#8B5CF6", letterSpacing:"0.05em" }}>
-                    {t.project==='pronto'?'⬡ PRONTO HIRE':t.project==='trade'?'/// TRADE HIRE':'◈ BOTH'}
-                  </span>
-                </div>
-              )}
+              {(() => {
+                const PROJS = [null,'pronto','trade','both'];
+                const cur = (t.project && t.project!=='all') ? t.project : null;
+                const next = PROJS[(PROJS.indexOf(cur)+1) % PROJS.length];
+                const label = cur==='pronto'?'⬡ PRONTO HIRE':cur==='trade'?'/// TRADE HIRE':cur==='both'?'◈ BOTH':null;
+                const col = cur==='pronto'?T.navy:cur==='trade'?T.gold:cur==='both'?'#8B5CF6':T.faint;
+                return (
+                  <div style={{ marginBottom:3 }}>
+                    <button onClick={e=>{ e.stopPropagation(); onChangeProject&&onChangeProject(t.id,next); }}
+                      title={cur?`Project: ${cur} — click to change`:"Assign project"}
+                      style={{ fontSize:9, fontWeight:cur?800:600, padding:"1px 7px", borderRadius:10, background:cur?col+"18":"transparent", color:cur?col:T.faint, border:`1px ${cur?"solid":"dashed"} ${cur?col+"40":T.border}`, cursor:"pointer", letterSpacing:"0.04em", fontFamily:"inherit", opacity:cur?1:0.5, transition:"opacity 0.15s" }}
+                      onMouseEnter={e=>e.currentTarget.style.opacity='1'}
+                      onMouseLeave={e=>e.currentTarget.style.opacity=cur?'1':'0.5'}>
+                      {label||'+ project'}
+                    </button>
+                  </div>
+                );
+              })()}
               <TaskRow task={t} dateKey={dateKey}
                 onToggle={() => onToggle(t.id)}
                 onChangePriority={(p) => onChangePriority(t.id, p)}
@@ -15762,6 +15773,11 @@ function App({ onSwitchWorkspace = () => {} }) {
     for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, category, updatedAt: _now() } : t);
     return next;
   });
+  const onChangeProject = (id, project) => setTasksByDate(prev => {
+    const next = { ...prev };
+    for (const dk of Object.keys(next)) next[dk] = next[dk].map(t => t.id === id ? { ...t, project: project||undefined, updatedAt: _now() } : t);
+    return next;
+  });
   const onAdd = (dateKey, data) => {
     logActivity(todayUser, "added task", data.text || "New task");
     setTasksByDate(prev => {
@@ -16274,7 +16290,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         {tab === "tasks" && view === "day" && (
           <DayView selDate={selDate} tasksByDate={tasksByDate}
             onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
-            onChangeText={onChangeText} onChangeCategory={onChangeCategory}
+            onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeProject={onChangeProject}
             onChangeSubtasks={onChangeSubtasks} onConvertToSubtask={onConvertToSubtask}
             onChangeNotes={onChangeNotes}
             onAdd={onAdd} onDelete={onDeleteTask} onShift={onShift} onMoveTask={onMoveTask} isMobile={isMobile}
