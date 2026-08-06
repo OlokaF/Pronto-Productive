@@ -2259,6 +2259,10 @@ function recRuleMatchesDate(rule, dateKey) {
       }
       return cnt === (rule.nth || 1);
     }
+    case 'month_end_offset': {
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      return d.getDate() === lastDay - Number(rule.endOffset || 7);
+    }
     case 'specific': return (rule.dates||[]).includes(dateKey);
     default: return false;
   }
@@ -2330,12 +2334,13 @@ function TaskAddModal({ onClose, onAdd, dateKey, defaultOwner }) {
 // ── RECURRING RULE MODAL ─────────────────────────────────────────────────────
 const DAYS_SHORT2 = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const FREQ_OPTS = [
-  { key:'weekly',      label:'Weekly' },
-  { key:'fortnightly', label:'Fortnightly' },
-  { key:'weekdaily',   label:'Every weekday (Mon–Fri)' },
-  { key:'daily',       label:'Every day' },
-  { key:'nth_weekday', label:'1st/2nd/3rd/4th of month' },
-  { key:'specific',    label:'Specific dates' },
+  { key:'weekly',           label:'Weekly' },
+  { key:'fortnightly',      label:'Fortnightly' },
+  { key:'weekdaily',        label:'Every weekday (Mon–Fri)' },
+  { key:'daily',            label:'Every day' },
+  { key:'nth_weekday',      label:'1st/2nd/3rd/4th of month' },
+  { key:'month_end_offset', label:'N days before end of month' },
+  { key:'specific',         label:'Specific dates' },
 ];
 
 function RecurringRuleModal({ onClose, onSave, editRule }) {
@@ -2347,7 +2352,10 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
   const [dow,      setDow]      = useStateV(editRule?.dow ?? 1);
   const [nth,      setNth]      = useStateV(editRule?.nth || 1);
   const [refDate,  setRefDate]  = useStateV(editRule?.refDate || new Date().toISOString().slice(0,10));
-  const [dates,    setDates]    = useStateV((editRule?.dates||[]).join(', '));
+  const [endOffset, setEndOffset] = useStateV(editRule?.endOffset || 7);
+  const [selectedDates, setSelectedDates] = useStateV(() => new Set(editRule?.dates || []));
+  const [calOff, setCalOff] = useStateV(0);
+  const toggleDate = (dk) => setSelectedDates(prev => { const n = new Set(prev); n.has(dk) ? n.delete(dk) : n.add(dk); return n; });
 
   const handleSave = () => {
     if (!text.trim()) return;
@@ -2358,7 +2366,8 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
       dow:      ['weekly','fortnightly','nth_weekday'].includes(freq) ? Number(dow) : undefined,
       nth:      freq === 'nth_weekday' ? Number(nth) : undefined,
       refDate:  freq === 'fortnightly' ? refDate : undefined,
-      dates:    freq === 'specific' ? dates.split(',').map(s=>s.trim()).filter(Boolean) : undefined,
+      endOffset: freq === 'month_end_offset' ? Number(endOffset) : undefined,
+      dates:    freq === 'specific' ? [...selectedDates].sort() : undefined,
     });
     onClose();
   };
@@ -2430,10 +2439,57 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
               <p style={{ fontSize:10, color:T.faint, marginTop:4 }}>The task will occur on the selected day every 2 weeks starting from this date.</p>
             </div>
           )}
-          {freq === 'specific' && (
+          {freq === 'specific' && (() => {
+            const calBase = new Date(new Date().getFullYear(), new Date().getMonth() + calOff, 1);
+            const calYear = calBase.getFullYear();
+            const calMonth = calBase.getMonth();
+            const calMonthName = ['January','February','March','April','May','June','July','August','September','October','November','December'][calMonth];
+            const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+            const firstDow = new Date(calYear, calMonth, 1).getDay();
+            const cells = [];
+            for (let i=0; i<firstDow; i++) cells.push(null);
+            for (let d=1; d<=daysInMonth; d++) cells.push(d);
+            return (
+              <div>
+                <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:'0.12em', marginBottom:8 }}>PICK DATES — click to toggle</p>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <button onClick={()=>setCalOff(calOff-1)} style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, padding:'3px 8px', cursor:'pointer', color:T.ink, fontSize:14 }}>‹</button>
+                  <span style={{ fontWeight:800, fontSize:12, color:T.heading }}>{calMonthName} {calYear}</span>
+                  <button onClick={()=>setCalOff(calOff+1)} style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, padding:'3px 8px', cursor:'pointer', color:T.ink, fontSize:14 }}>›</button>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3, marginBottom:6 }}>
+                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>(
+                    <div key={d} style={{ textAlign:'center', fontSize:9, fontWeight:800, color:T.faint, letterSpacing:'0.05em', paddingBottom:2 }}>{d}</div>
+                  ))}
+                  {cells.map((day, i) => {
+                    if (!day) return <div key={`e${i}`}/>;
+                    const dk = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const sel = selectedDates.has(dk);
+                    return (
+                      <button key={dk} onClick={()=>toggleDate(dk)}
+                        style={{ textAlign:'center', fontSize:11, fontWeight:sel?800:400, padding:'5px 2px', borderRadius:5, cursor:'pointer', border:`1.5px solid ${sel?T.navy:'transparent'}`, background:sel?T.navy+'18':'transparent', color:sel?T.navy:T.ink, transition:'all 0.1s' }}>
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedDates.size > 0 && (
+                  <p style={{ fontSize:10, color:T.faint, marginTop:4 }}>{selectedDates.size} date{selectedDates.size>1?'s':''} selected</p>
+                )}
+              </div>
+            );
+          })()}
+          {freq === 'month_end_offset' && (
             <div>
-              <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:'0.12em', marginBottom:5 }}>DATES (comma-separated YYYY-MM-DD)</p>
-              <input value={dates} onChange={e=>setDates(e.target.value)} placeholder="2026-08-11, 2026-08-25, 2026-09-08" style={{ width:'100%', padding:'8px 10px', border:`1px solid ${T.border}`, borderRadius:7, fontSize:12, color:T.ink, background:T.surface, fontFamily:'inherit', outline:'none', boxSizing:'border-box' }}/>
+              <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:'0.12em', marginBottom:8 }}>DAYS BEFORE END OF MONTH</p>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <input type="number" min={1} max={28} value={endOffset} onChange={e=>setEndOffset(Math.max(1,Math.min(28,Number(e.target.value))))}
+                  style={{ width:60, padding:'7px 10px', border:`1px solid ${T.border}`, borderRadius:7, fontSize:14, fontWeight:700, color:T.ink, background:T.surface, fontFamily:'inherit', outline:'none', textAlign:'center' }}/>
+                <span style={{ fontSize:12, color:T.muted }}>days before end of month</span>
+              </div>
+              <p style={{ fontSize:10, color:T.faint, marginTop:6 }}>
+                e.g. {endOffset} days before month end = day {(() => { const ex = new Date(); const last = new Date(ex.getFullYear(), ex.getMonth()+1, 0).getDate(); return last - endOffset; })()} of this month ({new Date().toLocaleString('default',{month:'long'})})
+              </p>
             </div>
           )}
         </div>
