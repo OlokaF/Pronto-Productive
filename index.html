@@ -2502,7 +2502,16 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   const [recRules, setRecRules] = useStateV(() => loadRecRules());
   const [projFilter, setProjFilter] = useStateV('all');
   const [showMonthSidebar, setShowMonthSidebar] = useStateV(false);
-  const [monthItems, setMonthItems] = useStateV(() => { try { return JSON.parse(localStorage.getItem('prontoHQ.monthItems')||'[]'); } catch(e) { return []; } });
+  const [monthData, setMonthData] = useStateV(() => {
+    try {
+      const stored = localStorage.getItem('prontoHQ.monthData');
+      if (stored) return JSON.parse(stored);
+      const old = localStorage.getItem('prontoHQ.monthItems');
+      if (old) { const arr = JSON.parse(old); if (arr.length) { const n = new Date(); const mk = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; return { [mk]: arr }; } }
+      return {};
+    } catch(e) { return {}; }
+  });
+  const [monthOffset, setMonthOffset] = useStateV(0);
   const [newMonthItem, setNewMonthItem] = useStateV('');
 
   // Generate recurring tasks for today ± 30 days
@@ -2539,10 +2548,11 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
     saveRecRules(rules);
     setRecRules(rules);
   };
-  const saveMonthItems = (items) => { localStorage.setItem('prontoHQ.monthItems', JSON.stringify(items)); setMonthItems(items); };
-  const toggleMonthItem = (id) => saveMonthItems(monthItems.map(it => it.id===id ? {...it, done:!it.done} : it));
-  const deleteMonthItem = (id) => saveMonthItems(monthItems.filter(it => it.id !== id));
-  const addMonthItem = () => { if (!newMonthItem.trim()) return; saveMonthItems([...monthItems, { id: Date.now(), title: newMonthItem.trim(), done: false }]); setNewMonthItem(''); };
+  const getMonthKey = (offset) => { const d = new Date(selDate.getFullYear(), selDate.getMonth() + (offset||0), 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
+  const saveMonthData = (data) => { localStorage.setItem('prontoHQ.monthData', JSON.stringify(data)); setMonthData(data); };
+  const toggleMonthItem = (mk, id) => saveMonthData({...monthData, [mk]: (monthData[mk]||[]).map(it => it.id===id ? {...it, done:!it.done} : it)});
+  const deleteMonthItem = (mk, id) => saveMonthData({...monthData, [mk]: (monthData[mk]||[]).filter(it => it.id!==id)});
+  const addMonthItem = (mk) => { if (!newMonthItem.trim()) return; saveMonthData({...monthData, [mk]: [...(monthData[mk]||[]), { id: Date.now(), title: newMonthItem.trim(), done: false }]}); setNewMonthItem(''); };
 
   const dateKey = isoDate(selDate);
   const dayTasks = tasksByDate[dateKey] || [];
@@ -2935,22 +2945,31 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
 
       {/* ── THIS MONTH SIDEBAR ── */}
       {showMonthSidebar && !isMobile && (() => {
-        const now = new Date();
-        const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'][now.getMonth()];
-        const doneCount = monthItems.filter(it => it.done).length;
-        const pct = monthItems.length ? Math.round(doneCount/monthItems.length*100) : 0;
+        const mk = getMonthKey(monthOffset);
+        const mDate = new Date(selDate.getFullYear(), selDate.getMonth() + monthOffset, 1);
+        const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'][mDate.getMonth()];
+        const yr = mDate.getFullYear();
+        const isCurrentMonth = monthOffset === 0;
+        const items = monthData[mk] || [];
+        const doneCount = items.filter(it => it.done).length;
+        const pct = items.length ? Math.round(doneCount/items.length*100) : 0;
         return (
-          <div style={{ width:260, flexShrink:0, paddingLeft:20, borderLeft:`1px solid ${T.border}`, marginLeft:12 }}>
+          <div style={{ width:265, flexShrink:0, paddingLeft:20, borderLeft:`1px solid ${T.border}`, marginLeft:12 }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-              <div>
+              <div style={{ flex:1 }}>
                 <p style={{ fontSize:9, fontWeight:800, color:T.faint, letterSpacing:"0.14em", margin:0 }}>MONTHLY GOALS</p>
-                <p style={{ fontSize:15, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", margin:"2px 0 0" }}>{mn}</p>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:3 }}>
+                  <button onClick={() => setMonthOffset(o => o-1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:16, padding:"0 3px", lineHeight:1 }}>‹</button>
+                  <span style={{ fontSize:15, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{mn} {yr !== new Date().getFullYear() ? yr : ''}</span>
+                  <button onClick={() => setMonthOffset(o => o+1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:16, padding:"0 3px", lineHeight:1 }}>›</button>
+                  {!isCurrentMonth && <button onClick={() => setMonthOffset(0)} style={{ fontSize:9, fontWeight:700, color:T.navy, background:T.navy+"12", border:`1px solid ${T.navy}30`, borderRadius:4, padding:"1px 6px", cursor:"pointer", fontFamily:"inherit" }}>Today</button>}
+                </div>
               </div>
               <button onClick={() => setShowMonthSidebar(false)} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:16, padding:"2px 6px" }}>✕</button>
             </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
-                <span style={{ fontSize:10, color:T.muted, fontWeight:600 }}>{doneCount}/{monthItems.length} complete</span>
+                <span style={{ fontSize:10, color:T.muted, fontWeight:600 }}>{doneCount}/{items.length} complete</span>
                 <span style={{ fontSize:10, fontWeight:800, color:pct===100?"#10B981":T.navy }}>{pct}%</span>
               </div>
               <div style={{ height:5, background:T.surface2||T.surface, borderRadius:3 }}>
@@ -2958,24 +2977,24 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
               </div>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:12, maxHeight:360, overflowY:"auto" }}>
-              {monthItems.length === 0 && (
-                <p style={{ fontSize:11.5, color:T.faint, fontStyle:"italic", textAlign:"center", padding:"20px 0" }}>No items yet. Add one below!</p>
+              {items.length === 0 && (
+                <p style={{ fontSize:11.5, color:T.faint, fontStyle:"italic", textAlign:"center", padding:"20px 0" }}>No goals for {mn} yet.</p>
               )}
-              {monthItems.map(it => (
+              {items.map(it => (
                 <div key={it.id} style={{ display:"flex", alignItems:"flex-start", gap:7, padding:"7px 8px", borderRadius:7, background:T.cardBg, border:`1px solid ${T.border}` }}>
-                  <input type="checkbox" checked={it.done} onChange={() => toggleMonthItem(it.id)} style={{ marginTop:2, accentColor:T.navy, cursor:"pointer", flexShrink:0 }}/>
+                  <input type="checkbox" checked={it.done} onChange={() => toggleMonthItem(mk, it.id)} style={{ marginTop:2, accentColor:T.navy, cursor:"pointer", flexShrink:0 }}/>
                   <span style={{ flex:1, fontSize:12, color:it.done?T.muted:T.ink, textDecoration:it.done?"line-through":"none", lineHeight:1.35 }}>{it.title}</span>
-                  <button onClick={() => deleteMonthItem(it.id)} style={{ background:"none", border:"none", color:"#EF4444", cursor:"pointer", fontSize:13, padding:"0 2px", flexShrink:0, opacity:0.4 }}
+                  <button onClick={() => deleteMonthItem(mk, it.id)} style={{ background:"none", border:"none", color:"#EF4444", cursor:"pointer", fontSize:13, padding:"0 2px", flexShrink:0, opacity:0.4 }}
                     onMouseEnter={e=>e.currentTarget.style.opacity='1'} onMouseLeave={e=>e.currentTarget.style.opacity='0.4'}>✕</button>
                 </div>
               ))}
             </div>
             <div style={{ display:"flex", gap:6 }}>
               <input value={newMonthItem} onChange={e => setNewMonthItem(e.target.value)}
-                onKeyDown={e => e.key==="Enter" && addMonthItem()}
-                placeholder="Add item…"
+                onKeyDown={e => e.key==="Enter" && addMonthItem(mk)}
+                placeholder={`Add goal for ${mn}…`}
                 style={{ flex:1, padding:"7px 10px", border:`1px solid ${T.border}`, borderRadius:7, background:T.surface, color:T.ink, fontSize:12, fontFamily:"inherit", outline:"none" }}/>
-              <button onClick={addMonthItem} disabled={!newMonthItem.trim()} style={{ padding:"7px 12px", background:T.navy, border:"none", borderRadius:7, color:"#fff", fontSize:13, fontWeight:800, cursor:newMonthItem.trim()?"pointer":"default", opacity:newMonthItem.trim()?1:0.5, fontFamily:"inherit" }}>+</button>
+              <button onClick={() => addMonthItem(mk)} disabled={!newMonthItem.trim()} style={{ padding:"7px 12px", background:T.navy, border:"none", borderRadius:7, color:"#fff", fontSize:13, fontWeight:800, cursor:newMonthItem.trim()?"pointer":"default", opacity:newMonthItem.trim()?1:0.5, fontFamily:"inherit" }}>+</button>
             </div>
           </div>
         );
