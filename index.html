@@ -623,7 +623,7 @@ function CategoryBadge({ category, onChange }) {
   );
 }
 
-function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onDelete, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onMoveTask, compact=false }) {
+function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onDelete, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onMoveTask, compact=false }) {
   const isEvent = task.category === "Event" || task.owner === "event";
   const accent = task.owner === "vanja" ? T.vanja : task.owner === "oloka" ? T.oloka : T.muted;
   const catColor = CAT_COLOR[task.category] || T.muted;
@@ -770,6 +770,20 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
               Move to Calendar
             </button>
           )}
+          {onChangeProject && (() => {
+            const PROJS = [null,'pronto','trade','both'];
+            const cur = (task.project && task.project!=='all') ? task.project : null;
+            const next = PROJS[(PROJS.indexOf(cur)+1) % PROJS.length];
+            const label = cur==='pronto'?'⬡ Pronto':cur==='trade'?'/// Trade':cur==='both'?'◈ Both':null;
+            const col = cur==='pronto'?T.navy:cur==='trade'?T.gold:cur==='both'?'#8B5CF6':null;
+            return (
+              <button onClick={e=>{ e.stopPropagation(); onChangeProject(next); }}
+                title={cur?`Project: ${cur} — click to cycle`:"Assign to a project"}
+                style={{ fontSize:9.5, fontWeight:cur?800:600, letterSpacing:"0.04em", color:cur?col:T.muted, background:cur?col+"12":"transparent", border:`1px ${cur?"solid":"dashed"} ${cur?col+"50":T.border}`, padding:"2px 7px", borderRadius:3, cursor:"pointer", fontFamily:"inherit", display:"inline-flex", alignItems:"center", gap:3 }}>
+                {label || '+ project'}
+              </button>
+            );
+          })()}
         </div>
       </div>
       {!isEvent && onChangeOwner && (
@@ -3125,6 +3139,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
+  const [projInline, setProjInline] = useStateV(null);
   const [movingTaskId, setMovingTaskId] = useStateV(null);
   const availCats = window.prontoCats || CATS;
   const [cat, setCat] = useStateV(availCats[0] || "Social Post");
@@ -3146,8 +3161,8 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
     window.broadcastTyping?.(null);
     if (!text.trim()) { setAdding(false); return; }
     const isEvent = cat === "Event";
-    onAdd(dateKey, { text:text.trim(), priority:isEvent?"Normal":pri, category:cat, done:false, owner:isEvent?"event":owner });
-    setText(""); setPri("Normal"); setCat((window.prontoCats||CATS)[0]||"Social Post"); setAdding(false);
+    onAdd(dateKey, { text:text.trim(), priority:isEvent?"Normal":pri, category:cat, done:false, owner:isEvent?"event":owner, ...(projInline?{project:projInline}:{}) });
+    setText(""); setPri("Normal"); setCat((window.prontoCats||CATS)[0]||"Social Post"); setProjInline(null); setAdding(false);
   };
   const selStyle = { background:T.cardBg, border:`1px solid ${T.border}`, color:T.text, borderRadius:5, fontSize:11, padding:"5px 8px", cursor:"pointer", fontFamily:"inherit" };
 
@@ -3201,30 +3216,13 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                 }} style={{ marginTop:10, accentColor:accent, width:16, height:16, flexShrink:0, cursor:"pointer" }} />
               )}
               <div style={{ flex:1, minWidth:0 }}>
-              {(() => {
-                const PROJS = [null,'pronto','trade','both'];
-                const cur = (t.project && t.project!=='all') ? t.project : null;
-                const next = PROJS[(PROJS.indexOf(cur)+1) % PROJS.length];
-                const label = cur==='pronto'?'⬡ PRONTO HIRE':cur==='trade'?'/// TRADE HIRE':cur==='both'?'◈ BOTH':null;
-                const col = cur==='pronto'?T.navy:cur==='trade'?T.gold:cur==='both'?'#8B5CF6':T.faint;
-                return (
-                  <div style={{ marginBottom:3 }}>
-                    <button onClick={e=>{ e.stopPropagation(); onChangeProject&&onChangeProject(t.id,next); }}
-                      title={cur?`Project: ${cur} — click to change`:"Assign project"}
-                      style={{ fontSize:9, fontWeight:cur?800:600, padding:"1px 7px", borderRadius:10, background:cur?col+"18":"transparent", color:cur?col:T.faint, border:`1px ${cur?"solid":"dashed"} ${cur?col+"40":T.border}`, cursor:"pointer", letterSpacing:"0.04em", fontFamily:"inherit", opacity:cur?1:0.5, transition:"opacity 0.15s" }}
-                      onMouseEnter={e=>e.currentTarget.style.opacity='1'}
-                      onMouseLeave={e=>e.currentTarget.style.opacity=cur?'1':'0.5'}>
-                      {label||'+ project'}
-                    </button>
-                  </div>
-                );
-              })()}
               <TaskRow task={t} dateKey={dateKey}
                 onToggle={() => onToggle(t.id)}
                 onChangePriority={(p) => onChangePriority(t.id, p)}
                 onChangeOwner={(o) => onChangeOwner(t.id, o)}
                 onChangeText={onChangeText ? (v) => onChangeText(t.id, v) : undefined}
                 onChangeCategory={onChangeCategory ? (c) => onChangeCategory(t.id, c) : undefined}
+                onChangeProject={onChangeProject ? (proj) => onChangeProject(t.id, proj) : undefined}
                 onChangeSubtasks={onChangeSubtasks ? (subs) => onChangeSubtasks(t.id, subs) : undefined}
                 onConvertToSubtask={onConvertToSubtask}
                 onChangeNotes={onChangeNotes ? (notes) => onChangeNotes(t.id, notes) : undefined}
@@ -3255,6 +3253,12 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
               <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
                 {cat !== "Event" && <select value={pri} onChange={e => setPri(e.target.value)} style={selStyle}>{["Urgent","High","Normal","Low"].map(p => <option key={p}>{p}</option>)}</select>}
                 <select value={cat} onChange={e => setCat(e.target.value)} style={selStyle}>{(window.prontoCats||CATS).map(c => <option key={c}>{c}</option>)}</select>
+                {[['pronto','⬡ Pronto',T.navy],['trade','/// Trade',T.gold],['both','◈ Both','#8B5CF6']].map(([val,label,col]) => (
+                  <button key={val} onClick={() => setProjInline(projInline===val?null:val)}
+                    style={{ padding:"4px 9px", borderRadius:4, border:`1.5px solid ${projInline===val?col:T.border}`, background:projInline===val?col+"18":"transparent", color:projInline===val?col:T.muted, fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                    {label}
+                  </button>
+                ))}
                 <button onClick={submit} style={{ background:cat==="Event"?T.gold:accent, border:"none", borderRadius:5, color:"#fff", fontSize:11, fontWeight:800, padding:"6px 14px", cursor:"pointer", fontFamily:"inherit" }}>{cat==="Event"?"ADD EVENT":"ADD"}</button>
                 <button onClick={() => { window.broadcastTyping?.(null); setAdding(false); }} style={{ background:"transparent", border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:11, padding:"6px 11px", cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
               </div>
