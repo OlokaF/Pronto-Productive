@@ -15805,7 +15805,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.categories) setCategories(prev => { const next = [...(prev||[])]; (s.categories||[]).forEach(c => { if (!next.includes(c)) next.push(c); }); return next; }); // merge, never replace
     if (s.postApprovals) setPostApprovals(prev => { const byId = {}; [...(prev||[]), ...(Array.isArray(s.postApprovals)?s.postApprovals:Object.values(s.postApprovals||{}))].forEach(p => { if (!p||!p.id) return; const ex = byId[p.id]; if (!ex || (p.updatedAt||0) > (ex.updatedAt||0)) byId[p.id] = p; }); return Object.values(byId).sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||"")); });
     if (s.videoEvents) setVideoEvents(s.videoEvents);
-    if (s.videoQueue) setVideoQueue(s.videoQueue);
+    // videoQueue is localStorage-only — never overwrite from Firebase sync
     if (s.visibleTabs) setVisibleTabs(s.visibleTabs);
     if (s.contentLabels) setContentLabels(s.contentLabels);
     if (s.videoLabels) setVideoLabels(s.videoLabels);
