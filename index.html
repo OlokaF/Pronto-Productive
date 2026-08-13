@@ -16999,9 +16999,12 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
   const VIDEO_TYPES = videoLabels || ["Reel","BTS","Interview","Promo","Tutorial","Testimonial","Product","Event","Other"];
   const TYPE_COLORS = { Reel:"#C8261A", BTS:"#E76F1B", Interview:"#2563EB", Promo:"#059669", Tutorial:"#7C3AED", Testimonial:"#D97706", Product:"#0E9F6E", Event:"#FFC030", Other:"#6B7280" };
 
+  const [showPosted, setShowPosted] = useS(false);
   const safeQueue = videoQueue || [];
   const toCapture = safeQueue.filter(v => v.status === 'capture');
-  const toEdit = safeQueue.filter(v => v.status === 'editing');
+  const toEdit    = safeQueue.filter(v => v.status === 'editing');
+  const ready     = safeQueue.filter(v => v.status === 'ready');
+  const posted    = safeQueue.filter(v => v.status === 'posted');
 
   const addItem = () => {
     if (!addText.trim()) return;
@@ -17012,9 +17015,10 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
   const markEdited = (id) => {
     const item = safeQueue.find(v => v.id === id);
     if (!item) return;
-    setVideoQueue(prev => (prev||[]).filter(v => v.id !== id));
+    setVideoQueue(prev => (prev||[]).map(v => v.id===id ? {...v, status:'ready'} : v));
     if (setToPostList) setToPostList(prev => [...(prev||[]), { id:'post_'+Date.now(), title:item.title, type:item.type||'Reel', createdAt:new Date().toISOString() }]);
   };
+  const markPosted = (id) => setVideoQueue(prev => (prev||[]).map(v => v.id===id ? {...v, status:'posted', postedAt:new Date().toISOString()} : v));
   const deleteItem = (id) => setVideoQueue(prev => (prev||[]).filter(v => v.id !== id));
   const [editingId, setEditingId] = useS(null);
   const [editForm, setEditForm] = useS({ title:'', type:'Reel' });
@@ -17029,6 +17033,9 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
     if (onAddToTasks) onAddToTasks(shiftDate, { text:`🎬 ${shiftItem.title}`, priority:'Normal', category:'Video', done:false, owner:'oloka' });
     setShiftItem(null);
   };
+
+  const TICK_ACTION = { capture: markCaptured, editing: markEdited, ready: markPosted };
+  const TICK_TITLE  = { capture:'Mark as captured →', editing:'Mark editing done →', ready:'Mark as posted →' };
 
   const renderList = (items, section) => (
     <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
@@ -17061,8 +17068,8 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
               </div>
             ) : (
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <button onClick={() => section==='capture' ? markCaptured(item.id) : markEdited(item.id)}
-                  title={section==='capture' ? 'Mark as captured → moves to Needs Editing' : 'Mark editing done → moves to To Post list'}
+                <button onClick={() => TICK_ACTION[section] && TICK_ACTION[section](item.id)}
+                  title={TICK_TITLE[section] || ''}
                   style={{ width:18, height:18, borderRadius:3, flexShrink:0, padding:0, cursor:'pointer', background:'transparent', border:`2px solid ${tc}`, display:'flex', alignItems:'center', justifyContent:'center', color:tc, fontSize:10, fontWeight:900 }}>
                 </button>
                 <div style={{ flex:1, minWidth:0, cursor:'pointer' }} onClick={()=>startEdit(item)}>
@@ -17106,24 +17113,58 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
         </button>
       </div>
 
-      {/* Two columns */}
-      <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr':'1fr 1fr', gap:20 }}>
+      {/* Three columns */}
+      <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr':'1fr 1fr 1fr', gap:16, marginBottom:24 }}>
         <div>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.14em', color:T.faint }}>VIDEOS TO CAPTURE</p>
+            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.14em', color:T.faint }}>TO CAPTURE</p>
             {toCapture.length>0 && <span style={{ fontSize:10, fontWeight:800, color:T.navy, background:T.navy+'18', padding:'1px 7px', borderRadius:10 }}>{toCapture.length}</span>}
           </div>
           {renderList(toCapture,'capture')}
         </div>
         <div>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.14em', color:T.faint }}>CAPTURED — NEEDS EDITING</p>
+            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.14em', color:T.faint }}>NEEDS EDITING</p>
             {toEdit.length>0 && <span style={{ fontSize:10, fontWeight:800, color:'#E76F1B', background:'#E76F1B18', padding:'1px 7px', borderRadius:10 }}>{toEdit.length}</span>}
           </div>
           {renderList(toEdit,'editing')}
         </div>
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.14em', color:T.faint }}>READY TO POST</p>
+            {ready.length>0 && <span style={{ fontSize:10, fontWeight:800, color:'#059669', background:'#05966918', padding:'1px 7px', borderRadius:10 }}>{ready.length}</span>}
+          </div>
+          {renderList(ready,'ready')}
+        </div>
       </div>
-      <p style={{ fontSize:10, color:T.faint, marginTop:14 }}>Tick to capture → moves to Needs Editing. Tick editing done → auto-adds to the To Post list on the Content page.</p>
+
+      {/* Posted archive */}
+      <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:14 }}>
+        <button onClick={()=>setShowPosted(v=>!v)}
+          style={{ display:'flex', alignItems:'center', gap:8, background:'transparent', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit' }}>
+          <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.14em', color:T.faint }}>POSTED</p>
+          {posted.length>0 && <span style={{ fontSize:10, fontWeight:800, color:T.muted, background:T.surface2, padding:'1px 7px', borderRadius:10 }}>{posted.length}</span>}
+          <span style={{ fontSize:11, color:T.faint, marginLeft:2 }}>{showPosted?'▲':'▼'}</span>
+        </button>
+        {showPosted && (
+          <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:6 }}>
+            {posted.length===0 && <p style={{ fontSize:12, color:T.faint, fontStyle:'italic' }}>Nothing posted yet</p>}
+            {posted.map(item => {
+              const tc = TYPE_COLORS[item.type] || '#888';
+              return (
+                <div key={item.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:T.surface, border:`1px solid ${T.border}`, borderLeft:`3px solid ${tc}44`, borderRadius:6, opacity:0.7 }}>
+                  <span style={{ width:18, height:18, borderRadius:3, flexShrink:0, background:tc+'33', border:`2px solid ${tc}55`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:tc }}>✓</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:12, fontWeight:600, color:T.muted, textDecoration:'line-through', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
+                    <span style={{ fontSize:9.5, fontWeight:700, color:T.faint }}>{item.type}{item.postedAt ? ` · ${new Date(item.postedAt).toLocaleDateString('en-NZ',{day:'numeric',month:'short'})}` : ''}</span>
+                  </div>
+                  <button onClick={()=>deleteItem(item.id)} style={{ background:'transparent', border:'none', color:T.faint, cursor:'pointer', fontSize:13, padding:0, flexShrink:0 }}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Shift to date modal */}
       {shiftItem && (
