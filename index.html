@@ -16459,7 +16459,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             <span style={{ fontSize:16, opacity:0.7 }}>×</span>
           </div>
         )}
-        {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd} videoQueue={videoQueue} setVideoQueue={setVideoQueue} toPostList={toPostList} setToPostList={setToPostList}/>}
+        {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd} videoQueue={videoQueue} setVideoQueue={setVideoQueue} toPostList={toPostList} setToPostList={setToPostList} onSetContent={setContent}/>}
         {tab === "plan" && <PlanView plan={plan} setPlan={setPlan}/>}
         {tab === "team" && <TeamView staff={staff} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>}
         {tab === "uniform" && <UniformView uniform={uniform} setUniform={setUniform} staff={staff} />}
@@ -16990,11 +16990,13 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
 }
 
 // ── Video Schedule View ──
-function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView, videoLabels, onAddToTasks, videoQueue, setVideoQueue, toPostList, setToPostList }) {
+function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView, videoLabels, onAddToTasks, videoQueue, setVideoQueue, toPostList, setToPostList, onSetContent }) {
   const [addText, setAddText] = useS('');
   const [addType, setAddType] = useS('Reel');
   const [shiftItem, setShiftItem] = useS(null);
   const [shiftDate, setShiftDate] = useS('');
+  const [expandedId, setExpandedId] = useS(null);
+  const [schedContentDate, setSchedContentDate] = useS('');
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
   const VIDEO_TYPES = videoLabels || ["Reel","BTS","Interview","Promo","Tutorial","Testimonial","Product","Event","Other"];
   const TYPE_COLORS = { Reel:"#C8261A", BTS:"#E76F1B", Interview:"#2563EB", Promo:"#059669", Tutorial:"#7C3AED", Testimonial:"#D97706", Product:"#0E9F6E", Event:"#FFC030", Other:"#6B7280" };
@@ -17020,6 +17022,18 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
   };
   const markPosted = (id) => setVideoQueue(prev => (prev||[]).map(v => v.id===id ? {...v, status:'posted', postedAt:new Date().toISOString()} : v));
   const deleteItem = (id) => setVideoQueue(prev => (prev||[]).filter(v => v.id !== id));
+  const updateItemField = (id, field, value) => setVideoQueue(prev => (prev||[]).map(v => v.id===id ? {...v, [field]:value} : v));
+  const scheduleToContent = (item) => {
+    if (!schedContentDate) return;
+    if (onSetContent) onSetContent(prev => {
+      const arr = (prev[schedContentDate]||[]).slice();
+      arr.push({ title:item.title, type:item.type||'Reel', notes:item.notes||'', link:item.link||'' });
+      return {...prev, [schedContentDate]:arr};
+    });
+    markPosted(item.id);
+    setExpandedId(null);
+    setSchedContentDate('');
+  };
   const [editingId, setEditingId] = useS(null);
   const [editForm, setEditForm] = useS({ title:'', type:'Reel' });
   const startEdit = (item) => { setEditingId(item.id); setEditForm({ title:item.title, type:item.type }); };
@@ -17045,10 +17059,12 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
       {items.map(item => {
         const tc = TYPE_COLORS[item.type] || '#888';
         const isEditing = editingId === item.id;
+        const isExpanded = expandedId === item.id;
         return (
-          <div key={item.id} style={{ padding:'9px 10px', background:T.cardBg, border:`1px solid ${isEditing ? T.gold : T.border}`, borderLeft:`3px solid ${tc}`, borderRadius:6 }}>
+          <div key={item.id} style={{ background:T.cardBg, border:`1px solid ${isEditing||isExpanded ? T.gold : T.border}`, borderLeft:`3px solid ${tc}`, borderRadius:6, overflow:'hidden' }}>
+            {/* Main row */}
             {isEditing ? (
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              <div style={{ padding:'9px 10px', display:'flex', flexDirection:'column', gap:6 }}>
                 <input value={editForm.title} onChange={e=>setEditForm(f=>({...f, title:e.target.value}))}
                   onKeyDown={e=>{ if(e.key==='Enter') saveEdit(); if(e.key==='Escape') setEditingId(null); }}
                   autoFocus
@@ -17067,22 +17083,58 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
                 </div>
               </div>
             ) : (
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ padding:'9px 10px', display:'flex', alignItems:'center', gap:8 }}>
                 <button onClick={() => TICK_ACTION[section] && TICK_ACTION[section](item.id)}
                   title={TICK_TITLE[section] || ''}
                   style={{ width:18, height:18, borderRadius:3, flexShrink:0, padding:0, cursor:'pointer', background:'transparent', border:`2px solid ${tc}`, display:'flex', alignItems:'center', justifyContent:'center', color:tc, fontSize:10, fontWeight:900 }}>
                 </button>
-                <div style={{ flex:1, minWidth:0, cursor:'pointer' }} onClick={()=>startEdit(item)}>
+                <div style={{ flex:1, minWidth:0, cursor:'pointer' }} onClick={()=>{ setExpandedId(isExpanded?null:item.id); setSchedContentDate(''); }}>
                   <p style={{ fontSize:12, fontWeight:700, color:T.ink, marginBottom:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
-                  <span style={{ fontSize:9.5, fontWeight:800, color:tc, letterSpacing:'0.05em' }}>{item.type}</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <span style={{ fontSize:9.5, fontWeight:800, color:tc, letterSpacing:'0.05em' }}>{item.type}</span>
+                    {item.notes && <span style={{ fontSize:9, color:T.faint }}>· note</span>}
+                    {item.link && <span style={{ fontSize:9, color:T.faint }}>· link</span>}
+                  </div>
                 </div>
                 <button onClick={() => { setShiftItem(item); setShiftDate(isoDate(selDate)); }}
                   title="Add to task calendar on a specific date"
                   style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:4, padding:'3px 7px', fontSize:9.5, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit', flexShrink:0, whiteSpace:'nowrap' }}>
-                  📅 date
+                  📅
                 </button>
-                <button onClick={()=>startEdit(item)} title="Edit" style={{ background:'transparent', border:'none', color:T.muted, cursor:'pointer', fontSize:12, padding:0, flexShrink:0 }}>✏</button>
+                <button onClick={e=>{ e.stopPropagation(); startEdit(item); }} title="Edit title/type" style={{ background:'transparent', border:'none', color:T.muted, cursor:'pointer', fontSize:12, padding:0, flexShrink:0 }}>✏</button>
                 <button onClick={() => deleteItem(item.id)} style={{ background:'transparent', border:'none', color:T.faint, cursor:'pointer', fontSize:15, padding:0, flexShrink:0, lineHeight:1 }}>×</button>
+              </div>
+            )}
+            {/* Expanded detail panel */}
+            {isExpanded && !isEditing && (
+              <div style={{ padding:'10px 12px 12px', borderTop:`1px solid ${T.border}`, background:T.surface }}>
+                <textarea value={item.notes||''} onChange={e=>updateItemField(item.id,'notes',e.target.value)}
+                  placeholder="Notes…"
+                  rows={3}
+                  style={{ width:'100%', padding:'7px 9px', border:`1px solid ${T.border}`, borderRadius:5, fontSize:11.5, color:T.ink, background:T.cardBg, fontFamily:'inherit', resize:'vertical', outline:'none', boxSizing:'border-box', marginBottom:6 }}/>
+                <input value={item.link||''} onChange={e=>updateItemField(item.id,'link',e.target.value)}
+                  placeholder="Link (YouTube, Drive, Dropbox…)"
+                  style={{ width:'100%', padding:'7px 9px', border:`1px solid ${T.border}`, borderRadius:5, fontSize:11.5, color:T.ink, background:T.cardBg, fontFamily:'inherit', outline:'none', boxSizing:'border-box' }}/>
+                {item.link && (
+                  <a href={item.link} target="_blank" rel="noreferrer"
+                    style={{ display:'inline-block', marginTop:4, fontSize:10, color:T.navy, fontWeight:700 }}>
+                    Open link ↗
+                  </a>
+                )}
+                {section === 'ready' && (
+                  <div style={{ marginTop:10, paddingTop:10, borderTop:`1px dashed ${T.border}` }}>
+                    <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:'0.12em', marginBottom:6 }}>SCHEDULE TO CONTENT CALENDAR</p>
+                    <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                      <input type="date" value={schedContentDate} onChange={e=>setSchedContentDate(e.target.value)}
+                        style={{ padding:'6px 9px', border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, color:T.ink, background:T.cardBg, fontFamily:'inherit', outline:'none', flex:1, minWidth:130 }}/>
+                      <button onClick={()=>scheduleToContent(item)} disabled={!schedContentDate}
+                        style={{ padding:'6px 14px', background:schedContentDate?'#059669':'#05966950', border:'none', borderRadius:5, color:'#fff', fontSize:11, fontWeight:800, cursor:schedContentDate?'pointer':'default', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                        Add to Content Cal →
+                      </button>
+                    </div>
+                    <p style={{ fontSize:10, color:T.faint, marginTop:4 }}>Removes from Ready to Post and adds to that date on the Content Calendar.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
