@@ -15493,7 +15493,14 @@ function App({ onSwitchWorkspace = () => {} }) {
   // Video schedule events — date → [{ id, talent, location, type, durationMin, notes }]
   const [videoEvents, setVideoEvents] = useS(() => loadOr("videoEvents", () => ({})));
   // Video queue — simple pipeline: capture → editing → to post list
-  const [videoQueue, setVideoQueue] = useS(() => loadOr("videoQueue", () => []));
+  // Stored in its own dedicated localStorage key so it saves independently of Firebase sync
+  const [videoQueue, setVideoQueue] = useS(() => {
+    try { const v = localStorage.getItem('prontoHQ.videoQueue'); if (v) return JSON.parse(v); } catch(_) {}
+    return loadOr("videoQueue", () => []); // fallback to main state blob for backward compat
+  });
+  useE(() => {
+    try { localStorage.setItem('prontoHQ.videoQueue', JSON.stringify(videoQueue)); } catch(_) {}
+  }, [videoQueue]);
   // Visible tabs preference — array of tab keys that are shown
   const [visibleTabs, setVisibleTabs] = useS(() => {
     const saved = loadOr("visibleTabs", () => DEFAULT_TABS.filter(t=>t.on).map(t=>t.key));
@@ -15622,7 +15629,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, machinesToPush, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments]);
+  }, [tasksByDate, content, ideas, suppliers, budget, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, machinesToPush, uniform, brainDumpItems, toPostList, emailItems, emailComments, emailActivity, emailAttachments]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
   // Expose a live hook so other workspaces (e.g. Sales) can inject tasks directly into this state
