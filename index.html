@@ -3016,8 +3016,8 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           );
         })()}
 
-        {/* WORKFLOW SECTIONS */}
-        {(!isMobile || mobileDayTab === "recurring") && (
+        {/* WORKFLOW SECTIONS — only shown in BOTH view */}
+        {personView === "both" && (!isMobile || mobileDayTab === "recurring") && (
         <div style={{ marginTop:28 }}>
           <OngoingSection
             recurringTasks={recurringTasks} setRecurringTasks={setRecurringTasks}
