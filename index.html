@@ -1132,6 +1132,7 @@ const { useState: useSy, useRef: useRy, useEffect: useEy } = React;
 
 const FB_CONF_KEY   = "prontoHQ.fbConf.v1";
 const FB_STATE_PATH = "prontoHQ/state";
+const FB_TASKS_PATH = "prontoHQ/tasks";
 const FB_PRES_PATH  = "prontoHQ/presence";
 
 const TAB_LABELS = {
@@ -1440,7 +1441,7 @@ function _mergeState(myState, theirState, myIdentity) {
 }
 
 // ── SyncButton — Firebase Realtime Database (per-user paths, conflict-free) ──
-function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, activeTab, onPresenceChange }) {
+function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, myColor, activeTab, onPresenceChange }) {
   const [open, setOpen]         = useSy(false);
   const [conf, setConf]         = useSy(loadFbConf);
   const [apiKey, setApiKey]     = useSy(() => loadFbConf()?.apiKey || "");
@@ -1453,9 +1454,11 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
   const dbRef                  = useRy(null);
   const myListenerRef          = useRy(null);   // listener for my own Firebase path
   const theirListenerRef       = useRy(null);   // listener for the other user's path
+  const theirTasksListenerRef  = useRy(null);   // listener for the other user's tasks path
   const presListRef            = useRy(null);
   const myPresRef              = useRy(null);
   const writeTimerRef          = useRy(null);
+  const tasksWriteTimerRef     = useRy(null);
   const pendingState           = useRy(null);
   const localWriteAt           = useRy(0);
   const theirSnapRef           = useRy(null);   // other user's latest Firebase snapshot
@@ -1472,10 +1475,11 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
 
   // ── Connect / reconnect when conf or identity changes ──
   useEy(() => {
-    if (myListenerRef.current)    { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
-    if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
-    if (presListRef.current)      { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
-    if (myPresRef.current)        { myPresRef.current.remove(); myPresRef.current = null; }
+    if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
+    if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+    if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current)             { myPresRef.current.remove(); myPresRef.current = null; }
     window.broadcastTyping = null;
     theirSnapRef.current = null;
     if (!conf || !conf.apiKey || !conf.databaseURL) {
@@ -1580,9 +1584,23 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
     theirRef.on("value", theirHandler, err => console.warn("[Pronto] Other user path error:", err.message));
     theirListenerRef.current = { ref:theirRef, handler:theirHandler };
 
+    // ── THEIR tasks path: receive task-specific updates (faster, smaller payload) ──
+    if (onApplyTasks) {
+      const theirTasksRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
+      const theirTasksHandler = snap => {
+        const data = snap.val();
+        if (!data || !hasReceivedInitialData.current) return;
+        const { _meta, ...incoming } = data;
+        onApplyTasks(incoming);
+      };
+      theirTasksRef.on("value", theirTasksHandler, err => console.warn("[Pronto] Other tasks path error:", err.message));
+      theirTasksListenerRef.current = { ref:theirTasksRef, handler:theirTasksHandler };
+    }
+
     return () => {
       myRef.off("value", myHandler);
       theirRef.off("value", theirHandler);
+      if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
       presRef.off("value", presHandler);
       try { db.ref(".info/connected").off(); } catch(_) {}
     };
@@ -1624,9 +1642,20 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
           };
           attempt(3);
         }, 1500);
+      },
+      scheduleWriteTasks(tasksState) {
+        if (!dbRef.current) return;
+        clearTimeout(tasksWriteTimerRef.current);
+        tasksWriteTimerRef.current = setTimeout(() => {
+          if (!dbRef.current || !hasReceivedInitialData.current) return;
+          const ident = myIdentity || "vanja";
+          dbRef.current.ref(`${FB_TASKS_PATH}/${ident}`)
+            .set({ ...tasksState, _meta: { updatedAt: Date.now() } })
+            .catch(err => console.error("[Pronto] Tasks write failed:", err));
+        }, 1500);
       }
     };
-    return () => clearTimeout(writeTimerRef.current);
+    return () => { clearTimeout(writeTimerRef.current); clearTimeout(tasksWriteTimerRef.current); };
   });
 
   // Best-effort flush when closing/refreshing the tab
@@ -1648,13 +1677,15 @@ function SyncButton({ getState, applyState, syncRef, myIdentity, myColor, active
 
   const disconnect = () => {
     if (!confirm("Disconnect Firebase? The app will keep working locally but changes won't sync.")) return;
-    if (myListenerRef.current)    { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
-    if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
-    if (presListRef.current)      { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
-    if (myPresRef.current)        { myPresRef.current.remove(); myPresRef.current = null; }
+    if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
+    if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+    if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current)             { myPresRef.current.remove(); myPresRef.current = null; }
     try { if (dbRef.current) dbRef.current.ref(".info/connected").off(); } catch(_) {}
     dbRef.current = null;
     clearTimeout(writeTimerRef.current);
+    clearTimeout(tasksWriteTimerRef.current);
     saveFbConf(null); setConf(null); setApiKey(""); setDbUrl("");
     setStatus("disconnected"); setErrMsg("");
     if (syncRef) syncRef.current = null;
@@ -2542,7 +2573,10 @@ function RecurringRulesManager({ rules, onEdit, onDelete }) {
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
 function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars }) {
-  const [personView, setPersonView] = useStateV("both"); // "both"|"vanja"|"oloka"
+  const [personView, setPersonView] = useStateV(() => {
+    try { const u = localStorage.getItem("prontoHQ.todayUser"); if (u === "oloka" || u === "vanja") return u; } catch(_) {}
+    return "both";
+  }); // "both"|"vanja"|"oloka"
   const [viewFilter, setViewFilter] = useStateV("all");
   const [activeTag, setActiveTag] = useStateV(null);
   const [selectedTaskId, setSelectedTaskId] = useStateV(null);
@@ -14908,7 +14942,7 @@ function MobileContentPage({ content, setContent, todayUser, toPostList, setToPo
   );
 }
 
-function MobileHeader({ setForceMobile, getState, applyState, syncRef, chatAs, setOnlineUsers }) {
+function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, syncRef, chatAs, setOnlineUsers }) {
   const [showSheet, setShowSheet] = useS(false);
   const [conf, setConf]         = useS(loadFbConf);
   const [apiKey, setApiKey]     = useS(() => loadFbConf()?.apiKey || "");
@@ -14917,22 +14951,25 @@ function MobileHeader({ setForceMobile, getState, applyState, syncRef, chatAs, s
   const [lastSync, setLastSync] = useS(null);
   const [errMsg, setErrMsg]     = useS("");
 
-  const dbRef               = useR(null);
-  const myListenerRef       = useR(null);
-  const theirListenerRef    = useR(null);
-  const presListRef         = useR(null);
-  const myPresRef           = useR(null);
-  const writeTimerRef       = useR(null);
-  const pendingState        = useR(null);
-  const localWriteAt        = useR(0);
-  const theirSnapRef        = useR(null);
+  const dbRef                  = useR(null);
+  const myListenerRef          = useR(null);
+  const theirListenerRef       = useR(null);
+  const theirTasksListenerRef  = useR(null);
+  const presListRef            = useR(null);
+  const myPresRef              = useR(null);
+  const writeTimerRef          = useR(null);
+  const tasksWriteTimerRef     = useR(null);
+  const pendingState           = useR(null);
+  const localWriteAt           = useR(0);
+  const theirSnapRef           = useR(null);
   const hasReceivedInitialData = useR(false);
 
   useE(() => {
-    if (myListenerRef.current) { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
-    if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
-    if (presListRef.current) { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
-    if (myPresRef.current) { myPresRef.current.remove(); myPresRef.current = null; }
+    if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
+    if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+    if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
+    if (myPresRef.current)             { myPresRef.current.remove(); myPresRef.current = null; }
     theirSnapRef.current = null;
     if (!conf || !conf.apiKey || !conf.databaseURL) {
       setStatus("disconnected"); dbRef.current = null;
@@ -14992,9 +15029,24 @@ function MobileHeader({ setForceMobile, getState, applyState, syncRef, chatAs, s
     };
     theirRef.on("value", theirHandler, err => console.warn("[Pronto Mobile] Other user path error:", err.message));
     theirListenerRef.current = { ref:theirRef, handler:theirHandler };
+
+    // ── THEIR tasks path: receive task-specific updates ──
+    if (onApplyTasks) {
+      const theirTasksRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
+      const theirTasksHandler = snap => {
+        const data = snap.val();
+        if (!data || !hasReceivedInitialData.current) return;
+        const { _meta, ...incoming } = data;
+        onApplyTasks(incoming);
+      };
+      theirTasksRef.on("value", theirTasksHandler, err => console.warn("[Pronto Mobile] Other tasks path error:", err.message));
+      theirTasksListenerRef.current = { ref:theirTasksRef, handler:theirTasksHandler };
+    }
+
     return () => {
       myRef.off("value", myHandler);
       theirRef.off("value", theirHandler);
+      if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
       presRef.off("value", presHandler);
       try { db.ref(".info/connected").off(); } catch(_) {}
     };
@@ -15017,9 +15069,20 @@ function MobileHeader({ setForceMobile, getState, applyState, syncRef, chatAs, s
             .then(() => setLastSync(new Date()))
             .catch(err => console.error("Firebase write:", err));
         }, 1500);
+      },
+      scheduleWriteTasks(tasksState) {
+        if (!dbRef.current) return;
+        clearTimeout(tasksWriteTimerRef.current);
+        tasksWriteTimerRef.current = setTimeout(() => {
+          if (!dbRef.current || !hasReceivedInitialData.current) return;
+          const ident = chatAs || "vanja";
+          dbRef.current.ref(`${FB_TASKS_PATH}/${ident}`)
+            .set({ ...tasksState, _meta: { updatedAt: Date.now() } })
+            .catch(err => console.error("[Pronto Mobile] Tasks write failed:", err));
+        }, 1500);
       }
     };
-    return () => clearTimeout(writeTimerRef.current);
+    return () => { clearTimeout(writeTimerRef.current); clearTimeout(tasksWriteTimerRef.current); };
   });
 
   const connect = () => {
@@ -15214,7 +15277,12 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
 
   return (
     <div style={{ minHeight:"100vh", background:T.bg, display:"flex", flexDirection:"column", fontFamily:"'Inter', sans-serif", maxWidth:480, margin:"0 auto" }}>
-      <MobileHeader setForceMobile={setForceMobile} getState={getState} applyState={applyState} syncRef={syncRef} chatAs={chatAs} setOnlineUsers={setOnlineUsers} />
+      <MobileHeader setForceMobile={setForceMobile} getState={getState} applyState={applyState} syncRef={syncRef} chatAs={chatAs} setOnlineUsers={setOnlineUsers}
+        onApplyTasks={(incoming) => {
+          if (incoming.tasksByDate) setTasksByDate(prev => _mergeTasksByDate(prev, incoming.tasksByDate, {}, incoming.deletedTasks || {}));
+          if (incoming.deletedTasks) setDeletedTasks(prev => _mergeDeletedTasks(prev, incoming.deletedTasks));
+        }}
+      />
       <div style={{ flex:1, overflowY:"auto", paddingBottom:70 }}>
         {mobileTab === "today" && (
           <MobileTodayPage
@@ -15641,6 +15709,12 @@ function App({ onSwitchWorkspace = () => {} }) {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
   }, [tasksByDate, content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList]);
+  // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
+  useE(() => {
+    if (syncRef.current?.scheduleWriteTasks) {
+      syncRef.current.scheduleWriteTasks({ tasksByDate, deletedTasks });
+    }
+  }, [tasksByDate, deletedTasks]);
   // Sync categories to window so views.jsx can use them
   useE(() => { window.prontoCats = categories; }, [categories]);
   // Expose a live hook so other workspaces (e.g. Sales) can inject tasks directly into this state
@@ -16230,6 +16304,10 @@ function App({ onSwitchWorkspace = () => {} }) {
           <input ref={fileInputRef} type="file" accept="application/json,.json"
             onChange={handleImportFile} style={{ display:"none" }}/>
           <SyncButton getState={fullState} applyState={applyState} syncRef={syncRef}
+            onApplyTasks={(incoming) => {
+              if (incoming.tasksByDate) setTasksByDate(prev => _mergeTasksByDate(prev, incoming.tasksByDate, {}, incoming.deletedTasks || {}));
+              if (incoming.deletedTasks) setDeletedTasks(prev => _mergeDeletedTasks(prev, incoming.deletedTasks));
+            }}
             myIdentity={chatAs}
             myColor={chatAs === "vanja" ? T.vanja : T.oloka}
             activeTab={tab}
