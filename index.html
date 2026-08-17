@@ -1159,10 +1159,8 @@ function tryInitFb(conf) {
 
 // ── Trim state before writing to Firebase to keep payload small ──
 function stripForSync(state) {
-  return {
-    ...state,
-    activityLog: (state.activityLog || []).slice(0, 50),
-  };
+  const { tasksByDate, deletedTasks, ...rest } = state;
+  return { ...rest, activityLog: (rest.activityLog || []).slice(0, 50) };
 }
 
 // ── Presence avatars — shown in the app header ──
@@ -1282,6 +1280,33 @@ function _mergeTasksByDate(tbd_a, tbd_b, del_a, del_b) {
     result[date].push(task);
   });
   return result;
+}
+
+// Convert tasksByDate + deletedTasks → flat { [taskId]: task } for per-node Firebase writes
+function flattenTasks(tasksByDate, deletedTasks) {
+  const flat = {};
+  Object.entries(tasksByDate || {}).forEach(([dateKey, tasks]) => {
+    (tasks || []).forEach(t => { if (t && t.id != null) flat[t.id] = { ...t, dateKey }; });
+  });
+  Object.entries(deletedTasks || {}).forEach(([id, deletedAt]) => {
+    flat[id] = { id: Number(id), _deleted: true, deletedAt };
+  });
+  return flat;
+}
+
+// Rebuild tasksByDate + deletedTasks from a flat Firebase snapshot
+function unflattenTasks(flatTasks) {
+  const tasksByDate = {};
+  const deletedTasks = {};
+  Object.values(flatTasks || {}).forEach(t => {
+    if (!t || t.id == null) return;
+    if (t._deleted) { deletedTasks[t.id] = t.deletedAt; return; }
+    if (!t.dateKey) return;
+    if (!tasksByDate[t.dateKey]) tasksByDate[t.dateKey] = [];
+    const { dateKey, _deleted: _d, deletedAt: _da, ...task } = t;
+    tasksByDate[dateKey].push(task);
+  });
+  return { tasksByDate, deletedTasks };
 }
 
 // Merge schedules: my identity's columns authoritative from mySchedule, other's from theirSchedule
@@ -1465,6 +1490,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
   const popupRef               = useRy(null);
   const hasReceivedInitialData = useRy(false); // guard: never write before first server read
   const hasPendingWrite        = useRy(false);  // dirty flag: unconfirmed write in flight
+  const lastSyncedTasksRef     = useRy(null);   // tracks last-written flat tasks for diff writes
 
   // Close popup on outside click
   useEy(() => {
@@ -1477,7 +1503,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
   useEy(() => {
     if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
     if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
-    if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+    if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
     if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
     if (myPresRef.current)             { myPresRef.current.remove(); myPresRef.current = null; }
     window.broadcastTyping = null;
@@ -1584,23 +1610,60 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
     theirRef.on("value", theirHandler, err => console.warn("[Pronto] Other user path error:", err.message));
     theirListenerRef.current = { ref:theirRef, handler:theirHandler };
 
-    // ── THEIR tasks path: receive task-specific updates (faster, smaller payload) ──
+    // ── THEIR tasks path: granular child listeners — only the changed task is downloaded ──
     if (onApplyTasks) {
-      const theirTasksRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
-      const theirTasksHandler = snap => {
-        const data = snap.val();
-        if (!data || !hasReceivedInitialData.current) return;
-        const { _meta, ...incoming } = data;
-        onApplyTasks(incoming);
+      const theirFlatRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
+      let initialBatchDone = false;
+      // Seed: one full snapshot so we have the other user's current tasks
+      theirFlatRef.once("value", snap => {
+        if (snap.exists()) onApplyTasks({ type: "batch", flat: snap.val() });
+        initialBatchDone = true;
+      });
+      // Incremental: only the single changed/added/removed task node
+      const childAddedHandler = snap => {
+        if (!initialBatchDone || !hasReceivedInitialData.current) return;
+        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
       };
-      theirTasksRef.on("value", theirTasksHandler, err => console.warn("[Pronto] Other tasks path error:", err.message));
-      theirTasksListenerRef.current = { ref:theirTasksRef, handler:theirTasksHandler };
+      const childChangedHandler = snap => {
+        if (!hasReceivedInitialData.current) return;
+        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
+      };
+      const childRemovedHandler = snap => {
+        if (!hasReceivedInitialData.current) return;
+        onApplyTasks({ type: "remove", id: snap.key });
+      };
+      theirFlatRef.on("child_added",   childAddedHandler,   err => console.warn("[Pronto] tasks child_added:", err.message));
+      theirFlatRef.on("child_changed", childChangedHandler, err => console.warn("[Pronto] tasks child_changed:", err.message));
+      theirFlatRef.on("child_removed", childRemovedHandler, err => console.warn("[Pronto] tasks child_removed:", err.message));
+      theirTasksListenerRef.current = { ref: theirFlatRef, handlers: [
+        { event: "child_added",   fn: childAddedHandler },
+        { event: "child_changed", fn: childChangedHandler },
+        { event: "child_removed", fn: childRemovedHandler },
+      ]};
+    }
+
+    // ── One-time migration: convert old blob to flat per-task nodes ──
+    const FLAT_MIGRATION_KEY = "prontoHQ.flatTasksMigrated.v1";
+    if (!localStorage.getItem(FLAT_MIGRATION_KEY)) {
+      db.ref(`${FB_TASKS_PATH}/${identity}`).once("value", snap => {
+        const old = snap.val();
+        if (old && old.tasksByDate) {
+          const flat = flattenTasks(old.tasksByDate, old.deletedTasks || {});
+          const updates = {};
+          Object.entries(flat).forEach(([id, task]) => { updates[`tasks/${identity}/${id}`] = task; });
+          db.ref("prontoHQ").update(updates)
+            .then(() => { localStorage.setItem(FLAT_MIGRATION_KEY, "1"); lastSyncedTasksRef.current = flat; })
+            .catch(err => console.error("[Pronto] Flat task migration failed:", err));
+        } else {
+          localStorage.setItem(FLAT_MIGRATION_KEY, "1");
+        }
+      });
     }
 
     return () => {
       myRef.off("value", myHandler);
       theirRef.off("value", theirHandler);
-      if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+      if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
       presRef.off("value", presHandler);
       try { db.ref(".info/connected").off(); } catch(_) {}
     };
@@ -1643,14 +1706,25 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
           attempt(3);
         }, 1500);
       },
-      scheduleWriteTasks(tasksState) {
+      scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
         clearTimeout(tasksWriteTimerRef.current);
         tasksWriteTimerRef.current = setTimeout(() => {
           if (!dbRef.current || !hasReceivedInitialData.current) return;
           const ident = myIdentity || "vanja";
-          dbRef.current.ref(`${FB_TASKS_PATH}/${ident}`)
-            .set({ ...tasksState, _meta: { updatedAt: Date.now() } })
+          const currentFlat = flattenTasks(tasksByDate, deletedTasks);
+          const prevFlat    = lastSyncedTasksRef.current || {};
+          const updates     = {};
+          Object.entries(currentFlat).forEach(([id, task]) => {
+            if (JSON.stringify(prevFlat[id]) !== JSON.stringify(task))
+              updates[`tasks/${ident}/${id}`] = task;
+          });
+          Object.keys(prevFlat).forEach(id => {
+            if (!currentFlat[id]) updates[`tasks/${ident}/${id}`] = null;
+          });
+          if (!Object.keys(updates).length) return;
+          dbRef.current.ref("prontoHQ").update(updates)
+            .then(() => { lastSyncedTasksRef.current = currentFlat; })
             .catch(err => console.error("[Pronto] Tasks write failed:", err));
         }, 1500);
       }
@@ -1679,7 +1753,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
     if (!confirm("Disconnect Firebase? The app will keep working locally but changes won't sync.")) return;
     if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
     if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
-    if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+    if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
     if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
     if (myPresRef.current)             { myPresRef.current.remove(); myPresRef.current = null; }
     try { if (dbRef.current) dbRef.current.ref(".info/connected").off(); } catch(_) {}
@@ -14966,11 +15040,12 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
   const localWriteAt           = useR(0);
   const theirSnapRef           = useR(null);
   const hasReceivedInitialData = useR(false);
+  const lastSyncedTasksRef     = useR(null);    // tracks last-written flat tasks for diff writes
 
   useE(() => {
     if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
     if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
-    if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+    if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
     if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
     if (myPresRef.current)             { myPresRef.current.remove(); myPresRef.current = null; }
     theirSnapRef.current = null;
@@ -15033,23 +15108,58 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
     theirRef.on("value", theirHandler, err => console.warn("[Pronto Mobile] Other user path error:", err.message));
     theirListenerRef.current = { ref:theirRef, handler:theirHandler };
 
-    // ── THEIR tasks path: receive task-specific updates ──
+    // ── THEIR tasks path: granular child listeners — only the changed task is downloaded ──
     if (onApplyTasks) {
-      const theirTasksRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
-      const theirTasksHandler = snap => {
-        const data = snap.val();
-        if (!data || !hasReceivedInitialData.current) return;
-        const { _meta, ...incoming } = data;
-        onApplyTasks(incoming);
+      const theirFlatRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
+      let initialBatchDone = false;
+      theirFlatRef.once("value", snap => {
+        if (snap.exists()) onApplyTasks({ type: "batch", flat: snap.val() });
+        initialBatchDone = true;
+      });
+      const childAddedHandler = snap => {
+        if (!initialBatchDone || !hasReceivedInitialData.current) return;
+        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
       };
-      theirTasksRef.on("value", theirTasksHandler, err => console.warn("[Pronto Mobile] Other tasks path error:", err.message));
-      theirTasksListenerRef.current = { ref:theirTasksRef, handler:theirTasksHandler };
+      const childChangedHandler = snap => {
+        if (!hasReceivedInitialData.current) return;
+        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
+      };
+      const childRemovedHandler = snap => {
+        if (!hasReceivedInitialData.current) return;
+        onApplyTasks({ type: "remove", id: snap.key });
+      };
+      theirFlatRef.on("child_added",   childAddedHandler,   err => console.warn("[Pronto Mobile] tasks child_added:", err.message));
+      theirFlatRef.on("child_changed", childChangedHandler, err => console.warn("[Pronto Mobile] tasks child_changed:", err.message));
+      theirFlatRef.on("child_removed", childRemovedHandler, err => console.warn("[Pronto Mobile] tasks child_removed:", err.message));
+      theirTasksListenerRef.current = { ref: theirFlatRef, handlers: [
+        { event: "child_added",   fn: childAddedHandler },
+        { event: "child_changed", fn: childChangedHandler },
+        { event: "child_removed", fn: childRemovedHandler },
+      ]};
+    }
+
+    // ── One-time migration: convert old blob to flat per-task nodes ──
+    const FLAT_MIGRATION_KEY = "prontoHQ.flatTasksMigrated.v1";
+    if (!localStorage.getItem(FLAT_MIGRATION_KEY)) {
+      db.ref(`${FB_TASKS_PATH}/${identity}`).once("value", snap => {
+        const old = snap.val();
+        if (old && old.tasksByDate) {
+          const flat = flattenTasks(old.tasksByDate, old.deletedTasks || {});
+          const updates = {};
+          Object.entries(flat).forEach(([id, task]) => { updates[`tasks/${identity}/${id}`] = task; });
+          db.ref("prontoHQ").update(updates)
+            .then(() => { localStorage.setItem(FLAT_MIGRATION_KEY, "1"); lastSyncedTasksRef.current = flat; })
+            .catch(err => console.error("[Pronto Mobile] Flat task migration failed:", err));
+        } else {
+          localStorage.setItem(FLAT_MIGRATION_KEY, "1");
+        }
+      });
     }
 
     return () => {
       myRef.off("value", myHandler);
       theirRef.off("value", theirHandler);
-      if (theirTasksListenerRef.current) { theirTasksListenerRef.current.ref.off("value", theirTasksListenerRef.current.handler); theirTasksListenerRef.current = null; }
+      if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
       presRef.off("value", presHandler);
       try { db.ref(".info/connected").off(); } catch(_) {}
     };
@@ -15073,14 +15183,25 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
             .catch(err => console.error("Firebase write:", err));
         }, 1500);
       },
-      scheduleWriteTasks(tasksState) {
+      scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
         clearTimeout(tasksWriteTimerRef.current);
         tasksWriteTimerRef.current = setTimeout(() => {
           if (!dbRef.current || !hasReceivedInitialData.current) return;
           const ident = chatAs || "vanja";
-          dbRef.current.ref(`${FB_TASKS_PATH}/${ident}`)
-            .set({ ...tasksState, _meta: { updatedAt: Date.now() } })
+          const currentFlat = flattenTasks(tasksByDate, deletedTasks);
+          const prevFlat    = lastSyncedTasksRef.current || {};
+          const updates     = {};
+          Object.entries(currentFlat).forEach(([id, task]) => {
+            if (JSON.stringify(prevFlat[id]) !== JSON.stringify(task))
+              updates[`tasks/${ident}/${id}`] = task;
+          });
+          Object.keys(prevFlat).forEach(id => {
+            if (!currentFlat[id]) updates[`tasks/${ident}/${id}`] = null;
+          });
+          if (!Object.keys(updates).length) return;
+          dbRef.current.ref("prontoHQ").update(updates)
+            .then(() => { lastSyncedTasksRef.current = currentFlat; })
             .catch(err => console.error("[Pronto Mobile] Tasks write failed:", err));
         }, 1500);
       }
@@ -15281,9 +15402,43 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
   return (
     <div style={{ minHeight:"100vh", background:T.bg, display:"flex", flexDirection:"column", fontFamily:"'Inter', sans-serif", maxWidth:480, margin:"0 auto" }}>
       <MobileHeader setForceMobile={setForceMobile} getState={getState} applyState={applyState} syncRef={syncRef} chatAs={chatAs} setOnlineUsers={setOnlineUsers}
-        onApplyTasks={(incoming) => {
-          if (incoming.tasksByDate) setTasksByDate(prev => _mergeTasksByDate(prev, incoming.tasksByDate, {}, incoming.deletedTasks || {}));
-          if (incoming.deletedTasks) setDeletedTasks(prev => _mergeDeletedTasks(prev, incoming.deletedTasks));
+        onApplyTasks={(msg) => {
+          if (!msg || typeof msg !== "object") return;
+          if (msg.type === "batch") {
+            tasksFromFlatPathRef.current = true;
+            const { tasksByDate: tbd, deletedTasks: dt } = unflattenTasks(msg.flat);
+            setTasksByDate(prev => _mergeTasksByDate(prev, tbd, {}, dt));
+            setDeletedTasks(prev => _mergeDeletedTasks(prev, dt));
+          } else if (msg.type === "single") {
+            const t = msg.task;
+            if (!t || t.id == null) return;
+            if (t._deleted) {
+              setDeletedTasks(prev => ({ ...prev, [t.id]: t.deletedAt }));
+              setTasksByDate(prev => {
+                const next = { ...prev };
+                Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(t.id)); if (!next[dk].length) delete next[dk]; });
+                return next;
+              });
+            } else {
+              setTasksByDate(prev => {
+                const next = { ...prev };
+                Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(t.id)); if (!next[dk].length) delete next[dk]; });
+                const { dateKey, _deleted: _d, deletedAt: _da, ...task } = t;
+                if (!dateKey) return next;
+                const arr = [...(next[dateKey]||[])];
+                const idx = arr.findIndex(x => String(x.id) === String(t.id));
+                if (idx >= 0) { if ((arr[idx].updatedAt||0) < (t.updatedAt||0)) arr[idx] = task; } else { arr.push(task); }
+                next[dateKey] = arr;
+                return next;
+              });
+            }
+          } else if (msg.type === "remove") {
+            setTasksByDate(prev => {
+              const next = { ...prev };
+              Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(msg.id)); if (!next[dk].length) delete next[dk]; });
+              return next;
+            });
+          }
         }}
       />
       <div style={{ flex:1, overflowY:"auto", paddingBottom:70 }}>
@@ -15456,6 +15611,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     try { const u = localStorage.getItem("prontoHQ.todayUser"); if (u === "oloka" || u === "vanja") return u; } catch(_) {}
     return "both";
   });
+  const tasksFromFlatPathRef = useR(false); // true once flat tasks channel delivers initial data
   const [activityLog, setActivityLog] = useS(() => loadOr("activityLog", () => []));
   const logActivity = (user, action, detail) => {
     const entry = { user: user || todayUser || "unknown", action, detail, time: new Date().toISOString() };
@@ -15642,7 +15798,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
   useE(() => {
     if (syncRef.current?.scheduleWriteTasks) {
-      syncRef.current.scheduleWriteTasks({ tasksByDate, deletedTasks });
+      syncRef.current.scheduleWriteTasks(tasksByDate, deletedTasks);
     }
   }, [tasksByDate, deletedTasks]);
   // Sync categories to window so views.jsx can use them
@@ -15792,8 +15948,11 @@ function App({ onSwitchWorkspace = () => {} }) {
   // ── Apply a full state blob (used by Sheet pull) ──
   const applyState = (s) => {
     if (!s) return;
-    if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
-    if (s.tasksByDate) setTasksByDate(s.tasksByDate);
+    // Once the flat tasks channel has seeded state, ignore task fields in the state blob
+    if (!tasksFromFlatPathRef.current) {
+      if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
+      if (s.tasksByDate) setTasksByDate(s.tasksByDate);
+    }
     if (s.content) setContent(prev => _mergeContent(prev, s.content)); // full per-item merge
     if (s.ideas)   setIdeas(prev => _mergeIdeas(prev, s.ideas));       // merge, never replace
     if (s.suppliers) setSuppliers(s.suppliers);
@@ -16228,9 +16387,43 @@ function App({ onSwitchWorkspace = () => {} }) {
           <input ref={fileInputRef} type="file" accept="application/json,.json"
             onChange={handleImportFile} style={{ display:"none" }}/>
           <SyncButton getState={fullState} applyState={applyState} syncRef={syncRef}
-            onApplyTasks={(incoming) => {
-              if (incoming.tasksByDate) setTasksByDate(prev => _mergeTasksByDate(prev, incoming.tasksByDate, {}, incoming.deletedTasks || {}));
-              if (incoming.deletedTasks) setDeletedTasks(prev => _mergeDeletedTasks(prev, incoming.deletedTasks));
+            onApplyTasks={(msg) => {
+              if (!msg || typeof msg !== "object") return;
+              if (msg.type === "batch") {
+                tasksFromFlatPathRef.current = true;
+                const { tasksByDate: tbd, deletedTasks: dt } = unflattenTasks(msg.flat);
+                setTasksByDate(prev => _mergeTasksByDate(prev, tbd, {}, dt));
+                setDeletedTasks(prev => _mergeDeletedTasks(prev, dt));
+              } else if (msg.type === "single") {
+                const t = msg.task;
+                if (!t || t.id == null) return;
+                if (t._deleted) {
+                  setDeletedTasks(prev => ({ ...prev, [t.id]: t.deletedAt }));
+                  setTasksByDate(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(t.id)); if (!next[dk].length) delete next[dk]; });
+                    return next;
+                  });
+                } else {
+                  setTasksByDate(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(t.id)); if (!next[dk].length) delete next[dk]; });
+                    const { dateKey, _deleted: _d, deletedAt: _da, ...task } = t;
+                    if (!dateKey) return next;
+                    const arr = [...(next[dateKey]||[])];
+                    const idx = arr.findIndex(x => String(x.id) === String(t.id));
+                    if (idx >= 0) { if ((arr[idx].updatedAt||0) < (t.updatedAt||0)) arr[idx] = task; } else { arr.push(task); }
+                    next[dateKey] = arr;
+                    return next;
+                  });
+                }
+              } else if (msg.type === "remove") {
+                setTasksByDate(prev => {
+                  const next = { ...prev };
+                  Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(msg.id)); if (!next[dk].length) delete next[dk]; });
+                  return next;
+                });
+              }
             }}
             myIdentity={chatAs}
             myColor={chatAs === "vanja" ? T.vanja : T.oloka}
