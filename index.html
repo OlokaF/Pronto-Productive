@@ -1523,14 +1523,22 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
     db.ref(".info/connected").on("value", snap => {
       const connected = snap.val();
       setStatus(connected ? "live" : "connecting");
-      if (connected && hasPendingWrite.current && pendingState.current && hasReceivedInitialData.current) {
-        const s = pendingState.current;
-        const ident = myIdentity || "vanja";
-        localWriteAt.current = Date.now();
-        dbRef.current.ref(`${FB_STATE_PATH}/${ident}`)
-          .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
-          .then(() => { setLastSync(new Date()); setSyncError(false); hasPendingWrite.current = false; })
-          .catch(err => console.error("[Pronto] Reconnect flush failed:", err));
+      if (connected) {
+        // Re-write presence on every reconnect so circles stay lit after connection blips
+        if (myPresRef.current) {
+          const ident = myIdentity || "vanja";
+          myPresRef.current.set({ id:ident, name:ident==="vanja"?"Vanja":"Oloka", color:myColor||T.vanja, tab:activeTab||"tasks", online:true, lastSeen:Date.now() });
+          myPresRef.current.onDisconnect().remove();
+        }
+        if (hasPendingWrite.current && pendingState.current && hasReceivedInitialData.current) {
+          const s = pendingState.current;
+          const ident = myIdentity || "vanja";
+          localWriteAt.current = Date.now();
+          dbRef.current.ref(`${FB_STATE_PATH}/${ident}`)
+            .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
+            .then(() => { setLastSync(new Date()); setSyncError(false); hasPendingWrite.current = false; })
+            .catch(err => console.error("[Pronto] Reconnect flush failed:", err));
+        }
       }
     });
 
@@ -1660,7 +1668,13 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
       });
     }
 
+    // Heartbeat: update lastSeen every 30s so the other person's circles stay lit
+    const heartbeatId = setInterval(() => {
+      if (myPresRef.current) myPresRef.current.update({ lastSeen: Date.now(), online: true });
+    }, 30000);
+
     return () => {
+      clearInterval(heartbeatId);
       myRef.off("value", myHandler);
       theirRef.off("value", theirHandler);
       if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
@@ -15059,9 +15073,17 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
     const db = tryInitFb(conf);
     if (!db) { setStatus("error"); setErrMsg("Could not initialise Firebase."); return; }
     dbRef.current = db;
-    db.ref(".info/connected").on("value", snap => setStatus(snap.val() ? "live" : "connecting"));
     const identity = chatAs || "vanja";
     const otherIdentity = identity === "oloka" ? "vanja" : "oloka";
+    db.ref(".info/connected").on("value", snap => {
+      const connected = snap.val();
+      setStatus(connected ? "live" : "connecting");
+      // Re-write presence on every reconnect so circles stay lit after connection blips
+      if (connected && myPresRef.current) {
+        myPresRef.current.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:identity==="vanja"?T.vanja:T.oloka, online:true, lastSeen:Date.now() });
+        myPresRef.current.onDisconnect().remove();
+      }
+    });
     const meRef = db.ref(`${FB_PRES_PATH}/${identity}`);
     myPresRef.current = meRef;
     meRef.set({ id:identity, name:identity==="vanja"?"Vanja":"Oloka", color:identity==="vanja"?T.vanja:T.oloka, online:true, lastSeen:Date.now() });
@@ -15156,7 +15178,13 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
       });
     }
 
+    // Heartbeat: update lastSeen every 30s so the other person's circles stay lit
+    const heartbeatId = setInterval(() => {
+      if (myPresRef.current) myPresRef.current.update({ lastSeen: Date.now(), online: true });
+    }, 30000);
+
     return () => {
+      clearInterval(heartbeatId);
       myRef.off("value", myHandler);
       theirRef.off("value", theirHandler);
       if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
