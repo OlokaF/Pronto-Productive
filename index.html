@@ -2988,8 +2988,8 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           </div>
         )}
 
-        {/* TASK COLUMNS */}
-        {(!isMobile || mobileDayTab === "tasks") && (() => {
+        {/* TASK COLUMNS — hidden in BOTH view (BOTH shows workflow sections only) */}
+        {personView !== "both" && (!isMobile || mobileDayTab === "tasks") && (() => {
           const cols = [showVanja, showOloka].filter(Boolean).length;
           const gc = isMobile ? "1fr" : (cols === 2 ? "1fr 1fr" : "1fr");
           return (
