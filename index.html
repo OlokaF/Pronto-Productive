@@ -15407,8 +15407,9 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
           if (msg.type === "batch") {
             tasksFromFlatPathRef.current = true;
             const { tasksByDate: tbd, deletedTasks: dt } = unflattenTasks(msg.flat);
-            setTasksByDate(prev => _mergeTasksByDate(prev, tbd, {}, dt));
-            setDeletedTasks(prev => _mergeDeletedTasks(prev, dt));
+            const mergedDT = _mergeDeletedTasks(deletedTasksRef.current, dt);
+            setDeletedTasks(mergedDT);
+            setTasksByDate(prev => _mergeTasksByDate(prev, tbd, mergedDT, {}));
           } else if (msg.type === "single") {
             const t = msg.task;
             if (!t || t.id == null) return;
@@ -15420,6 +15421,8 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
                 return next;
               });
             } else {
+              const delAt = (deletedTasksRef.current||{})[t.id] || 0;
+              if (delAt > 0 && delAt >= (t.updatedAt||0)) return;
               setTasksByDate(prev => {
                 const next = { ...prev };
                 Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(t.id)); if (!next[dk].length) delete next[dk]; });
@@ -15537,6 +15540,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [view, setView] = useS("day");
   const [contentView, setContentView] = useS("week");  // controls Content tab nav & view
   const [deletedTasks, setDeletedTasks] = useS(() => loadOr("deletedTasks", () => ({})));
+  const deletedTasksRef = useR({}); // mirror of deletedTasks state — safe to read in async callbacks
   const [tasksByDate, setTasksByDate] = useS(() => {
     const loaded = loadOr("tasksByDate", () => buildTasks());
     // Migration: strip any recurring-template tasks that were auto-injected by old code
@@ -15795,6 +15799,8 @@ function App({ onSwitchWorkspace = () => {} }) {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
   }, [tasksByDate, content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList]);
+  // Keep deletedTasksRef in sync so async callbacks (onApplyTasks) see fresh tombstones
+  useE(() => { deletedTasksRef.current = deletedTasks; }, [deletedTasks]);
   // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
   useE(() => {
     if (syncRef.current?.scheduleWriteTasks) {
@@ -16392,8 +16398,9 @@ function App({ onSwitchWorkspace = () => {} }) {
               if (msg.type === "batch") {
                 tasksFromFlatPathRef.current = true;
                 const { tasksByDate: tbd, deletedTasks: dt } = unflattenTasks(msg.flat);
-                setTasksByDate(prev => _mergeTasksByDate(prev, tbd, {}, dt));
-                setDeletedTasks(prev => _mergeDeletedTasks(prev, dt));
+                const mergedDT = _mergeDeletedTasks(deletedTasksRef.current, dt);
+                setDeletedTasks(mergedDT);
+                setTasksByDate(prev => _mergeTasksByDate(prev, tbd, mergedDT, {}));
               } else if (msg.type === "single") {
                 const t = msg.task;
                 if (!t || t.id == null) return;
@@ -16405,6 +16412,8 @@ function App({ onSwitchWorkspace = () => {} }) {
                     return next;
                   });
                 } else {
+                  const delAt = (deletedTasksRef.current||{})[t.id] || 0;
+                  if (delAt > 0 && delAt >= (t.updatedAt||0)) return;
                   setTasksByDate(prev => {
                     const next = { ...prev };
                     Object.keys(next).forEach(dk => { next[dk] = (next[dk]||[]).filter(x => String(x.id) !== String(t.id)); if (!next[dk].length) delete next[dk]; });
