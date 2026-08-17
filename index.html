@@ -2572,11 +2572,14 @@ function RecurringRulesManager({ rules, onEdit, onDelete }) {
 }
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars }) {
-  const [personView, setPersonView] = useStateV(() => {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars, personView: personViewProp, setPersonView: setPersonViewProp }) {
+  const [_localPersonView, _setLocalPersonView] = useStateV(() => {
     try { const u = localStorage.getItem("prontoHQ.todayUser"); if (u === "oloka" || u === "vanja") return u; } catch(_) {}
     return "both";
-  }); // "both"|"vanja"|"oloka"
+  });
+  // Use controlled props when provided (from App's taskOwnerTab), else local state
+  const personView = personViewProp !== undefined ? personViewProp : _localPersonView;
+  const setPersonView = setPersonViewProp || _setLocalPersonView;
   const [viewFilter, setViewFilter] = useStateV("all");
   const [activeTag, setActiveTag] = useStateV(null);
   const [selectedTaskId, setSelectedTaskId] = useStateV(null);
@@ -15448,6 +15451,11 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [todayUser, setTodayUser] = useS(() => {
     try { return localStorage.getItem("prontoHQ.todayUser") || null; } catch(_) { return null; }
   });
+  // Which user's tasks to show — defaults to logged-in user, or "both"
+  const [taskOwnerTab, setTaskOwnerTab] = useS(() => {
+    try { const u = localStorage.getItem("prontoHQ.todayUser"); if (u === "oloka" || u === "vanja") return u; } catch(_) {}
+    return "both";
+  });
   const [activityLog, setActivityLog] = useS(() => loadOr("activityLog", () => []));
   const logActivity = (user, action, detail) => {
     const entry = { user: user || todayUser || "unknown", action, detail, time: new Date().toISOString() };
@@ -16434,11 +16442,35 @@ function App({ onSwitchWorkspace = () => {} }) {
         padding:"0 32px", background:T.cardBg, borderBottom:`1px solid ${T.border}`,
         gap:20, flexWrap:"wrap",
       }}>
-        <div className="tab-bar" style={{ display:"flex", flexWrap:"wrap" }}>
-          {TABS.filter(t => visibleTabs.includes(t.key) && t.key !== "settings").map(t => {
-            const badge = t.key === "approvals" ? (postApprovals||[]).filter(p => p.status === "pending" && p.createdBy !== (todayUser||"oloka")).length : 0;
-            return tabBtn(t.key, t.label, badge);
-          })}
+        <div style={{ display:"flex", alignItems:"flex-end", gap:0, flexWrap:"wrap" }}>
+          <div className="tab-bar" style={{ display:"flex", flexWrap:"wrap" }}>
+            {TABS.filter(t => visibleTabs.includes(t.key) && t.key !== "settings").map(t => {
+              const badge = t.key === "approvals" ? (postApprovals||[]).filter(p => p.status === "pending" && p.createdBy !== (todayUser||"oloka")).length : 0;
+              return tabBtn(t.key, t.label, badge);
+            })}
+          </div>
+          {tab === "tasks" && (
+            <div style={{ display:"flex", marginLeft:16, marginBottom:0, alignItems:"flex-end", gap:0, height:44, paddingBottom:0 }}>
+              {[
+                { k:"oloka", label:"OLOKA", color: T.oloka },
+                { k:"vanja", label:"VANJA", color: T.vanja },
+                { k:"both",  label:"BOTH",  color: T.navy  },
+              ].map(({ k, label, color }) => (
+                <button key={k} onClick={() => setTaskOwnerTab(k)} style={{
+                  height:"100%", padding:"0 16px",
+                  background: taskOwnerTab === k ? color+"18" : "transparent",
+                  borderTop: taskOwnerTab === k ? `2px solid ${color}` : "2px solid transparent",
+                  borderBottom: taskOwnerTab === k ? "2px solid transparent" : "2px solid transparent",
+                  borderLeft:"none", borderRight:"none",
+                  color: taskOwnerTab === k ? color : T.muted,
+                  fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit",
+                  letterSpacing:"0.08em", transition:"all 0.15s",
+                }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {showDateStrip && (
           <div className="date-strip" style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10 }}>
@@ -16484,6 +16516,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             schedule={schedule}
             onPickDate={onPickDate}
             avatars={avatars}
+            personView={taskOwnerTab} setPersonView={setTaskOwnerTab}
           />
         )}
         {tab === "tasks" && view === "week" && (
