@@ -15355,6 +15355,22 @@ function App({ onSwitchWorkspace = () => {} }) {
       return next;
     });
   }, [tasksByDate]);
+  // One-time cleanup: remove all task entries before 2026-05-22 (pre-app spreadsheet data)
+  useE(() => {
+    if (localStorage.getItem('prontoHQ.oldTasksCleaned1')) return;
+    if (Object.keys(tasksByDate).length === 0) return;
+    localStorage.setItem('prontoHQ.oldTasksCleaned1', '1');
+    const cutoff = '2026-05-22';
+    const hasOld = Object.keys(tasksByDate).some(dk => dk < cutoff);
+    if (!hasOld) return;
+    setTasksByDate(prev => {
+      const next = {};
+      for (const [dk, tasks] of Object.entries(prev)) {
+        if (dk >= cutoff) next[dk] = tasks;
+      }
+      return next;
+    });
+  }, [tasksByDate]);
   const [content, setContent] = useS(() => {
     // Seed from RAW_CONTENT then merge stored data on top (stored wins by updatedAt per item)
     const built = buildContentState();
