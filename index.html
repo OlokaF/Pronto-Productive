@@ -493,9 +493,13 @@ function PriorityBadge({ priority, onChange, compact=false }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
+  const portalRef = useRef(null);
   const pc = PR[priority] || PR["Normal"];
   useEffect(() => {
-    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const h = e => {
+      if (ref.current && !ref.current.contains(e.target) &&
+          !(portalRef.current && portalRef.current.contains(e.target))) setOpen(false);
+    };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
@@ -522,7 +526,7 @@ function PriorityBadge({ priority, onChange, compact=false }) {
         {priority}
       </button>
       {open && pos && ReactDOM.createPortal(
-        <div style={{
+        <div ref={portalRef} style={{
           position:"fixed",
           top: pos.top !== undefined ? pos.top : "auto",
           bottom: pos.bottom !== undefined ? pos.bottom : "auto",
@@ -594,9 +598,13 @@ function CategoryBadge({ category, onChange }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
+  const portalRef = useRef(null);
   const color = CAT_COLOR[category] || T.muted;
   useEffect(() => {
-    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const h = e => {
+      if (ref.current && !ref.current.contains(e.target) &&
+          !(portalRef.current && portalRef.current.contains(e.target))) setOpen(false);
+    };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
@@ -621,7 +629,7 @@ function CategoryBadge({ category, onChange }) {
         fontFamily:"inherit",
       }}>{category}</button>
       {open && onChange && pos && ReactDOM.createPortal(
-        <div style={{
+        <div ref={portalRef} style={{
           position:"fixed",
           top: pos.top !== undefined ? pos.top : "auto",
           bottom: pos.bottom !== undefined ? pos.bottom : "auto",
@@ -1318,7 +1326,7 @@ function flattenTasks(tasksByDate, deletedTasks) {
     (tasks || []).forEach(t => { if (t && t.id != null) flat[t.id] = { ...t, dateKey }; });
   });
   Object.entries(deletedTasks || {}).forEach(([id, deletedAt]) => {
-    flat[id] = { id: Number(id), _deleted: true, deletedAt };
+    flat[id] = { id: Number(id), _deleted: true, deletedAt, updatedAt: deletedAt };
   });
   return flat;
 }
@@ -1647,32 +1655,80 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
     theirRef.on("value", theirHandler, err => console.warn("[Pronto] Other user path error:", err.message));
     theirListenerRef.current = { ref:theirRef, handler:theirHandler };
 
-    // ── THEIR tasks path: granular child listeners — only the changed task is downloaded ──
+    // ── THEIR tasks path: cache-first, delta-query listeners ──
     if (onApplyTasks) {
       const theirFlatRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
+      const THEIR_CACHE_KEY = `prontoHQ.theirTasksCache.${otherIdentity}`;
       let initialBatchDone = false;
-      // Seed: one full snapshot so we have the other user's current tasks
-      theirFlatRef.once("value", snap => {
-        if (snap.exists()) onApplyTasks({ type: "batch", flat: snap.val() });
-        initialBatchDone = true;
-      });
-      // Incremental: only the single changed/added/removed task node
+      const theirLocalFlat = { current: {} };
+      let cacheFlushTimer = null;
+      const flushTheirCache = () => {
+        clearTimeout(cacheFlushTimer);
+        cacheFlushTimer = setTimeout(() => {
+          try {
+            let maxTs = 0;
+            Object.values(theirLocalFlat.current).forEach(t => { if (t && t.updatedAt > maxTs) maxTs = t.updatedAt; });
+            localStorage.setItem(THEIR_CACHE_KEY, JSON.stringify({ flat: theirLocalFlat.current, savedAt: maxTs || Date.now() }));
+          } catch (_) {}
+        }, 500);
+      };
+
+      // Try loading from localStorage cache first — avoids full snapshot download on reload
+      let cachedSince = 0;
+      try {
+        const cached = JSON.parse(localStorage.getItem(THEIR_CACHE_KEY) || "null");
+        if (cached && cached.flat && typeof cached.flat === "object") {
+          onApplyTasks({ type: "batch", flat: cached.flat });
+          theirLocalFlat.current = { ...cached.flat };
+          cachedSince = cached.savedAt || 0;
+          initialBatchDone = true;
+        }
+      } catch (_) {}
+
+      if (!initialBatchDone) {
+        // No cache: full snapshot to seed state (first load only)
+        theirFlatRef.once("value", snap => {
+          if (snap.exists()) {
+            const flat = snap.val();
+            onApplyTasks({ type: "batch", flat });
+            theirLocalFlat.current = { ...flat };
+            flushTheirCache();
+          }
+          initialBatchDone = true;
+        });
+      }
+
+      // Delta listeners: when cache exists use a query so only tasks updated since cachedSince are downloaded
+      const theirDeltaRef = cachedSince > 0
+        ? theirFlatRef.orderByChild("updatedAt").startAfter(cachedSince)
+        : theirFlatRef;
+
       const childAddedHandler = snap => {
         if (!initialBatchDone || !hasReceivedInitialData.current) return;
-        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
+        const t = snap.val();
+        onApplyTasks({ type: "single", task: t, id: snap.key });
+        theirLocalFlat.current = { ...theirLocalFlat.current, [snap.key]: t };
+        flushTheirCache();
       };
       const childChangedHandler = snap => {
         if (!hasReceivedInitialData.current) return;
-        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
+        const t = snap.val();
+        onApplyTasks({ type: "single", task: t, id: snap.key });
+        theirLocalFlat.current = { ...theirLocalFlat.current, [snap.key]: t };
+        flushTheirCache();
       };
       const childRemovedHandler = snap => {
         if (!hasReceivedInitialData.current) return;
         onApplyTasks({ type: "remove", id: snap.key });
+        const next = { ...theirLocalFlat.current };
+        delete next[snap.key];
+        theirLocalFlat.current = next;
+        flushTheirCache();
       };
-      theirFlatRef.on("child_added",   childAddedHandler,   err => console.warn("[Pronto] tasks child_added:", err.message));
-      theirFlatRef.on("child_changed", childChangedHandler, err => console.warn("[Pronto] tasks child_changed:", err.message));
-      theirFlatRef.on("child_removed", childRemovedHandler, err => console.warn("[Pronto] tasks child_removed:", err.message));
-      theirTasksListenerRef.current = { ref: theirFlatRef, handlers: [
+      theirDeltaRef.on("child_added",   childAddedHandler,   err => console.warn("[Pronto] tasks child_added:", err.message));
+      theirDeltaRef.on("child_changed", childChangedHandler, err => console.warn("[Pronto] tasks child_changed:", err.message));
+      theirDeltaRef.on("child_removed", childRemovedHandler, err => console.warn("[Pronto] tasks child_removed:", err.message));
+      theirTasksListenerRef.current = { ref: theirDeltaRef, handlers: [
         { event: "child_added",   fn: childAddedHandler },
         { event: "child_changed", fn: childChangedHandler },
         { event: "child_removed", fn: childRemovedHandler },
@@ -15141,30 +15197,77 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
     theirRef.on("value", theirHandler, err => console.warn("[Pronto Mobile] Other user path error:", err.message));
     theirListenerRef.current = { ref:theirRef, handler:theirHandler };
 
-    // ── THEIR tasks path: granular child listeners — only the changed task is downloaded ──
+    // ── THEIR tasks path: cache-first, delta-query listeners ──
     if (onApplyTasks) {
       const theirFlatRef = db.ref(`${FB_TASKS_PATH}/${otherIdentity}`);
+      const THEIR_CACHE_KEY = `prontoHQ.theirTasksCache.${otherIdentity}`;
       let initialBatchDone = false;
-      theirFlatRef.once("value", snap => {
-        if (snap.exists()) onApplyTasks({ type: "batch", flat: snap.val() });
-        initialBatchDone = true;
-      });
+      const theirLocalFlat = { current: {} };
+      let cacheFlushTimer = null;
+      const flushTheirCache = () => {
+        clearTimeout(cacheFlushTimer);
+        cacheFlushTimer = setTimeout(() => {
+          try {
+            let maxTs = 0;
+            Object.values(theirLocalFlat.current).forEach(t => { if (t && t.updatedAt > maxTs) maxTs = t.updatedAt; });
+            localStorage.setItem(THEIR_CACHE_KEY, JSON.stringify({ flat: theirLocalFlat.current, savedAt: maxTs || Date.now() }));
+          } catch (_) {}
+        }, 500);
+      };
+
+      let cachedSince = 0;
+      try {
+        const cached = JSON.parse(localStorage.getItem(THEIR_CACHE_KEY) || "null");
+        if (cached && cached.flat && typeof cached.flat === "object") {
+          onApplyTasks({ type: "batch", flat: cached.flat });
+          theirLocalFlat.current = { ...cached.flat };
+          cachedSince = cached.savedAt || 0;
+          initialBatchDone = true;
+        }
+      } catch (_) {}
+
+      if (!initialBatchDone) {
+        theirFlatRef.once("value", snap => {
+          if (snap.exists()) {
+            const flat = snap.val();
+            onApplyTasks({ type: "batch", flat });
+            theirLocalFlat.current = { ...flat };
+            flushTheirCache();
+          }
+          initialBatchDone = true;
+        });
+      }
+
+      const theirDeltaRef = cachedSince > 0
+        ? theirFlatRef.orderByChild("updatedAt").startAfter(cachedSince)
+        : theirFlatRef;
+
       const childAddedHandler = snap => {
         if (!initialBatchDone || !hasReceivedInitialData.current) return;
-        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
+        const t = snap.val();
+        onApplyTasks({ type: "single", task: t, id: snap.key });
+        theirLocalFlat.current = { ...theirLocalFlat.current, [snap.key]: t };
+        flushTheirCache();
       };
       const childChangedHandler = snap => {
         if (!hasReceivedInitialData.current) return;
-        onApplyTasks({ type: "single", task: snap.val(), id: snap.key });
+        const t = snap.val();
+        onApplyTasks({ type: "single", task: t, id: snap.key });
+        theirLocalFlat.current = { ...theirLocalFlat.current, [snap.key]: t };
+        flushTheirCache();
       };
       const childRemovedHandler = snap => {
         if (!hasReceivedInitialData.current) return;
         onApplyTasks({ type: "remove", id: snap.key });
+        const next = { ...theirLocalFlat.current };
+        delete next[snap.key];
+        theirLocalFlat.current = next;
+        flushTheirCache();
       };
-      theirFlatRef.on("child_added",   childAddedHandler,   err => console.warn("[Pronto Mobile] tasks child_added:", err.message));
-      theirFlatRef.on("child_changed", childChangedHandler, err => console.warn("[Pronto Mobile] tasks child_changed:", err.message));
-      theirFlatRef.on("child_removed", childRemovedHandler, err => console.warn("[Pronto Mobile] tasks child_removed:", err.message));
-      theirTasksListenerRef.current = { ref: theirFlatRef, handlers: [
+      theirDeltaRef.on("child_added",   childAddedHandler,   err => console.warn("[Pronto Mobile] tasks child_added:", err.message));
+      theirDeltaRef.on("child_changed", childChangedHandler, err => console.warn("[Pronto Mobile] tasks child_changed:", err.message));
+      theirDeltaRef.on("child_removed", childRemovedHandler, err => console.warn("[Pronto Mobile] tasks child_removed:", err.message));
+      theirTasksListenerRef.current = { ref: theirDeltaRef, handlers: [
         { event: "child_added",   fn: childAddedHandler },
         { event: "child_changed", fn: childChangedHandler },
         { event: "child_removed", fn: childRemovedHandler },
