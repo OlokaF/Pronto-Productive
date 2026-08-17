@@ -491,6 +491,7 @@ function Chev({ dir }) {
 
 function PriorityBadge({ priority, onChange, compact=false }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const pc = PR[priority] || PR["Normal"];
   useEffect(() => {
@@ -498,9 +499,18 @@ function PriorityBadge({ priority, onChange, compact=false }) {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
+  const handleToggle = (e) => {
+    e.stopPropagation();
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const openUp = window.innerHeight - r.bottom < 180;
+      setPos({ right: window.innerWidth - r.right, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+    }
+    setOpen(o => !o);
+  };
   return (
     <div ref={ref} style={{ position:"relative", flexShrink:0 }}>
-      <button onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }} style={{
+      <button onClick={handleToggle} style={{
         display:"flex", alignItems:"center", gap:5,
         padding: compact ? "2px 7px" : "3px 9px",
         borderRadius:20, border:`1px solid ${pc.color}33`,
@@ -511,9 +521,13 @@ function PriorityBadge({ priority, onChange, compact=false }) {
         <span style={{ width:5,height:5,borderRadius:"50%",background:pc.color }}></span>
         {priority}
       </button>
-      {open && (
+      {open && pos && ReactDOM.createPortal(
         <div style={{
-          position:"absolute", top:"calc(100% + 4px)", right:0, zIndex:200,
+          position:"fixed",
+          top: pos.top !== undefined ? pos.top : "auto",
+          bottom: pos.bottom !== undefined ? pos.bottom : "auto",
+          right: pos.right,
+          zIndex:9999,
           background:T.cardBg, border:`1px solid ${T.borderStrong}`,
           borderRadius:8, overflow:"hidden", minWidth:120,
           boxShadow:"0 12px 28px rgba(15,27,58,0.14)",
@@ -530,7 +544,8 @@ function PriorityBadge({ priority, onChange, compact=false }) {
               {p}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -577,6 +592,7 @@ function Checkbox({ done, onToggle, accent }) {
 
 function CategoryBadge({ category, onChange }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const color = CAT_COLOR[category] || T.muted;
   useEffect(() => {
@@ -584,9 +600,19 @@ function CategoryBadge({ category, onChange }) {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
+  const handleToggle = (e) => {
+    e.stopPropagation();
+    if (!onChange) return;
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const openUp = window.innerHeight - r.bottom < 380;
+      setPos({ left: r.left, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+    }
+    setOpen(o => !o);
+  };
   return (
     <span ref={ref} style={{ position:"relative", display:"inline-block" }}>
-      <button onClick={(e) => { e.stopPropagation(); if (onChange) setOpen(o => !o); }} style={{
+      <button onClick={handleToggle} style={{
         fontSize:9.5, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase",
         color, background: color + "15",
         padding:"2px 7px", borderRadius:3,
@@ -594,9 +620,13 @@ function CategoryBadge({ category, onChange }) {
         cursor: onChange ? "pointer" : "default",
         fontFamily:"inherit",
       }}>{category}</button>
-      {open && onChange && (
+      {open && onChange && pos && ReactDOM.createPortal(
         <div style={{
-          position:"absolute", top:"calc(100% + 4px)", left:0, zIndex:200,
+          position:"fixed",
+          top: pos.top !== undefined ? pos.top : "auto",
+          bottom: pos.bottom !== undefined ? pos.bottom : "auto",
+          left: pos.left,
+          zIndex:9999,
           background:T.cardBg, border:`1px solid ${T.borderStrong}`,
           borderRadius:8, overflow:"hidden", minWidth:140, padding:4,
           boxShadow:"0 12px 28px rgba(15,27,58,0.16)",
@@ -617,7 +647,8 @@ function CategoryBadge({ category, onChange }) {
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );
