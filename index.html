@@ -2914,11 +2914,10 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
       <div style={{ flex:1, minWidth:0 }}>
 
         {/* Header */}
-        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:18, flexWrap:"wrap", gap:12 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, flexWrap:"wrap", gap:8 }}>
           <div>
-            <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.14em", marginBottom:4 }}>{DAYS_LONG[selDate.getDay()].toUpperCase()} · {selDate.getDate()} {MONTHS[selDate.getMonth()].toUpperCase()} {selDate.getFullYear()}</p>
-            <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:30, letterSpacing:"-0.02em", color:T.heading, lineHeight:1, margin:0 }}>{isToday ? "Today's Tasks" : `${DAYS_LONG[selDate.getDay()]}'s Tasks`}</h2>
-            <p style={{ color:T.muted, fontSize:12.5, marginTop:4 }}>Plan, prioritise and get things done.</p>
+            <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.14em", marginBottom:2 }}>{DAYS_LONG[selDate.getDay()].toUpperCase()} · {selDate.getDate()} {MONTHS[selDate.getMonth()].toUpperCase()} {selDate.getFullYear()}</p>
+            <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:20, letterSpacing:"-0.01em", color:T.heading, lineHeight:1, margin:0 }}>{isToday ? "Today's Tasks" : `${DAYS_LONG[selDate.getDay()]}'s Tasks`}</h2>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <div style={{ position:"relative", display:"flex", alignItems:"center" }}>
@@ -2986,7 +2985,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
         )}
 
         {/* PROJECT FILTER */}
-        <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14, flexWrap:"wrap" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:8, flexWrap:"wrap" }}>
           <span style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em" }}>VIEW TASKS FOR:</span>
           {[{key:'all',label:'ALL PROJECTS',icon:null,ic:null},{key:'pronto',label:'PRONTO HIRE',icon:'⬡',ic:T.navy},{key:'trade',label:'TRADE HIRE',icon:'///',ic:T.gold},{key:'both',label:'BOTH',icon:'◈',ic:'#8B5CF6'}].map(p => (
             <button key={p.key} onClick={() => setProjFilter(p.key)}
@@ -2997,26 +2996,9 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           ))}
         </div>
 
-        {/* STATS CARDS */}
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${isMobile?2:5},1fr)`, gap:10, marginBottom:20 }}>
-          {STAT_CARDS.map(card => (
-            <button key={card.key} onClick={() => setStatsFilter(statsFilter===card.key?null:card.key)}
-              style={{ padding:"14px 14px 12px", textAlign:"left", cursor:"pointer", background:statsFilter===card.key?card.bg:T.cardBg, border:`1px solid ${statsFilter===card.key?card.color+"50":T.border}`, borderRadius:10, transition:"all 0.15s", fontFamily:"inherit" }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = card.color+"70"}
-              onMouseLeave={e => e.currentTarget.style.borderColor = statsFilter===card.key?card.color+"50":T.border}
-            >
-              <div style={{ display:"flex", alignItems:"baseline", gap:6, marginBottom:4 }}>
-                <span style={{ fontSize:28, fontWeight:900, fontFamily:"'ProximaNova Black', sans-serif", color:card.color, lineHeight:1 }}>{card.val}</span>
-                {card.key==="completed" && totalCount>0 && <span style={{ fontSize:11, fontWeight:700, color:card.color }}>{completedPct}%</span>}
-              </div>
-              <p style={{ fontSize:11.5, fontWeight:700, color:T.ink, marginBottom:2 }}>{card.label}</p>
-              <p style={{ fontSize:10, color:T.muted }}>{card.sub}</p>
-            </button>
-          ))}
-        </div>
 
         {/* PERSON SWITCHER */}
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18, flexWrap:"wrap", gap:10 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, flexWrap:"wrap", gap:10 }}>
           <div style={{ display:"flex", background:T.surface, borderRadius:8, padding:3, gap:2 }}>
             {/* Both */}
             <button onClick={() => setPersonView("both")} style={{ padding:"7px 16px", borderRadius:6, background:personView==="both"?T.navy:"transparent", color:personView==="both"?"#fff":T.muted, border:"none", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:6 }}>⊞ Both</button>
@@ -16253,11 +16235,7 @@ function App({ onSwitchWorkspace = () => {} }) {
       };
     }
     if (tab !== "tasks") return null;
-    if (view === "day") {
-      const todayD = today();
-      if (sameDay(selDate, todayD)) return { eyebrow: `${DAYS_LONG[selDate.getDay()].toUpperCase()} · WEEK ${Math.ceil(selDate.getDate()/7)}`, big:"TODAY'S TASKS", sub:"What needs to ship today — by person, by priority." };
-      return { eyebrow: `${DAYS_LONG[selDate.getDay()].toUpperCase()} · ${selDate.getDate()} ${MONTHS[selDate.getMonth()].toUpperCase()}`, big:"DAY VIEW", sub:`Tasks for ${DAYS_LONG[selDate.getDay()]}.` };
-    }
+    if (view === "day") return null;
     if (view === "week") return { eyebrow:"WEEKLY OVERVIEW", big:"THIS WEEK", sub:"Mon–Fri at a glance. Click any day to drill in." };
     return { eyebrow:`${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}`, big:"MONTH AT A GLANCE", sub:"Whole month. Color dots show owner load." };
   }, [tab, view, selDate]);
@@ -16635,7 +16613,7 @@ function App({ onSwitchWorkspace = () => {} }) {
       </div>
 
       {/* Main */}
-      <main className="main-content" style={{ flex:1, padding:"28px 32px 60px", overflowY:"auto", maxWidth:1500, width:"100%", margin:"0 auto", boxSizing:"border-box" }}>
+      <main className="main-content" style={{ flex:1, padding:`${(tab==="tasks"&&view==="day")?"14px":"28px"} 32px 60px`, overflowY:"auto", maxWidth:1500, width:"100%", margin:"0 auto", boxSizing:"border-box" }}>
         {heading && (
           <div className="page-header-block" style={{ marginBottom:20 }}>
             <p className="page-header-eyebrow" style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{heading.eyebrow}</p>
