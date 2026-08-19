@@ -3197,7 +3197,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
       )}
 
       {/* ── THIS MONTH SIDEBAR ── */}
-      {showMonthSidebar && !isMobile && (() => {
+      {(showMonthSidebar || personView === "both") && !isMobile && (() => {
         const mk = getMonthKey(monthOffset);
         const mDate = new Date(selDate.getFullYear(), selDate.getMonth() + monthOffset, 1);
         const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'][mDate.getMonth()];
