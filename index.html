@@ -2789,7 +2789,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
     const gen = loadRecGen();
     const toAdd = [];
     const base = new Date(); base.setHours(0,0,0,0);
-    for (let offset = -1; offset <= 30; offset++) {
+    for (let offset = -30; offset <= 365; offset++) {
       const d = new Date(base); d.setDate(d.getDate() + offset);
       const dk = d.toISOString().slice(0,10);
       for (const rule of recRules) {
