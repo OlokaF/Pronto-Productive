@@ -1196,7 +1196,7 @@ function tryInitFb(conf) {
 
 // ── Trim state before writing to Firebase to keep payload small ──
 function stripForSync(state) {
-  const { tasksByDate, deletedTasks, ...rest } = state;
+  const { tasksByDate, deletedTasks, schedule, actualSchedule, ...rest } = state;
   return { ...rest, activityLog: (rest.activityLog || []).slice(0, 50) };
 }
 
