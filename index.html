@@ -1480,8 +1480,6 @@ function _mergeState(myState, theirState, myIdentity) {
   return {
     ...myState, // use my state as base (uniform, etc.)
     tasksByDate: _mergeTasksByDate(myState.tasksByDate, theirState.tasksByDate, myState.deletedTasks, theirState.deletedTasks),
-    schedule: _mergeScheduleCols(myState.schedule, theirState.schedule, myIdentity),
-    actualSchedule: _mergeScheduleCols(myState.actualSchedule, theirState.actualSchedule, myIdentity),
     deletedTasks: _mergeDeletedTasks(myState.deletedTasks, theirState.deletedTasks),
     dayNotes: _mergeDayNotes(myState.dayNotes, theirState.dayNotes),
     content: _mergeContent(myState.content, theirState.content),
