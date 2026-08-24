@@ -1803,7 +1803,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
               });
           };
           attempt(3);
-        }, 1500);
+        }, 15000);
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
@@ -15323,7 +15323,7 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
             .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
             .then(() => setLastSync(new Date()))
             .catch(err => console.error("Firebase write:", err));
-        }, 1500);
+        }, 15000);
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
