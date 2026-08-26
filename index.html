@@ -17953,11 +17953,13 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
   const [status, setStatus] = useS('idle');
   const [lastSync, setLastSync]   = useS(null);
   const [syncError, setSyncError] = useS('');
-  const prevScheduleRef = useR(null);
-  const pushQueueRef    = useR([]);
-  const pullRunning     = useR(false);
-  const pushRunning     = useR(false);
-  const scheduleRef     = useR(null);
+  const prevScheduleRef   = useR(null);
+  const pushQueueRef      = useR([]);
+  const pullRunning       = useR(false);
+  const pushRunning       = useR(false);
+  const scheduleRef       = useR(null);
+  const pushDayLockRef    = useR({});
+  const lastAutoPushedRef = useR({});
 
   useE(() => { scheduleRef.current = schedule; }, [schedule]);
 
@@ -18006,36 +18008,42 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
       syncNow: () => setConf(c => ({ ...c, _forcePoll: Date.now() })),
       pullNow: () => doPull.current(true),
       pushDay: async (dk) => {
+        if (pushDayLockRef.current[dk]) return; // already syncing this day
         const c = loadGcalConf();
         if (!c.enabled || !c.accessToken) return;
-        const token = c.accessToken;
-        const allCals2 = c.allCalendars || [];
-        const writableIds2 = allCals2.filter(x => x.accessRole === 'owner' || x.accessRole === 'writer').map(x => x.id);
-        if (!writableIds2.length) writableIds2.push(c.calendarId || 'primary');
-        const pushCalId2 = (c.calendarId && writableIds2.includes(c.calendarId)) ? c.calendarId : writableIds2[0];
-        // Wide time window — covers full local day regardless of timezone offset
-        const base = new Date(dk + 'T00:00:00');
-        const timeMin = new Date(base.getTime() - 14*60*60*1000).toISOString();
-        const timeMax = new Date(base.getTime() + 38*60*60*1000).toISOString();
-        // Step 1: delete ALL Pronto-tagged events from ALL writable calendars for this day
-        for (const calId of writableIds2) {
-          try {
-            const params = new URLSearchParams({ timeMin, timeMax, singleEvents:'true', maxResults:'250' });
-            const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(calId)+'/events?'+params);
-            for (const ev of (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG))) {
-              try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(calId)+'/events/'+ev.id); } catch(_) {}
-            }
-          } catch(_) {}
-        }
-        // Step 2: recreate all current blocks fresh
-        const sched = scheduleRef.current || {};
-        const day = sched[dk] || {};
-        for (const owner2 of ['oloka', 'vanja']) {
-          for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
-            if (!_gcalBlockKey(b)) continue;
-            const body = blockToGcalBody({...b, gcalEventId:undefined, owner:owner2}, dk, tasksByDate);
-            try { await gcalFetch(token, 'POST', '/calendars/'+encodeURIComponent(pushCalId2)+'/events', body); } catch(_) {}
+        pushDayLockRef.current[dk] = true;
+        try {
+          const token = c.accessToken;
+          const allCals2 = c.allCalendars || [];
+          const writableIds2 = allCals2.filter(x => x.accessRole === 'owner' || x.accessRole === 'writer').map(x => x.id);
+          if (!writableIds2.length) writableIds2.push(c.calendarId || 'primary');
+          const pushCalId2 = (c.calendarId && writableIds2.includes(c.calendarId)) ? c.calendarId : writableIds2[0];
+          // Wide time window — covers full local day regardless of timezone offset
+          const base = new Date(dk + 'T00:00:00');
+          const timeMin = new Date(base.getTime() - 14*60*60*1000).toISOString();
+          const timeMax = new Date(base.getTime() + 38*60*60*1000).toISOString();
+          // Step 1: delete ALL Pronto-tagged events from ALL writable calendars for this day
+          for (const calId of writableIds2) {
+            try {
+              const params = new URLSearchParams({ timeMin, timeMax, singleEvents:'true', maxResults:'250' });
+              const data = await gcalFetch(token, 'GET', '/calendars/'+encodeURIComponent(calId)+'/events?'+params);
+              for (const ev of (data?.items||[]).filter(ev => (ev.description||'').startsWith(GCAL_TAG))) {
+                try { await gcalFetch(token, 'DELETE', '/calendars/'+encodeURIComponent(calId)+'/events/'+ev.id); } catch(_) {}
+              }
+            } catch(_) {}
           }
+          // Step 2: recreate all current blocks fresh
+          const sched = scheduleRef.current || {};
+          const day = sched[dk] || {};
+          for (const owner2 of ['oloka', 'vanja']) {
+            for (const b of ((day[owner2]||[]).filter(x => !x.isExternal))) {
+              if (!_gcalBlockKey(b)) continue;
+              const body = blockToGcalBody({...b, gcalEventId:undefined, owner:owner2}, dk, tasksByDate);
+              try { await gcalFetch(token, 'POST', '/calendars/'+encodeURIComponent(pushCalId2)+'/events', body); } catch(_) {}
+            }
+          }
+        } finally {
+          delete pushDayLockRef.current[dk];
         }
       },
       saveConfig: (patch) => { saveGcalConf(patch); reloadConf(); },
@@ -18371,7 +18379,23 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
     run();
   }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll]);
 
-  // Auto-push disabled — use ↑ Push to GCal button in Schedule header
+  // Auto-push: when selected day's schedule changes, push after 8s (lets Firebase settle first)
+  useE(() => {
+    const pad = n => n.toString().padStart(2, '0');
+    const dk = selDate instanceof Date
+      ? `${selDate.getFullYear()}-${pad(selDate.getMonth()+1)}-${pad(selDate.getDate())}`
+      : (typeof selDate === 'string' ? selDate : null);
+    if (!dk) return;
+    const c = loadGcalConf();
+    if (!c.enabled || !c.accessToken) return;
+    const curr = JSON.stringify(schedule?.[dk]);
+    if (lastAutoPushedRef.current[dk] === curr) return;
+    const t = setTimeout(() => {
+      lastAutoPushedRef.current[dk] = JSON.stringify((scheduleRef.current || {})[dk]);
+      window._gcalSync?.pushDay(dk).catch(e => console.warn('[GCal auto-push]', e.message));
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [schedule, selDate]);
 
   return null;
 }
