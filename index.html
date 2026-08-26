@@ -17953,11 +17953,12 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
   const [status, setStatus] = useS('idle');
   const [lastSync, setLastSync]   = useS(null);
   const [syncError, setSyncError] = useS('');
-  const prevScheduleRef = useR(null);
-  const pushQueueRef    = useR([]);
-  const pullRunning     = useR(false);
-  const pushRunning     = useR(false);
-  const scheduleRef     = useR(null);
+  const prevScheduleRef    = useR(null);
+  const pushQueueRef       = useR([]);
+  const pullRunning        = useR(false);
+  const pushRunning        = useR(false);
+  const scheduleRef        = useR(null);
+  const lastAutoPushedRef  = useR({});
 
   useE(() => { scheduleRef.current = schedule; }, [schedule]);
 
@@ -18371,7 +18372,22 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
     run();
   }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll]);
 
-  // Auto-push disabled — use ↑ Push to GCal button in Schedule header
+  // Auto-push: when the selected day's schedule changes, push to GCal after a 5s debounce
+  useE(() => {
+    if (!conf.enabled || !conf.accessToken) return;
+    const pad = n => n.toString().padStart(2, '0');
+    const dk = selDate instanceof Date
+      ? `${selDate.getFullYear()}-${pad(selDate.getMonth()+1)}-${pad(selDate.getDate())}`
+      : (typeof selDate === 'string' ? selDate : null);
+    if (!dk) return;
+    const curr = JSON.stringify(schedule?.[dk]);
+    if (lastAutoPushedRef.current[dk] === curr) return;
+    const t = setTimeout(() => {
+      lastAutoPushedRef.current[dk] = curr;
+      window._gcalSync?.pushDay(dk).catch(e => console.warn('[GCal auto-push]', e.message));
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [schedule, selDate, conf.enabled, conf.accessToken]);
 
   return null;
 }
@@ -21260,8 +21276,12 @@ window.OutlookSync = (() => {
 
     // Fetch all Outlook events for a day (returns array of { id, title, startMin, durationMin, fromPronto })
     async fetchDayEvents(dk) {
+      const tzOffsetMin = new Date().getTimezoneOffset();
+      const sign = tzOffsetMin <= 0 ? '+' : '-';
+      const absMin = Math.abs(tzOffsetMin);
+      const tzSuffix = `${sign}${String(Math.floor(absMin/60)).padStart(2,'0')}:${String(absMin%60).padStart(2,'0')}`;
       const r = await graph('GET',
-        `/me/calendarView?startDateTime=${dk}T00:00:00&endDateTime=${dk}T23:59:59` +
+        `/me/calendarView?startDateTime=${dk}T00:00:00${tzSuffix}&endDateTime=${dk}T23:59:59${tzSuffix}` +
         `&$top=200&$select=id,subject,start,end,categories&$orderby=start/dateTime`
       );
       return (r?.value || []).map(ev => {
