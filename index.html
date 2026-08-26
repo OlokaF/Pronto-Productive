@@ -17953,12 +17953,11 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
   const [status, setStatus] = useS('idle');
   const [lastSync, setLastSync]   = useS(null);
   const [syncError, setSyncError] = useS('');
-  const prevScheduleRef    = useR(null);
-  const pushQueueRef       = useR([]);
-  const pullRunning        = useR(false);
-  const pushRunning        = useR(false);
-  const scheduleRef        = useR(null);
-  const lastAutoPushedRef  = useR({});
+  const prevScheduleRef = useR(null);
+  const pushQueueRef    = useR([]);
+  const pullRunning     = useR(false);
+  const pushRunning     = useR(false);
+  const scheduleRef     = useR(null);
 
   useE(() => { scheduleRef.current = schedule; }, [schedule]);
 
@@ -18372,22 +18371,7 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
     run();
   }, [conf.enabled, conf.accessToken, conf.calendarId, conf.pullCalendarIds, conf._forcePoll]);
 
-  // Auto-push: when the selected day's schedule changes, push to GCal after a 5s debounce
-  useE(() => {
-    if (!conf.enabled || !conf.accessToken) return;
-    const pad = n => n.toString().padStart(2, '0');
-    const dk = selDate instanceof Date
-      ? `${selDate.getFullYear()}-${pad(selDate.getMonth()+1)}-${pad(selDate.getDate())}`
-      : (typeof selDate === 'string' ? selDate : null);
-    if (!dk) return;
-    const curr = JSON.stringify(schedule?.[dk]);
-    if (lastAutoPushedRef.current[dk] === curr) return;
-    const t = setTimeout(() => {
-      lastAutoPushedRef.current[dk] = curr;
-      window._gcalSync?.pushDay(dk).catch(e => console.warn('[GCal auto-push]', e.message));
-    }, 5000);
-    return () => clearTimeout(t);
-  }, [schedule, selDate, conf.enabled, conf.accessToken]);
+  // Auto-push disabled — use ↑ Push to GCal button in Schedule header
 
   return null;
 }
