@@ -21240,8 +21240,13 @@ window.OutlookSync = (() => {
     // Push an owner's blocks for a day to Outlook (replaces all Pronto-tagged events for that day)
     async pushSchedule(blocks, dk, taskNamesById) {
       // 1. Delete existing Pronto-tagged events for this day
+      // Use local timezone offset so the day boundary matches the user's clock, not UTC
+      const tzOffsetMin = new Date().getTimezoneOffset();
+      const sign = tzOffsetMin <= 0 ? '+' : '-';
+      const absMin = Math.abs(tzOffsetMin);
+      const tzSuffix = `${sign}${String(Math.floor(absMin/60)).padStart(2,'0')}:${String(absMin%60).padStart(2,'0')}`;
       const existing = await graph('GET',
-        `/me/calendarView?startDateTime=${dk}T00:00:00&endDateTime=${dk}T23:59:59` +
+        `/me/calendarView?startDateTime=${dk}T00:00:00${tzSuffix}&endDateTime=${dk}T23:59:59${tzSuffix}` +
         `&$top=200&$select=id,categories`
       );
       const toDelete = (existing?.value || []).filter(e => (e.categories || []).includes(CAT));
