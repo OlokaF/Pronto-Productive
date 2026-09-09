@@ -2841,22 +2841,17 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   useE(() => {
     const activeRules = (recRules||[]).filter(r => !r._deleted);
     if (!activeRules.length) return;
-    const gen = loadRecGen();
     const toAdd = [];
     const base = new Date(); base.setHours(0,0,0,0);
     for (let offset = -30; offset <= 365; offset++) {
       const d = new Date(base); d.setDate(d.getDate() + offset);
       const dk = isoDate(d); // local date, not UTC
       for (const rule of activeRules) {
-        const genKey = `${rule.id}_${dk}`;
-        if (gen.has(genKey)) continue;
         if (!recRuleMatchesDate(rule, dk)) continue;
-        const existing = (tasksByDate[dk]||[]).find(t => t.ruleId === rule.id);
+        const existing = (tasksByDate[dk]||[]).find(t => String(t.ruleId) === String(rule.id));
         if (!existing) toAdd.push({ dk, task: { text:rule.text, priority:rule.priority||'Normal', category:rule.category||'Social Post', done:false, owner:rule.owner||'oloka', ruleId:rule.id } });
-        gen.add(genKey);
       }
     }
-    saveRecGen(gen);
     toAdd.forEach(({ dk, task }) => onAdd(dk, task));
   }, [recRules]);
 
