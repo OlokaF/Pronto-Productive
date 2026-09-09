@@ -2857,7 +2857,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
 
   // One-time seed of the correct default recurring rules
   useE(() => {
-    const SEED_KEY = 'prontoHQ.recRulesSeededV2';
+    const SEED_KEY = 'prontoHQ.recRulesSeededV3';
     if (localStorage.getItem(SEED_KEY)) return;
     const now = Date.now();
     const defaults = [
@@ -2865,16 +2865,23 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
       { id:'seed_motivational',   text:'Make Motivational Emails For Next Month',freq:'month_end_offset', endOffset:7,                       category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
       { id:'seed_trade_hire',     text:'Trade Hire Post',                        freq:'weekly',           dow:2,                             category:'Social Post', priority:'Normal', owner:'vanja', updatedAt:now },
       { id:'seed_client_start',   text:'Client Email Must Be Started',           freq:'month_end_offset', endOffset:7,                       category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_photo_winner',   text:'Photo Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-21',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_video_winner',   text:'Video Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-14',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_photo_winner',   text:'Photo Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-22',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_video_winner',   text:'Video Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-15',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
       { id:'seed_staff_send',     text:'Staff Email Must Be Sent',               freq:'nth_weekday',      dow:2, nth:2,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
       { id:'seed_staff_start',    text:'Start Staff Email',                      freq:'nth_weekday',      dow:2, nth:1,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
       { id:'seed_social_stories', text:'Schedule Social Stories For Next Month', freq:'month_end_offset', endOffset:7,                       category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
     ];
+    const seedTexts = new Set(defaults.map(r => r.text.toLowerCase()));
     setRecRules(prev => {
-      const existingIds = new Set((prev||[]).map(r => String(r.id)));
+      // Tombstone any old non-seeded rules that share a name with our defaults (removes duplicates)
+      const cleaned = (prev||[]).map(r =>
+        !String(r.id).startsWith('seed_') && seedTexts.has((r.text||'').toLowerCase())
+          ? { ...r, _deleted:true, deletedAt:now, updatedAt:now }
+          : r
+      );
+      const existingIds = new Set(cleaned.map(r => String(r.id)));
       const toAdd = defaults.filter(r => !existingIds.has(r.id));
-      return toAdd.length ? [...(prev||[]), ...toAdd] : (prev||[]);
+      return toAdd.length ? [...cleaned, ...toAdd] : cleaned;
     });
     localStorage.setItem(SEED_KEY, '1');
   }, []);
