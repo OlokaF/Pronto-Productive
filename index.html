@@ -2855,6 +2855,30 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
     toAdd.forEach(({ dk, task }) => onAdd(dk, task));
   }, [recRules]);
 
+  // One-time seed of the correct default recurring rules
+  useE(() => {
+    const SEED_KEY = 'prontoHQ.recRulesSeededV2';
+    if (localStorage.getItem(SEED_KEY)) return;
+    const now = Date.now();
+    const defaults = [
+      { id:'seed_client_send',    text:'Client Email Must Be Sent',              freq:'nth_weekday',      dow:3, nth:1,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_motivational',   text:'Make Motivational Emails For Next Month',freq:'month_end_offset', endOffset:7,                       category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_trade_hire',     text:'Trade Hire Post',                        freq:'weekly',           dow:2,                             category:'Social Post', priority:'Normal', owner:'vanja', updatedAt:now },
+      { id:'seed_client_start',   text:'Client Email Must Be Started',           freq:'month_end_offset', endOffset:7,                       category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_photo_winner',   text:'Photo Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-21',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_video_winner',   text:'Video Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-14',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_staff_send',     text:'Staff Email Must Be Sent',               freq:'nth_weekday',      dow:2, nth:2,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_staff_start',    text:'Start Staff Email',                      freq:'nth_weekday',      dow:2, nth:1,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_social_stories', text:'Schedule Social Stories For Next Month', freq:'month_end_offset', endOffset:7,                       category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+    ];
+    setRecRules(prev => {
+      const existingIds = new Set((prev||[]).map(r => String(r.id)));
+      const toAdd = defaults.filter(r => !existingIds.has(r.id));
+      return toAdd.length ? [...(prev||[]), ...toAdd] : (prev||[]);
+    });
+    localStorage.setItem(SEED_KEY, '1');
+  }, []);
+
   const saveRule = (rule) => {
     setRecRules(prev => {
       const idx = (prev||[]).findIndex(r => r.id === rule.id);
