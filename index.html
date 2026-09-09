@@ -1197,7 +1197,7 @@ function tryInitFb(conf) {
 // ── Trim state before writing to Firebase to keep payload small ──
 function stripForSync(state) {
   const { tasksByDate, deletedTasks, schedule, actualSchedule, ...rest } = state;
-  return { ...rest, activityLog: (rest.activityLog || []).slice(0, 50) };
+  return { ...rest, activityLog: (rest.activityLog || []).slice(0, 5) };
 }
 
 // ── Presence avatars — shown in the app header ──
@@ -1485,6 +1485,7 @@ function _mergeState(myState, theirState, myIdentity) {
     content: _mergeContent(myState.content, theirState.content),
     ideas: _mergeIdeas(myState.ideas, theirState.ideas),
     recurringTasks: _mergeById(myState.recurringTasks, theirState.recurringTasks),
+    recRules: _mergeById(myState.recRules, theirState.recRules),
     toBeCompleted: _mergeById(myState.toBeCompleted, theirState.toBeCompleted),
     ongoingJobs: _mergeById(myState.ongoingJobs, theirState.ongoingJobs),
     toPostList: _mergeById(myState.toPostList, theirState.toPostList),
@@ -1526,6 +1527,9 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
   const hasReceivedInitialData = useRy(false); // guard: never write before first server read
   const hasPendingWrite        = useRy(false);  // dirty flag: unconfirmed write in flight
   const lastSyncedTasksRef     = useRy(null);   // tracks last-written flat tasks for diff writes
+  const myWriteIdRef           = useRy(null);   // fingerprint to reliably suppress our own echoes
+  const lastWrittenStateRef    = useRy({});     // tracks last-written state fields for delta writes
+  const theirChildListenersRef = useRy([]);     // child_changed / child_added listeners on their state path
 
   // Close popup on outside click
   useEy(() => {
@@ -1537,6 +1541,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
   // ── Connect / reconnect when conf or identity changes ──
   useEy(() => {
     if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirChildListenersRef.current?.length) { theirChildListenersRef.current.forEach(({ ref, event, fn }) => ref.off(event, fn)); theirChildListenersRef.current = []; }
     if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
     if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
     if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
@@ -1608,7 +1613,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
         }
         return;
       }
-      if (Date.now() - localWriteAt.current < 2000) return; // suppress our own echo
+      if (myWriteIdRef.current && data._meta?.wid === myWriteIdRef.current) return; // suppress our own echo
       const { _meta, ...incoming } = data;
       if (!hasReceivedInitialData.current) {
         hasReceivedInitialData.current = true;
@@ -1638,20 +1643,35 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
     myRef.on("value", myHandler, err => { setStatus("error"); setErrMsg(err.message || "Firebase error."); });
     myListenerRef.current = { ref:myRef, handler:myHandler };
 
-    // ── THEIR path: always merge with my current pending state (preserves in-flight changes) ──
+    // ── THEIR path: one-time full snapshot + child_changed for incremental (avoids re-downloading unchanged large fields) ──
     const theirRef = db.ref(theirPath);
-    const theirHandler = snap => {
-      const data = snap.val();
-      if (!data) return; // They haven't connected yet — nothing to merge
-      const { _meta, ...incoming } = data;
-      theirSnapRef.current = { ...incoming, _meta };
-      if (!hasReceivedInitialData.current) return; // Wait until we've loaded our own data first
-      // Merge their Firebase state with our current in-memory state (pendingState has latest incl. in-flight changes)
+    const applyTheirSnap = () => {
+      if (!hasReceivedInitialData.current) return;
       applyState(_mergeState(pendingState.current, theirSnapRef.current, identity));
       setLastSync(new Date());
     };
-    theirRef.on("value", theirHandler, err => console.warn("[Pronto] Other user path error:", err.message));
-    theirListenerRef.current = { ref:theirRef, handler:theirHandler };
+    // Initial full load
+    theirRef.once("value", snap => {
+      const data = snap.val();
+      if (!data) return;
+      const { _meta, ...incoming } = data;
+      theirSnapRef.current = { ...incoming, _meta };
+      applyTheirSnap();
+    }, err => console.warn("[Pronto] Other user initial load error:", err.message));
+    // Incremental: only the field that changed is downloaded
+    const theirChildHandler = snap => {
+      if (!hasReceivedInitialData.current) return;
+      theirSnapRef.current = { ...(theirSnapRef.current || {}), [snap.key]: snap.val() };
+      if (snap.key === '_meta') return; // meta-only update, no state change needed
+      applyTheirSnap();
+    };
+    theirRef.on("child_changed", theirChildHandler, err => console.warn("[Pronto] Other user child_changed error:", err.message));
+    theirRef.on("child_added",   theirChildHandler, err => console.warn("[Pronto] Other user child_added error:", err.message));
+    theirChildListenersRef.current = [
+      { ref: theirRef, event: "child_changed", fn: theirChildHandler },
+      { ref: theirRef, event: "child_added",   fn: theirChildHandler },
+    ];
+    theirListenerRef.current = null; // no longer used for their path (cleaned up via theirChildListenersRef)
 
     // ── THEIR tasks path: cache-first, delta-query listeners ──
     if (onApplyTasks) {
@@ -1759,7 +1779,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
     return () => {
       clearInterval(heartbeatId);
       myRef.off("value", myHandler);
-      theirRef.off("value", theirHandler);
+      if (theirChildListenersRef.current?.length) { theirChildListenersRef.current.forEach(({ ref, event, fn }) => ref.off(event, fn)); theirChildListenersRef.current = []; }
       if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
       presRef.off("value", presHandler);
       try { db.ref(".info/connected").off(); } catch(_) {}
@@ -1785,12 +1805,21 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
           const s = pendingState.current;
           if (!s || !dbRef.current || !hasReceivedInitialData.current) return;
           const identity = myIdentity || "vanja";
-          const payload = { ...stripForSync(s), _meta:{ updatedAt:Date.now() } };
+          const wid = Math.random().toString(36).slice(2);
+          myWriteIdRef.current = wid;
+          const stripped = stripForSync(s);
+          const prev = lastWrittenStateRef.current;
+          // Delta write: only send fields that actually changed
+          const updates = { '_meta/updatedAt': Date.now(), '_meta/wid': wid };
+          Object.entries(stripped).forEach(([k, v]) => {
+            if (JSON.stringify(prev[k]) !== JSON.stringify(v)) updates[k] = v;
+          });
+          if (Object.keys(updates).length <= 2) { hasPendingWrite.current = false; return; } // nothing real changed
           localWriteAt.current = Date.now();
           const attempt = (retriesLeft) => {
             if (!dbRef.current) return;
-            dbRef.current.ref(`${FB_STATE_PATH}/${identity}`).set(payload)
-              .then(() => { setLastSync(new Date()); setSyncError(false); hasPendingWrite.current = false; })
+            dbRef.current.ref(`${FB_STATE_PATH}/${identity}`).update(updates)
+              .then(() => { lastWrittenStateRef.current = stripped; setLastSync(new Date()); setSyncError(false); hasPendingWrite.current = false; })
               .catch(err => {
                 if (retriesLeft > 0 && dbRef.current) {
                   setTimeout(() => attempt(retriesLeft - 1), 2000 * (4 - retriesLeft));
@@ -1801,7 +1830,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
               });
           };
           attempt(3);
-        }, 5000);
+        }, 30000);
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
@@ -1849,6 +1878,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
   const disconnect = () => {
     if (!confirm("Disconnect Firebase? The app will keep working locally but changes won't sync.")) return;
     if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirChildListenersRef.current?.length) { theirChildListenersRef.current.forEach(({ ref, event, fn }) => ref.off(event, fn)); theirChildListenersRef.current = []; }
     if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
     if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
     if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
@@ -2144,7 +2174,7 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
             </div>
           ))}
           {/* User-added recurring tasks (exclude any that duplicate built-in templates) */}
-          {recurringTasks.filter(rt => !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text)).map(rt => (
+          {recurringTasks.filter(rt => !rt._deleted && !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text)).map(rt => (
             <div key={rt.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
               <OrangeCheckbox done={!!recurringDone[rt.id]} onToggle={() => setRecDone(rt.id, !recurringDone[rt.id])} />
               <span style={{ fontSize:12, color: recurringDone[rt.id] ? T.muted : T.ink, flex:1, textDecoration: recurringDone[rt.id] ? "line-through" : "none" }}>{rt.text}</span>
@@ -2156,10 +2186,10 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
                   title="Add as a task for today"
                   style={{ padding:"2px 7px", background:ORANGE+"22", border:`1px solid ${ORANGE}55`, borderRadius:4, color:ORANGE, fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>→ Today</button>
               )}
-              <button onClick={() => setRecurringTasks(prev => prev.filter(x => x.id !== rt.id))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }} title="Remove permanently">×</button>
+              <button onClick={() => setRecurringTasks(prev => prev.map(x => x.id !== rt.id ? x : { ...x, _deleted:true, deletedAt:Date.now(), updatedAt:Date.now() }))} style={{ background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }} title="Remove permanently">×</button>
             </div>
           ))}
-          {recurringTasks.length === 0 && staffEvents.length === 0 && (
+          {recurringTasks.filter(rt => !rt._deleted).length === 0 && staffEvents.length === 0 && (
             <p style={{ fontSize:10, color:T.faint, fontStyle:"italic" }}>No user-added recurring tasks · use + Add above</p>
           )}
           {/* Add form */}
@@ -2167,14 +2197,14 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
             <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
               {ownerToggle(newRecurOwner, setNewRecurOwner)}
               <input autoFocus value={newRecurText} onChange={e => setNewRecurText(e.target.value)}
-                onKeyDown={e => { if(e.key==="Enter" && newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner, startDate:newRecurStartDate }]); setNewRecurText(""); setAddingRecurring(false); } if(e.key==="Escape") { setAddingRecurring(false); setNewRecurText(""); }}}
+                onKeyDown={e => { if(e.key==="Enter" && newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner, startDate:newRecurStartDate, updatedAt:Date.now() }]); setNewRecurText(""); setAddingRecurring(false); } if(e.key==="Escape") { setAddingRecurring(false); setNewRecurText(""); }}}
                 placeholder="Recurring task…"
                 style={{ flex:1, minWidth:120, padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }}
               />
               <input type="date" value={newRecurStartDate} onChange={e => setNewRecurStartDate(e.target.value)}
                 style={{ padding:"5px 8px", border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.muted, background:T.bg, outline:"none", fontFamily:"inherit", cursor:"pointer" }}
               />
-              <button onClick={() => { if(newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner, startDate:newRecurStartDate }]); setNewRecurText(""); setAddingRecurring(false); }}} style={{ padding:"5px 10px", background:ORANGE, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
+              <button onClick={() => { if(newRecurText.trim()) { setRecurringTasks(prev => [...prev, { id:"rt_"+Date.now(), text:newRecurText.trim(), owner:newRecurOwner, startDate:newRecurStartDate, updatedAt:Date.now() }]); setNewRecurText(""); setAddingRecurring(false); }}} style={{ padding:"5px 10px", background:ORANGE, border:"none", borderRadius:5, color:"#fff", fontSize:10, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Add</button>
               <button onClick={() => { setAddingRecurring(false); setNewRecurText(""); }} style={{ padding:"5px 8px", background:T.surface2, border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
             </div>
           )}
@@ -2434,7 +2464,7 @@ function TaskInspector({ task, dateKey, onClose, onToggle, onChangePriority, onC
 
 // ── RECURRING TASK RULES ─────────────────────────────────────────────────────
 const REC_RULES_KEY = 'prontoHQ.recurRules2';
-const REC_GEN_KEY   = 'prontoHQ.recurGenerated2';
+const REC_GEN_KEY   = 'prontoHQ.recurGenerated3'; // v3: local-date keys (not UTC)
 const loadRecRules  = () => { try { return JSON.parse(localStorage.getItem(REC_RULES_KEY)||'[]'); } catch(_){ return []; } };
 const saveRecRules  = r  => { try { localStorage.setItem(REC_RULES_KEY, JSON.stringify(r)); } catch(_){} };
 const loadRecGen    = () => { try { return new Set(JSON.parse(localStorage.getItem(REC_GEN_KEY)||'[]')); } catch(_){ return new Set(); } };
@@ -2558,7 +2588,7 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
   const [freq,     setFreq]     = useStateV(editRule?.freq || 'weekly');
   const [dow,      setDow]      = useStateV(editRule?.dow ?? 1);
   const [nth,      setNth]      = useStateV(editRule?.nth || 1);
-  const [refDate,  setRefDate]  = useStateV(editRule?.refDate || new Date().toISOString().slice(0,10));
+  const [refDate,  setRefDate]  = useStateV(editRule?.refDate || isoDate(new Date()));
   const [endOffset, setEndOffset] = useStateV(editRule?.endOffset || 7);
   const [selectedDates, setSelectedDates] = useStateV(() => new Set(editRule?.dates || []));
   const [calOff, setCalOff] = useStateV(0);
@@ -2575,6 +2605,7 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
       refDate:  freq === 'fortnightly' ? refDate : undefined,
       endOffset: freq === 'month_end_offset' ? Number(endOffset) : undefined,
       dates:    freq === 'specific' ? [...selectedDates].sort() : undefined,
+      updatedAt: Date.now(),
     });
     onClose();
   };
@@ -2712,16 +2743,17 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
 // ── RECURRING RULES MANAGER (shown at bottom of day view) ───────────────────
 function RecurringRulesManager({ rules, onEdit, onDelete }) {
   const [open, setOpen] = useStateV(false);
-  if (!rules.length) return null;
+  const activeRules = (rules||[]).filter(r => !r._deleted);
+  if (!activeRules.length) return null;
   return (
     <div style={{ marginTop:24, border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden' }}>
       <button onClick={()=>setOpen(v=>!v)} style={{ width:'100%', padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', background:T.surface, border:'none', cursor:'pointer', fontFamily:'inherit' }}>
-        <span style={{ fontSize:11, fontWeight:800, color:T.muted, letterSpacing:'0.1em' }}>🔁 RECURRING RULES ({rules.length})</span>
+        <span style={{ fontSize:11, fontWeight:800, color:T.muted, letterSpacing:'0.1em' }}>🔁 RECURRING RULES ({activeRules.length})</span>
         <span style={{ color:T.faint, fontSize:12 }}>{open?'▲':'▼'}</span>
       </button>
       {open && (
         <div style={{ padding:'4px 0' }}>
-          {rules.map(r => (
+          {activeRules.map(r => (
             <div key={r.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 16px', borderTop:`1px solid ${T.border}` }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <p style={{ fontSize:12.5, fontWeight:700, color:T.ink }}>{r.text}</p>
@@ -2743,7 +2775,7 @@ function RecurringRulesManager({ rules, onEdit, onDelete }) {
 }
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars, personView: personViewProp, setPersonView: setPersonViewProp }) {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars, personView: personViewProp, setPersonView: setPersonViewProp, recRules: recRulesProp, setRecRules: setRecRulesProp }) {
   const [_localPersonView, _setLocalPersonView] = useStateV(() => {
     try { const u = localStorage.getItem("prontoHQ.todayUser"); if (u === "oloka" || u === "vanja") return u; } catch(_) {}
     return "both";
@@ -2768,7 +2800,9 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   const [showRecurModal, setShowRecurModal] = useStateV(false);
   const [showRulesManager, setShowRulesManager] = useStateV(false);
   const [editingRule, setEditingRule] = useStateV(null);
-  const [recRules, setRecRules] = useStateV(() => loadRecRules());
+  const [_localRecRules, _setLocalRecRules] = useStateV(() => recRulesProp || loadRecRules());
+  const recRules    = recRulesProp    != null ? recRulesProp    : _localRecRules;
+  const setRecRules = setRecRulesProp != null ? setRecRulesProp : _setLocalRecRules;
   const [projFilter, setProjFilter] = useStateV('all');
   const [showMonthSidebar, setShowMonthSidebar] = useStateV(false);
   const [monthData, setMonthData] = useStateV(() => {
@@ -2783,20 +2817,41 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   const [monthOffset, setMonthOffset] = useStateV(0);
   const [newMonthItem, setNewMonthItem] = useStateV('');
 
-  // Generate recurring tasks for today ± 30 days
+  // One-time cleanup: remove recurring tasks that were generated on wrong UTC dates (before the local-date fix)
   useE(() => {
-    if (!recRules.length) return;
+    const CLEANUP_KEY = 'prontoHQ.recCleanedUTC';
+    if (localStorage.getItem(CLEANUP_KEY)) return;
+    const activeRules = (recRules||[]).filter(r => !r._deleted);
+    if (!activeRules.length) { localStorage.setItem(CLEANUP_KEY, '1'); return; }
+    const ruleMap = new Map(activeRules.map(r => [String(r.id), r]));
+    const toDelete = [];
+    Object.entries(tasksByDate||{}).forEach(([dk, tasks]) => {
+      (tasks||[]).forEach(t => {
+        if (!t.ruleId || !t.id) return;
+        const rule = ruleMap.get(String(t.ruleId));
+        if (!rule) return;
+        if (!recRuleMatchesDate(rule, dk)) toDelete.push({ dk, id: t.id });
+      });
+    });
+    if (toDelete.length) toDelete.forEach(({ dk, id }) => onDelete && onDelete(dk, id));
+    localStorage.setItem(CLEANUP_KEY, '1');
+  }, []);
+
+  // Generate recurring tasks for today ± 30 days (uses local date to match NZ timezone)
+  useE(() => {
+    const activeRules = (recRules||[]).filter(r => !r._deleted);
+    if (!activeRules.length) return;
     const gen = loadRecGen();
     const toAdd = [];
     const base = new Date(); base.setHours(0,0,0,0);
     for (let offset = -30; offset <= 365; offset++) {
       const d = new Date(base); d.setDate(d.getDate() + offset);
-      const dk = d.toISOString().slice(0,10);
-      for (const rule of recRules) {
+      const dk = isoDate(d); // local date, not UTC
+      for (const rule of activeRules) {
         const genKey = `${rule.id}_${dk}`;
         if (gen.has(genKey)) continue;
         if (!recRuleMatchesDate(rule, dk)) continue;
-        const existing = (tasksByDate[dk]||[]).find(t => t.ruleId === rule.id && isoDate(new Date(dk+'T12:00:00')) === dk);
+        const existing = (tasksByDate[dk]||[]).find(t => t.ruleId === rule.id);
         if (!existing) toAdd.push({ dk, task: { text:rule.text, priority:rule.priority||'Normal', category:rule.category||'Social Post', done:false, owner:rule.owner||'oloka', ruleId:rule.id } });
         gen.add(genKey);
       }
@@ -2806,16 +2861,13 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   }, [recRules]);
 
   const saveRule = (rule) => {
-    const rules = loadRecRules();
-    const idx = rules.findIndex(r => r.id === rule.id);
-    if (idx >= 0) rules[idx] = rule; else rules.push(rule);
-    saveRecRules(rules);
-    setRecRules([...rules]);
+    setRecRules(prev => {
+      const idx = (prev||[]).findIndex(r => r.id === rule.id);
+      return idx >= 0 ? prev.map((r,i) => i===idx ? rule : r) : [...(prev||[]), rule];
+    });
   };
   const deleteRule = (id) => {
-    const rules = loadRecRules().filter(r => r.id !== id);
-    saveRecRules(rules);
-    setRecRules(rules);
+    setRecRules(prev => (prev||[]).map(r => r.id !== id ? r : { ...r, _deleted:true, deletedAt:Date.now(), updatedAt:Date.now() }));
   };
   const getMonthKey = (offset) => { const d = new Date(selDate.getFullYear(), selDate.getMonth() + (offset||0), 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
   const saveMonthData = (data) => { localStorage.setItem('prontoHQ.monthData', JSON.stringify(data)); setMonthData(data); };
@@ -3027,7 +3079,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                   <div style={{ position:"absolute", top:"calc(100% + 4px)", right:0, background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, boxShadow:"0 8px 24px rgba(0,0,0,0.14)", minWidth:190, zIndex:1000, overflow:"hidden" }}>
                     <button onClick={() => { setShowDropdown(false); setShowAddModal(true); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", color:T.ink, fontSize:12.5, fontWeight:600, cursor:"pointer", textAlign:"left", fontFamily:"inherit" }}>＋ Normal Task</button>
                     <button onClick={() => { setShowDropdown(false); setEditingRule(null); setShowRecurModal(true); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", color:T.navy, fontSize:12.5, fontWeight:700, cursor:"pointer", textAlign:"left", fontFamily:"inherit", borderTop:`1px solid ${T.border}` }}>🔁 Recurring Task…</button>
-                    <button onClick={() => { setShowDropdown(false); setShowRulesManager(true); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", color:T.muted, fontSize:12, fontWeight:600, cursor:"pointer", textAlign:"left", fontFamily:"inherit", borderTop:`1px solid ${T.border}` }}>⚙ Manage Recurring Rules{recRules.length?` (${recRules.length})`:''}</button>
+                    <button onClick={() => { setShowDropdown(false); setShowRulesManager(true); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", color:T.muted, fontSize:12, fontWeight:600, cursor:"pointer", textAlign:"left", fontFamily:"inherit", borderTop:`1px solid ${T.border}` }}>⚙ Manage Recurring Rules{recRules.filter(r=>!r._deleted).length?` (${recRules.filter(r=>!r._deleted).length})`:''}</button>
                   </div>
                 </>
               )}
@@ -3268,9 +3320,9 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
               </div>
             </div>
             <div style={{ overflowY:"auto", flex:1 }}>
-              {recRules.length === 0 ? (
+              {recRules.filter(r=>!r._deleted).length === 0 ? (
                 <p style={{ color:T.faint, fontSize:13, fontStyle:"italic", textAlign:"center", padding:"30px 0" }}>No recurring rules yet. Click "+ New Rule" to create one.</p>
-              ) : recRules.map(r => (
+              ) : recRules.filter(r=>!r._deleted).map(r => (
                 <div key={r.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", borderRadius:8, border:`1px solid ${T.border}`, background:T.cardBg, marginBottom:8 }}>
                   <div style={{ flex:1, minWidth:0 }}>
                     <p style={{ fontSize:13, fontWeight:700, color:T.ink, margin:0 }}>{r.text}</p>
@@ -3349,7 +3401,7 @@ function SharedTasksPanel({ dateKey, dayNotes, setDayNotes, recurringTasks, toBe
     { id:"__socialpost__", text:"Social Post" + (contentText ? " — " + contentText : ""), done: !!recurringDone["__socialpost__"] },
     ...BUILTIN.filter(t => t.weekdays.includes(dow)).map(t => ({ id:t.id, text:t.text, done:!!recurringDone[t.id] })),
     ...staffEvents.map(ev => ({ id:ev.id, text:ev.text, done:!!recurringDone[ev.id] })),
-    ...(recurringTasks || []).filter(rt => !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text))
+    ...(recurringTasks || []).filter(rt => !rt._deleted && !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text))
       .map(rt => ({ id:rt.id, text:rt.text, done:!!recurringDone[rt.id] })),
   ];
   const doneCount = allItems.filter(i => i.done).length;
@@ -13322,7 +13374,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
     { id:"__stories_forsale__",  text:"Social Stories – Machine For Sale", owner:"oloka", weekdays:[2,4] },
   ];
   const todayBuiltins = BUILTIN_RECUR.filter(t => t.weekdays.includes(dowRecur));
-  const userRecurring = (recurringTasks||[]).filter(rt => !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text));
+  const userRecurring = (recurringTasks||[]).filter(rt => !rt._deleted && !["Social Stories – Casual","Social Stories – Machine Hire","Social Stories – Machine For Sale"].includes(rt.text));
 
   const ojDone = ((dayNotes || {})[dk] || {}).ojDone || {};
   const setOJDone = (id, val) => { if (!setDayNotes) return; setDayNotes(prev => { const day = (prev||{})[dk]||{}; return { ...prev, [dk]: { ...day, ojDone: { ...(day.ojDone||{}), [id]: val } } }; }); };
@@ -15120,9 +15172,13 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
   const theirSnapRef           = useR(null);
   const hasReceivedInitialData = useR(false);
   const lastSyncedTasksRef     = useR(null);    // tracks last-written flat tasks for diff writes
+  const myWriteIdRef           = useR(null);    // fingerprint for echo suppression
+  const lastWrittenStateRef    = useR({});      // tracks last-written state fields for delta writes
+  const theirChildListenersRef = useR([]);      // child_changed listeners on their state path
 
   useE(() => {
     if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirChildListenersRef.current?.length) { theirChildListenersRef.current.forEach(({ ref, event, fn }) => ref.off(event, fn)); theirChildListenersRef.current = []; }
     if (theirListenerRef.current)      { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
     if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
     if (presListRef.current)           { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
@@ -15183,17 +15239,28 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
     myRef.on("value", myHandler, err => { setStatus("error"); setErrMsg(err.message || "Firebase error."); });
     myListenerRef.current = { ref:myRef, handler:myHandler };
     const theirRef = db.ref(theirPath);
-    const theirHandler = snap => {
+    theirRef.once("value", snap => {
       const data = snap.val();
       if (!data) return;
       const { _meta, ...incoming } = data;
       theirSnapRef.current = { ...incoming, _meta };
+      if (applyState && hasReceivedInitialData.current) applyState(_mergeState(pendingState.current, theirSnapRef.current, identity));
+      setLastSync(new Date());
+    }, err => console.warn("[Pronto Mobile] Other user initial load error:", err.message));
+    const theirChildHandler = snap => {
       if (!hasReceivedInitialData.current) return;
+      theirSnapRef.current = { ...(theirSnapRef.current || {}), [snap.key]: snap.val() };
+      if (snap.key === '_meta') return;
       if (applyState) applyState(_mergeState(pendingState.current, theirSnapRef.current, identity));
       setLastSync(new Date());
     };
-    theirRef.on("value", theirHandler, err => console.warn("[Pronto Mobile] Other user path error:", err.message));
-    theirListenerRef.current = { ref:theirRef, handler:theirHandler };
+    theirRef.on("child_changed", theirChildHandler, err => console.warn("[Pronto Mobile] Other user child_changed error:", err.message));
+    theirRef.on("child_added",   theirChildHandler, err => console.warn("[Pronto Mobile] Other user child_added error:", err.message));
+    theirChildListenersRef.current = [
+      { ref: theirRef, event: "child_changed", fn: theirChildHandler },
+      { ref: theirRef, event: "child_added",   fn: theirChildHandler },
+    ];
+    theirListenerRef.current = null;
 
     // ── THEIR tasks path: cache-first, delta-query listeners ──
     if (onApplyTasks) {
@@ -15316,12 +15383,21 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
           const s = pendingState.current;
           if (!s || !dbRef.current || !hasReceivedInitialData.current) return;
           const identity = chatAs || "vanja";
+          const wid = Math.random().toString(36).slice(2);
+          myWriteIdRef.current = wid;
+          const stripped = stripForSync(s);
+          const prev = lastWrittenStateRef.current;
+          const updates = { '_meta/updatedAt': Date.now(), '_meta/wid': wid };
+          Object.entries(stripped).forEach(([k, v]) => {
+            if (JSON.stringify(prev[k]) !== JSON.stringify(v)) updates[k] = v;
+          });
+          if (Object.keys(updates).length <= 2) return;
           localWriteAt.current = Date.now();
           dbRef.current.ref(`${FB_STATE_PATH}/${identity}`)
-            .set({ ...stripForSync(s), _meta:{ updatedAt:Date.now() } })
-            .then(() => setLastSync(new Date()))
+            .update(updates)
+            .then(() => { lastWrittenStateRef.current = stripped; setLastSync(new Date()); })
             .catch(err => console.error("Firebase write:", err));
-        }, 5000);
+        }, 30000);
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
@@ -15358,6 +15434,7 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
   const disconnect = () => {
     if (!confirm("Disconnect Firebase? Changes won't sync until reconnected.")) return;
     if (myListenerRef.current) { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
+    if (theirChildListenersRef.current?.length) { theirChildListenersRef.current.forEach(({ ref, event, fn }) => ref.off(event, fn)); theirChildListenersRef.current = []; }
     if (theirListenerRef.current) { theirListenerRef.current.ref.off("value", theirListenerRef.current.handler); theirListenerRef.current = null; }
     if (presListRef.current) { presListRef.current.ref.off("value", presListRef.current.handler); presListRef.current = null; }
     if (myPresRef.current) { myPresRef.current.remove(); myPresRef.current = null; }
@@ -15813,6 +15890,8 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [dayNotes, setDayNotes] = useS(() => loadOr("dayNotes", () => ({})));
   // Recurring daily tasks — appear every day with orange checkbox
   const [recurringTasks, setRecurringTasks] = useS(() => loadOr("recurringTasks", () => []));
+  // Recurring task RULES — synced via Firebase so rules persist across devices
+  const [recRules, setRecRules] = useS(() => loadOr("recRules", () => loadRecRules()));
   const [machinesToPush, setMachinesToPush] = useS(() => loadOr("machinesToPush", () => []));
   const [toPostList, setToPostList] = useS(() => {
     // Always merge with seed so both users see the preset ideas, but respect soft-deletes
@@ -15918,7 +15997,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog,
     branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs,
     contentLabels, videoLabels,
-    recurringTasks, ongoingJobs, toBeCompleted, machinesToPush,
+    recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush,
     uniform, toPostList,
   });
 
@@ -15938,7 +16017,8 @@ function App({ onSwitchWorkspace = () => {} }) {
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
-  }, [tasksByDate, content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, schedule, actualSchedule, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList]);
+  // tasksByDate, deletedTasks, schedule, actualSchedule excluded — they're stripped from the Firebase payload and have their own sync paths
+  }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList]);
   // Keep deletedTasksRef in sync so async callbacks (onApplyTasks) see fresh tombstones
   useE(() => { deletedTasksRef.current = deletedTasks; }, [deletedTasks]);
   // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
@@ -16133,6 +16213,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.contentLabels) setContentLabels(s.contentLabels);
     if (s.videoLabels) setVideoLabels(s.videoLabels);
     if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
+    if (s.recRules) setRecRules(prev => _mergeById(prev, Array.isArray(s.recRules) ? s.recRules : Object.values(s.recRules || {})));
     if (s.ongoingJobs)    setOngoingJobs(s.ongoingJobs);
     if (s.toBeCompleted)  setToBeCompleted(s.toBeCompleted);
     if (s.machinesToPush) setMachinesToPush(prev => _mergeById(prev, Array.isArray(s.machinesToPush)?s.machinesToPush:Object.values(s.machinesToPush||{})));
@@ -16771,6 +16852,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             onPickDate={onPickDate}
             avatars={avatars}
             personView={taskOwnerTab} setPersonView={setTaskOwnerTab}
+            recRules={recRules} setRecRules={setRecRules}
           />
         )}
         {tab === "tasks" && view === "week" && (
