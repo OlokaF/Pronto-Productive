@@ -2462,13 +2462,12 @@ function TaskInspector({ task, dateKey, onClose, onToggle, onChangePriority, onC
   );
 }
 
+
+
 // ── RECURRING TASK RULES ─────────────────────────────────────────────────────
 const REC_RULES_KEY = 'prontoHQ.recurRules2';
-const REC_GEN_KEY   = 'prontoHQ.recurGenerated3'; // v3: local-date keys (not UTC)
 const loadRecRules  = () => { try { return JSON.parse(localStorage.getItem(REC_RULES_KEY)||'[]'); } catch(_){ return []; } };
 const saveRecRules  = r  => { try { localStorage.setItem(REC_RULES_KEY, JSON.stringify(r)); } catch(_){} };
-const loadRecGen    = () => { try { return new Set(JSON.parse(localStorage.getItem(REC_GEN_KEY)||'[]')); } catch(_){ return new Set(); } };
-const saveRecGen    = s  => { try { localStorage.setItem(REC_GEN_KEY, JSON.stringify([...s])); } catch(_){} };
 
 function recRuleMatchesDate(rule, dateKey) {
   const d   = new Date(dateKey + 'T12:00:00');
@@ -2476,29 +2475,31 @@ function recRuleMatchesDate(rule, dateKey) {
   switch (rule.freq) {
     case 'daily':     return true;
     case 'weekdaily': return dow >= 1 && dow <= 5;
-    case 'weekly':    return dow === rule.dow;
+    case 'weekly':    return dow === Number(rule.dow);
     case 'fortnightly': {
-      if (dow !== rule.dow) return false;
-      const ref  = new Date((rule.refDate || dateKey) + 'T12:00:00');
-      const wks  = Math.round((d - ref) / (7*24*3600*1000));
-      return wks >= 0 && wks % 2 === 0;
+      if (dow !== Number(rule.dow)) return false;
+      const ref = new Date((rule.refDate || dateKey) + 'T12:00:00');
+      const daysDiff = Math.round((d - ref) / (24*3600*1000));
+      return daysDiff >= 0 && daysDiff % 14 === 0;
     }
     case 'nth_weekday': {
-      if (dow !== rule.dow) return false;
+      if (dow !== Number(rule.dow)) return false;
       let cnt = 0;
       for (let day = 1; day <= d.getDate(); day++) {
-        if (new Date(d.getFullYear(), d.getMonth(), day).getDay() === rule.dow) cnt++;
+        if (new Date(d.getFullYear(), d.getMonth(), day).getDay() === Number(rule.dow)) cnt++;
       }
-      return cnt === (rule.nth || 1);
+      return cnt === Number(rule.nth || 1);
     }
     case 'month_end_offset': {
       const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      const target = new Date(d.getFullYear(), d.getMonth(), lastDay - Number(rule.endOffset || 7));
-      const dow = target.getDay();
-      const fireDate = dow === 0 ? new Date(target.getFullYear(), target.getMonth(), target.getDate() + 1)
-                     : dow === 6 ? new Date(target.getFullYear(), target.getMonth(), target.getDate() - 1)
-                     : target;
-      return d.getDate() === fireDate.getDate() && d.getMonth() === fireDate.getMonth();
+      const targetDate = lastDay - Number(rule.endOffset || 7);
+      const target = new Date(d.getFullYear(), d.getMonth(), targetDate);
+      const tdow = target.getDay();
+      // Skip to nearest weekday if target falls on weekend
+      const fire = tdow === 0 ? new Date(d.getFullYear(), d.getMonth(), targetDate + 1)
+                 : tdow === 6 ? new Date(d.getFullYear(), d.getMonth(), targetDate - 1)
+                 : target;
+      return d.getDate() === fire.getDate() && d.getMonth() === fire.getMonth();
     }
     case 'specific': return (rule.dates||[]).includes(dateKey);
     default: return false;
@@ -2817,63 +2818,47 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
   const [monthOffset, setMonthOffset] = useStateV(0);
   const [newMonthItem, setNewMonthItem] = useStateV('');
 
-  // One-time cleanup: remove recurring tasks that were generated on wrong UTC dates (before the local-date fix)
-  useE(() => {
-    const CLEANUP_KEY = 'prontoHQ.recCleanedUTC';
-    if (localStorage.getItem(CLEANUP_KEY)) return;
-    const activeRules = (recRules||[]).filter(r => !r._deleted);
-    if (!activeRules.length) { localStorage.setItem(CLEANUP_KEY, '1'); return; }
-    const ruleMap = new Map(activeRules.map(r => [String(r.id), r]));
-    const toDelete = [];
-    Object.entries(tasksByDate||{}).forEach(([dk, tasks]) => {
-      (tasks||[]).forEach(t => {
-        if (!t.ruleId || !t.id) return;
-        const rule = ruleMap.get(String(t.ruleId));
-        if (!rule) return;
-        if (!recRuleMatchesDate(rule, dk)) toDelete.push({ dk, id: t.id });
-      });
-    });
-    if (toDelete.length) toDelete.forEach(({ dk, id }) => onDelete && onDelete(dk, id));
-    localStorage.setItem(CLEANUP_KEY, '1');
-  }, []);
-
-  // Generate recurring tasks for today ± 30 days (uses local date to match NZ timezone)
+  // Generate recurring tasks — runs only when the set of active rule IDs changes
+  const _prevRuleSetRef = useRy('');
   useE(() => {
     const activeRules = (recRules||[]).filter(r => !r._deleted);
+    const ruleSetKey = activeRules.map(r => `${r.id}:${r.updatedAt||0}`).sort().join('|');
+    if (ruleSetKey === _prevRuleSetRef.current) return;
+    _prevRuleSetRef.current = ruleSetKey;
     if (!activeRules.length) return;
     const toAdd = [];
     const base = new Date(); base.setHours(0,0,0,0);
-    for (let offset = -30; offset <= 365; offset++) {
+    for (let offset = -7; offset <= 90; offset++) {
       const d = new Date(base); d.setDate(d.getDate() + offset);
-      const dk = isoDate(d); // local date, not UTC
+      const dk = isoDate(d);
       for (const rule of activeRules) {
         if (!recRuleMatchesDate(rule, dk)) continue;
         const existing = (tasksByDate[dk]||[]).find(t => String(t.ruleId) === String(rule.id));
-        if (!existing) toAdd.push({ dk, task: { text:rule.text, priority:rule.priority||'Normal', category:rule.category||'Social Post', done:false, owner:rule.owner||'oloka', ruleId:rule.id } });
+        if (!existing) toAdd.push({ dk, task: { text:rule.text, priority:rule.priority||'Normal', category:rule.category||'Social Post', done:false, owner:rule.owner||'oloka', ruleId:rule.id, updatedAt:Date.now() } });
       }
     }
     toAdd.forEach(({ dk, task }) => onAdd(dk, task));
   }, [recRules]);
 
-  // One-time seed of the correct default recurring rules
+  // One-time seed of correct default recurring rules (V4 — clean rebuild)
   useE(() => {
-    const SEED_KEY = 'prontoHQ.recRulesSeededV3';
+    const SEED_KEY = 'prontoHQ.recRulesSeededV4';
     if (localStorage.getItem(SEED_KEY)) return;
     const now = Date.now();
     const defaults = [
-      { id:'seed_client_send',    text:'Client Email Must Be Sent',              freq:'nth_weekday',      dow:3, nth:1,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_motivational',   text:'Make Motivational Emails For Next Month',freq:'month_end_offset', endOffset:7,                       category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_trade_hire',     text:'Trade Hire Post',                        freq:'weekly',           dow:2,                             category:'Social Post', priority:'Normal', owner:'vanja', updatedAt:now },
-      { id:'seed_client_start',   text:'Client Email Must Be Started',           freq:'month_end_offset', endOffset:7,                       category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_photo_winner',   text:'Photo Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-22',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_video_winner',   text:'Video Winner',                           freq:'fortnightly',      dow:1, refDate:'2026-09-15',        category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_staff_send',     text:'Staff Email Must Be Sent',               freq:'nth_weekday',      dow:2, nth:2,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_staff_start',    text:'Start Staff Email',                      freq:'nth_weekday',      dow:2, nth:1,                     category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
-      { id:'seed_social_stories', text:'Schedule Social Stories For Next Month', freq:'month_end_offset', endOffset:7,                       category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_client_send',    text:'Client Email Must Be Sent',               freq:'nth_weekday',      dow:3, nth:1,              category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_motivational',   text:'Make Motivational Emails For Next Month', freq:'month_end_offset', endOffset:7,               category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_trade_hire',     text:'Trade Hire Post',                         freq:'weekly',           dow:2,                     category:'Social Post', priority:'Normal', owner:'vanja', updatedAt:now },
+      { id:'seed_client_start',   text:'Client Email Must Be Started',            freq:'month_end_offset', endOffset:7,               category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_photo_winner',   text:'Photo Winner',                            freq:'fortnightly',      dow:1, refDate:'2026-09-22', category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_video_winner',   text:'Video Winner',                            freq:'fortnightly',      dow:1, refDate:'2026-09-15', category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_staff_send',     text:'Staff Email Must Be Sent',                freq:'nth_weekday',      dow:2, nth:2,              category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_staff_start',    text:'Start Staff Email',                       freq:'nth_weekday',      dow:2, nth:1,              category:'Email',       priority:'Normal', owner:'oloka', updatedAt:now },
+      { id:'seed_social_stories', text:'Schedule Social Stories For Next Month',  freq:'month_end_offset', endOffset:7,               category:'Admin',       priority:'Normal', owner:'oloka', updatedAt:now },
     ];
     const seedTexts = new Set(defaults.map(r => r.text.toLowerCase()));
     setRecRules(prev => {
-      // Tombstone any old non-seeded rules that share a name with our defaults (removes duplicates)
+      // Tombstone any old non-seeded rule sharing a name with a default (removes old duplicates)
       const cleaned = (prev||[]).map(r =>
         !String(r.id).startsWith('seed_') && seedTexts.has((r.text||'').toLowerCase())
           ? { ...r, _deleted:true, deletedAt:now, updatedAt:now }
