@@ -3553,26 +3553,31 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
             <div key={t.id} onDoubleClick={() => !selectMode && onSelectTask && onSelectTask(t.id)}
               style={{ cursor:"pointer", borderRadius:8, outline:selectedTaskId===t.id?`2px solid ${accent}50`:"none", outlineOffset:2, display:"flex", alignItems:"flex-start", gap:6 }}>
               {selectMode && (
-                <input type="checkbox" checked={selectedIds&&selectedIds.has(t.id)} onChange={(e) => {
-                  if (!setSelectedIds) return;
-                  if (e.shiftKey && lastSelectedRef.current !== null) {
-                    const lastIdx = visible.findIndex(x => x.id === lastSelectedRef.current);
-                    const currIdx = visible.findIndex(x => x.id === t.id);
-                    if (lastIdx !== -1 && currIdx !== -1) {
-                      const [lo, hi] = lastIdx < currIdx ? [lastIdx, currIdx] : [currIdx, lastIdx];
-                      const rangeIds = visible.slice(lo, hi + 1).map(x => x.id);
-                      setSelectedIds(prev => { const next = new Set(prev); rangeIds.forEach(id => next.add(id)); return next; });
-                      lastSelectedRef.current = t.id;
-                      return;
+                <input type="checkbox"
+                  checked={!!(selectedIds&&selectedIds.has(t.id))}
+                  onChange={()=>{}}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!setSelectedIds) return;
+                    if (e.shiftKey && lastSelectedRef.current !== null) {
+                      const lastIdx = visible.findIndex(x => x.id === lastSelectedRef.current);
+                      const currIdx = visible.findIndex(x => x.id === t.id);
+                      if (lastIdx !== -1 && currIdx !== -1) {
+                        const [lo, hi] = lastIdx < currIdx ? [lastIdx, currIdx] : [currIdx, lastIdx];
+                        const rangeIds = visible.slice(lo, hi + 1).map(x => x.id);
+                        setSelectedIds(prev => { const next = new Set(prev); rangeIds.forEach(id => next.add(id)); return next; });
+                        lastSelectedRef.current = t.id;
+                        return;
+                      }
                     }
-                  }
-                  setSelectedIds(prev => {
-                    const next = new Set(prev);
-                    if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
-                    return next;
-                  });
-                  lastSelectedRef.current = t.id;
-                }} style={{ marginTop:10, accentColor:accent, width:16, height:16, flexShrink:0, cursor:"pointer" }} />
+                    setSelectedIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+                      return next;
+                    });
+                    lastSelectedRef.current = t.id;
+                  }}
+                  style={{ marginTop:10, accentColor:accent, width:16, height:16, flexShrink:0, cursor:"pointer" }} />
               )}
               <div style={{ flex:1, minWidth:0 }}>
               <TaskRow task={t} dateKey={dateKey}
