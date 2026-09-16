@@ -716,8 +716,7 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
       onDragLeave={onRowDragLeave}
       onDrop={onRowDrop}
     >
-    <div onClick={(e) => { if (e.shiftKey && onMoveTask) { e.stopPropagation(); setShowMove(v => !v); } }}
-    style={{
+    <div style={{
       display:"flex", alignItems:"center", gap:8,
       padding: compact ? "4px 8px" : "4px 10px",
       background: hoverNest ? accent + "15" : (task.done ? T.surface : T.cardBg),
@@ -3491,6 +3490,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
   const availCats = window.prontoCats || CATS;
   const [cat, setCat] = useStateV(availCats[0] || "Social Post");
   const inputRef = useRefV(null);
+  const lastSelectedRef = useRefV(null);
   useEffectV(() => { if (adding) inputRef.current?.focus(); }, [adding]);
 
   const PRI_ORDER = { Urgent:0, High:1, Normal:2, Low:3 };
@@ -3553,13 +3553,25 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
             <div key={t.id} onDoubleClick={() => !selectMode && onSelectTask && onSelectTask(t.id)}
               style={{ cursor:"pointer", borderRadius:8, outline:selectedTaskId===t.id?`2px solid ${accent}50`:"none", outlineOffset:2, display:"flex", alignItems:"flex-start", gap:6 }}>
               {selectMode && (
-                <input type="checkbox" checked={selectedIds&&selectedIds.has(t.id)} onChange={() => {
+                <input type="checkbox" checked={selectedIds&&selectedIds.has(t.id)} onChange={(e) => {
                   if (!setSelectedIds) return;
+                  if (e.shiftKey && lastSelectedRef.current !== null) {
+                    const lastIdx = visible.findIndex(x => x.id === lastSelectedRef.current);
+                    const currIdx = visible.findIndex(x => x.id === t.id);
+                    if (lastIdx !== -1 && currIdx !== -1) {
+                      const [lo, hi] = lastIdx < currIdx ? [lastIdx, currIdx] : [currIdx, lastIdx];
+                      const rangeIds = visible.slice(lo, hi + 1).map(x => x.id);
+                      setSelectedIds(prev => { const next = new Set(prev); rangeIds.forEach(id => next.add(id)); return next; });
+                      lastSelectedRef.current = t.id;
+                      return;
+                    }
+                  }
                   setSelectedIds(prev => {
                     const next = new Set(prev);
                     if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
                     return next;
                   });
+                  lastSelectedRef.current = t.id;
                 }} style={{ marginTop:10, accentColor:accent, width:16, height:16, flexShrink:0, cursor:"pointer" }} />
               )}
               <div style={{ flex:1, minWidth:0 }}>
@@ -18090,12 +18102,26 @@ function GCalEventModal({ onClose, onSaved, editEvent, prefill }) {
   const [title,    setTitle]    = useStateV(editEvent?.summary || prefill?.title || '');
   const [calId,    setCalId]    = useStateV(editEvent?._calId || conf.calendarId || (cals[0]?.id) || 'primary');
   const [date,     setDate]     = useStateV(prefill?.date || isoDate(new Date()));
-  const [startTime,setStartTime]= useStateV(prefill?.startTime || '09:00');
-  const [duration, setDuration] = useStateV(60);
+  const [startTime,setStartTime]= useStateV(prefill?.time || prefill?.startTime || (editEvent?.start?.dateTime ? new Date(editEvent.start.dateTime).toTimeString().slice(0,5) : '09:00'));
+  const _initEndTime = () => {
+    if (editEvent?.end?.dateTime) return new Date(editEvent.end.dateTime).toTimeString().slice(0,5);
+    const initStart = prefill?.time || prefill?.startTime || '09:00';
+    const [h,m] = initStart.split(':').map(Number);
+    const tot = h*60+m+60; return `${String(Math.min(Math.floor(tot/60),23)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;
+  };
+  const [endTime,  setEndTime]  = useStateV(_initEndTime);
   const [desc,     setDesc]     = useStateV(editEvent?.description?.replace(/^prontoHQ:[^\n]+\n?/,'') || prefill?.description || '');
   const [colorId,  setColorId]  = useStateV(editEvent?.colorId || prefill?.colorId || '');
   const [saving,   setSaving]   = useStateV(false);
   const [err,      setErr]      = useStateV('');
+  // Keep endTime ahead of startTime if startTime is moved past it
+  useE(() => {
+    if (endTime <= startTime) {
+      const [h,m] = startTime.split(':').map(Number);
+      const tot = h*60+m+60;
+      setEndTime(`${String(Math.min(Math.floor(tot/60),23)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`);
+    }
+  }, [startTime]);
 
   if (!token) return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:3000, background:'rgba(15,27,58,0.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
@@ -18111,7 +18137,8 @@ function GCalEventModal({ onClose, onSaved, editEvent, prefill }) {
     setSaving(true); setErr('');
     try {
       const startDt = new Date(`${date}T${startTime}:00`);
-      const endDt   = new Date(startDt.getTime() + Number(duration) * 60000);
+      const rawEnd  = new Date(`${date}T${endTime}:00`);
+      const endDt   = rawEnd > startDt ? rawEnd : new Date(startDt.getTime() + 3600000);
       const body = {
         summary: title.trim(), description: desc,
         colorId: colorId || undefined,
@@ -18144,13 +18171,11 @@ function GCalEventModal({ onClose, onSaved, editEvent, prefill }) {
             {cals.map(c=><option key={c.id} value={c.id}>{c.summary}</option>)}
           </select>
         )}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
-          <input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} style={inp}/>
+          <input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} style={inp} placeholder="Start"/>
+          <input type="time" value={endTime}   onChange={e=>setEndTime(e.target.value)}   style={inp} placeholder="End"/>
         </div>
-        <select value={duration} onChange={e=>setDuration(e.target.value)} style={inp}>
-          {[15,30,45,60,90,120,180,240,480].map(m=><option key={m} value={m}>{m<60?`${m} min`:`${m/60}h${m%60?` ${m%60}m`:''}`}</option>)}
-        </select>
         <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Description (optional)" rows={3} style={{ ...inp, resize:'vertical' }}/>
         <div>
           <p style={{ fontSize:11, fontWeight:700, color:T.muted, marginBottom:6, letterSpacing:'0.05em' }}>COLOUR</p>
@@ -18432,7 +18457,7 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
         <div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
             <span style={{fontSize:10,fontWeight:800,color:T.ink,letterSpacing:'0.08em'}}>TASK BACKLOG</span>
-            <span style={{fontSize:10,color:T.muted}}>{(filteredTasks.overdue.length+filteredTasks.upcoming.length)} uncompleted</span>
+            <span style={{fontSize:10,color:T.muted}}>{filteredTasks.upcoming.length} upcoming</span>
           </div>
           <div style={{position:'relative',marginBottom:8}}>
             <input value={taskSearch} onChange={e=>setTaskSearch(e.target.value)} placeholder="Search tasks..."
@@ -18448,38 +18473,24 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
               </button>
             ))}
           </div>
-          {filteredTasks.overdue.length>0 && (
-            <div style={{marginBottom:10}}>
-              <div style={{fontSize:9,fontWeight:800,color:'#EF4444',letterSpacing:'0.1em',marginBottom:6}}>OVERDUE {filteredTasks.overdue.length}</div>
-              {filteredTasks.overdue.slice(0,5).map(t=>{
-                const daysAgo=Math.round((new Date(todayDk)-new Date(t.dateKey))/(24*3600*1000));
-                return (
-                  <div key={t.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,padding:'5px 8px',borderRadius:7,background:T.surface,border:`1px solid ${T.border}`}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:11,fontWeight:600,color:T.ink,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{t.text}</div>
-                      <div style={{fontSize:9,color:T.faint}}>{t.category}</div>
-                    </div>
-                    <span style={{fontSize:9,fontWeight:700,color:'#EF4444',background:'#FEE2E2',padding:'2px 6px',borderRadius:10,whiteSpace:'nowrap'}}>{daysAgo>0?`${daysAgo} day${daysAgo>1?'s':''}`:'Today'}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
           {filteredTasks.upcoming.length>0 && (
             <div>
-              <div style={{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:'0.1em',marginBottom:6}}>UPCOMING {filteredTasks.upcoming.length}</div>
-              {filteredTasks.upcoming.slice(0,6).map(t=>{
+              <div style={{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:'0.1em',marginBottom:6}}>UPCOMING — drag to timeline or click to add</div>
+              {filteredTasks.upcoming.slice(0,10).map(t=>{
                 const daysAway=Math.round((new Date(t.dateKey)-new Date(todayDk))/(24*3600*1000));
-                const dayLabel=daysAway===0?'Today':daysAway===1?'Tomorrow':new Date(t.dateKey+'T12:00:00').toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short'});
+                const dLabel=daysAway===0?'Today':daysAway===1?'Tomorrow':new Date(t.dateKey+'T12:00:00').toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short'});
                 return (
-                  <div key={t.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,padding:'5px 8px',borderRadius:7,background:T.surface,border:`1px solid ${T.border}`,cursor:'pointer'}}
+                  <div key={t.id}
+                    draggable
+                    onDragStart={ev=>{ ev.dataTransfer.effectAllowed='copy'; ev.dataTransfer.setData('application/x-pronto-backlog-task', JSON.stringify({text:t.text,dateKey:t.dateKey,category:t.category,notes:t.notes||'',colorId:CAT_COLOR_ID[t.category]||''})); }}
+                    style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,padding:'5px 8px',borderRadius:7,background:T.surface,border:`1px solid ${T.border}`,cursor:'grab'}}
                     onClick={()=>setModal({edit:null,prefill:{title:t.text,date:t.dateKey,colorId:CAT_COLOR_ID[t.category]||'',description:t.notes||''}})}>
+                    <span style={{fontSize:10,color:T.faint,flexShrink:0}}>⠿</span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:11,fontWeight:600,color:T.ink,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{t.text}</div>
                       <div style={{fontSize:9,color:T.faint}}>{t.category}</div>
                     </div>
-                    <span style={{fontSize:9,color:T.muted,whiteSpace:'nowrap'}}>{dayLabel}</span>
-                    <span style={{fontSize:10,color:T.faint}}>›</span>
+                    <span style={{fontSize:9,color:T.muted,whiteSpace:'nowrap'}}>{dLabel}</span>
                   </div>
                 );
               })}
@@ -18552,7 +18563,27 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                   const label=hour===12?'12:00 PM':hour>12?`${hour-12}:00 PM`:`${hour}:00 AM`;
                   return (
                     <div key={hour} style={{display:'flex',height:HOUR_PX,borderBottom:`1px solid ${T.border}22`,cursor:'pointer'}}
-                      onClick={()=>setModal({edit:null,prefill:{date:selDk,time:`${String(hour).padStart(2,'0')}:00`}})}>
+                      onClick={(ev)=>{
+                        // Calculate minutes within the hour from click position
+                        const rect=ev.currentTarget.getBoundingClientRect();
+                        const fracY=(ev.clientY-rect.top)/rect.height;
+                        const rawMin=Math.round(fracY*60/SNAP_MIN)*SNAP_MIN;
+                        const mins=Math.min(Math.max(rawMin,0),59);
+                        setModal({edit:null,prefill:{date:selDk,time:`${String(hour).padStart(2,'0')}:${String(mins).padStart(2,'0')}`}});
+                      }}
+                      onDragOver={ev=>ev.preventDefault()}
+                      onDrop={ev=>{
+                        ev.preventDefault();
+                        const raw=ev.dataTransfer.getData('application/x-pronto-backlog-task');
+                        if(!raw) return;
+                        const data=JSON.parse(raw);
+                        const rect=ev.currentTarget.getBoundingClientRect();
+                        const fracY=(ev.clientY-rect.top)/rect.height;
+                        const rawMin=Math.round(fracY*60/SNAP_MIN)*SNAP_MIN;
+                        const mins=Math.min(Math.max(rawMin,0),59);
+                        const timeStr=`${String(hour).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
+                        setModal({edit:null,prefill:{title:data.text,date:selDk,time:timeStr,colorId:data.colorId,description:data.notes}});
+                      }}>
                       <div style={{width:70,flexShrink:0,paddingTop:6,paddingRight:12,textAlign:'right',fontSize:10,fontWeight:600,color:T.faint,userSelect:'none',borderRight:`1px solid ${T.border}22`}}>{label}</div>
                       <div style={{flex:1}}/>
                     </div>
