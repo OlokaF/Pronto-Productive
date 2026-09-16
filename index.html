@@ -18176,10 +18176,16 @@ function GCalEventModal({ onClose, onSaved, editEvent, prefill }) {
             {cals.map(c=><option key={c.id} value={c.id}>{c.summary}</option>)}
           </select>
         )}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
-          <input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} style={inp} placeholder="Start"/>
-          <input type="time" value={endTime}   onChange={e=>setEndTime(e.target.value)}   style={inp} placeholder="End"/>
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:'0.05em' }}>START TIME</label>
+            <input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} style={inp}/>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+            <label style={{ fontSize:10, fontWeight:700, color:T.muted, letterSpacing:'0.05em' }}>END TIME</label>
+            <input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} style={inp}/>
+          </div>
         </div>
         <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Description (optional)" rows={3} style={{ ...inp, resize:'vertical' }}/>
         <div>
@@ -18217,7 +18223,8 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
   const [miniMonth, setMiniMonth] = useStateV(() => { const d=new Date(); d.setDate(1); return d; });
   const [taskSearch, setTaskSearch] = useStateV('');
   const [taskFilter, setTaskFilter] = useStateV('all'); // all | unscheduled | scheduled | done
-  const [dragging,  setDragging]  = useStateV(null); // { event, startY, currentOffsetMin }
+  const [dragging,    setDragging]    = useStateV(null); // { event, startY, currentOffsetMin }
+  const [pendingEvt,  setPendingEvt]  = useStateV(null); // task dragged onto timeline, not yet in GCal
   const timelineRef    = useR(null);
   const fetchEventsRef = useR(null);
 
@@ -18269,7 +18276,17 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
     const newStart = new Date(new Date(event.start.dateTime).getTime() + currentOffsetMin*60000);
     const newEnd   = event.end?.dateTime
       ? new Date(new Date(event.end.dateTime).getTime() + currentOffsetMin*60000)
-      : new Date(newStart.getTime() + 3600000);
+      : new Date(newStart.getTime() + 1800000);
+    // Pending block — just reposition, don't touch GCal yet
+    if (event.id === '__pending__') {
+      setPendingEvt(prev => prev ? {
+        ...prev,
+        start: { dateTime: newStart.toISOString() },
+        end:   { dateTime: newEnd.toISOString() },
+      } : null);
+      return;
+    }
+    // Real GCal event — patch in GCal
     try {
       await gcalFetch(token,'PATCH',`/calendars/${encodeURIComponent(event._calId)}/events/${event.id}`,{
         start:{ dateTime:newStart.toISOString(), timeZone:event.start.timeZone||'Pacific/Auckland' },
@@ -18277,7 +18294,7 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
       });
       fetchEventsRef.current?.();
     } catch(err) { console.error('[Pronto] GCal drag update failed:',err); }
-  }, [dragging, token]);
+  }, [dragging, token, setPendingEvt]);
 
   useE(() => {
     if (!dragging) return;
@@ -18586,8 +18603,9 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                         const fracY=(ev.clientY-rect.top)/rect.height;
                         const rawMin=Math.round(fracY*60/SNAP_MIN)*SNAP_MIN;
                         const mins=Math.min(Math.max(rawMin,0),59);
-                        const timeStr=`${String(hour).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
-                        setModal({edit:null,prefill:{title:data.text,date:selDk,time:timeStr,colorId:data.colorId,description:data.notes}});
+                        const startIso = new Date(`${selDk}T${String(hour).padStart(2,'0')}:${String(mins).padStart(2,'0')}:00`).toISOString();
+                        const endIso   = new Date(new Date(startIso).getTime() + 1800000).toISOString();
+                        setPendingEvt({ id:'__pending__', summary:data.text, colorId:data.colorId||'', description:data.notes||'', _calId:null, start:{dateTime:startIso}, end:{dateTime:endIso} });
                       }}>
                       <div style={{width:70,flexShrink:0,paddingTop:6,paddingRight:12,textAlign:'right',fontSize:10,fontWeight:600,color:T.faint,userSelect:'none',borderRight:`1px solid ${T.border}22`}}>{label}</div>
                       <div style={{flex:1}}/>
@@ -18631,6 +18649,63 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                     </div>
                   );
                 })}
+                {/* Pending (unsaved) event block */}
+                {pendingEvt && (()=>{
+                  const pos=evtDisplayY(pendingEvt);
+                  if (!pos) return null;
+                  const isPendDrag=dragging&&dragging.event.id==='__pending__';
+                  const savePending = async () => {
+                    const body={
+                      summary: pendingEvt.summary,
+                      description: pendingEvt.description||'',
+                      start:{ dateTime: pendingEvt.start.dateTime, timeZone:'Pacific/Auckland' },
+                      end:  { dateTime: pendingEvt.end.dateTime,   timeZone:'Pacific/Auckland' },
+                    };
+                    if (pendingEvt.colorId) body.colorId=pendingEvt.colorId;
+                    try {
+                      const calId = 'primary';
+                      await gcalFetch(token,'POST',`/calendars/${encodeURIComponent(calId)}/events`,body);
+                      fetchEventsRef.current?.();
+                    } catch(err){ console.error('[Pronto] GCal save pending:',err); }
+                    setPendingEvt(null);
+                  };
+                  const timeRange=`${fmtTimeShort(pos.start.toISOString())} – ${fmtTimeShort(pos.end.toISOString())}`;
+                  return (
+                    <div key="__pending__"
+                      onMouseDown={ev=>handleEvtMouseDown(ev,pendingEvt)}
+                      style={{
+                        position:'absolute', left:70, right:0, top:pos.topPx, height:pos.heightPx,
+                        background:'transparent', borderRadius:7, padding:'4px 10px',
+                        border:`2.5px dashed ${TEAL}`, cursor:isPendDrag?'grabbing':'grab',
+                        overflow:'hidden', zIndex:isPendDrag?10:3, boxSizing:'border-box',
+                        boxShadow:isPendDrag?'0 4px 16px rgba(38,198,162,0.25)':'none',
+                        transition:isPendDrag?'none':'box-shadow 0.1s',
+                      }}>
+                      <div style={{display:'flex',alignItems:'flex-start',gap:6,height:'100%'}}>
+                        <div style={{minWidth:0,flex:1}}>
+                          <div style={{fontSize:10,fontWeight:700,color:TEAL}}>
+                            {isPendDrag&&pos.newStartLabel ? `⟨ ${pos.newStartLabel} ⟩` : timeRange}
+                          </div>
+                          {pos.heightPx>34 && (
+                            <div style={{fontSize:12,fontWeight:700,color:TEAL,marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                              {pendingEvt.summary}
+                            </div>
+                          )}
+                        </div>
+                        {!isPendDrag && (
+                          <div style={{display:'flex',gap:4,flexShrink:0}}>
+                            <button onClick={ev=>{ev.stopPropagation();savePending();}}
+                              title="Save to calendar"
+                              style={{background:TEAL,border:'none',color:'#fff',cursor:'pointer',borderRadius:4,padding:'2px 7px',fontSize:13,fontWeight:800,lineHeight:1}}>✓</button>
+                            <button onClick={ev=>{ev.stopPropagation();setPendingEvt(null);}}
+                              title="Discard"
+                              style={{background:'transparent',border:`1px solid ${TEAL}`,color:TEAL,cursor:'pointer',borderRadius:4,padding:'2px 6px',fontSize:13,lineHeight:1}}>✕</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {/* All-day events */}
                 {dayEvents.filter(e=>!e.start?.dateTime&&e.start?.date).map(e=>{
                   const color=gcalColorHex(e.colorId,calColors[e._calId]);
