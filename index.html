@@ -10058,7 +10058,7 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
           <button onClick={() => {
             if (!window.confirm('Clear ALL content for this month? This cannot be undone.')) return;
             const yr = selDate.getFullYear(), mo = selDate.getMonth();
-            setContent(prev => {
+            onSetContent(prev => {
               const next = { ...(prev||{}) };
               Object.keys(next).forEach(dk => {
                 const d = new Date(dk+'T12:00:00');
