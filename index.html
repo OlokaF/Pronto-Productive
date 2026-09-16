@@ -15843,6 +15843,26 @@ function App({ onSwitchWorkspace = () => {} }) {
       return next;
     });
   }, [tasksByDate]);
+  // One-time cleanup: wipe old 2025 content calendar data from localStorage
+  useE(() => {
+    if (localStorage.getItem('prontoHQ.contentCleaned2026')) return;
+    localStorage.setItem('prontoHQ.contentCleaned2026', '1');
+    try {
+      const raw = localStorage.getItem('prontoHQ');
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.content) {
+          const cleaned = {};
+          for (const [dk, posts] of Object.entries(d.content)) {
+            if (dk >= '2026-01-01') cleaned[dk] = posts;
+          }
+          d.content = cleaned;
+          localStorage.setItem('prontoHQ', JSON.stringify(d));
+        }
+      }
+    } catch(_) {}
+    setContent({});
+  }, []);
   // One-time cleanup: remove all task entries before 2026-05-22 (pre-app spreadsheet data)
   useE(() => {
     if (localStorage.getItem('prontoHQ.oldTasksCleaned1')) return;
