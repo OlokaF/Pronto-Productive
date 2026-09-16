@@ -16233,7 +16233,8 @@ function App({ onSwitchWorkspace = () => {} }) {
       if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
       if (s.tasksByDate) setTasksByDate(s.tasksByDate);
     }
-    if (s.content) setContent(prev => _mergeContent(prev, s.content)); // full per-item merge
+    // Skip content restore if the user has wiped it — don't let Firebase re-seed old data
+    if (s.content && !localStorage.getItem('prontoHQ.contentWiped2026c')) setContent(prev => _mergeContent(prev, s.content)); // full per-item merge
     if (s.ideas)   setIdeas(prev => _mergeIdeas(prev, s.ideas));       // merge, never replace
     if (s.suppliers) setSuppliers(s.suppliers);
     if (s.budget) setBudget(s.budget);
@@ -18615,7 +18616,15 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                         const mins=Math.min(Math.max(rawMin,0),59);
                         const startIso = new Date(`${selDk}T${String(hour).padStart(2,'0')}:${String(mins).padStart(2,'0')}:00`).toISOString();
                         const endIso   = new Date(new Date(startIso).getTime() + 1800000).toISOString();
-                        setPendingEvt({ id:'__pending__', summary:data.text, colorId:data.colorId||'', description:data.notes||'', _calId:null, start:{dateTime:startIso}, end:{dateTime:endIso} });
+                        // Auto-save immediately — no confirmation needed
+                        (async () => {
+                          try {
+                            const body = { summary:data.text, description:data.notes||'', start:{dateTime:startIso,timeZone:'Pacific/Auckland'}, end:{dateTime:endIso,timeZone:'Pacific/Auckland'} };
+                            if (data.colorId) body.colorId = data.colorId;
+                            await gcalFetch(token,'POST',`/calendars/primary/events`,body);
+                            fetchEventsRef.current?.();
+                          } catch(err){ console.error('[Pronto] GCal drop save failed:',err); }
+                        })();
                       }}>
                       <div style={{width:70,flexShrink:0,paddingTop:6,paddingRight:12,textAlign:'right',fontSize:10,fontWeight:600,color:T.faint,userSelect:'none',borderRight:`1px solid ${T.border}22`}}>{label}</div>
                       <div style={{flex:1}}/>
