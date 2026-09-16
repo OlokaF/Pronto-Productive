@@ -662,7 +662,7 @@ function CategoryBadge({ category, onChange }) {
   );
 }
 
-function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onDelete, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onMoveTask, compact=false }) {
+function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onDelete, onDuplicate, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onMoveTask, compact=false }) {
   const isEvent = task.category === "Event" || task.owner === "event";
   const accent = task.owner === "vanja" ? T.vanja : task.owner === "oloka" ? T.oloka : T.muted;
   const catColor = CAT_COLOR[task.category] || T.muted;
@@ -716,7 +716,8 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
       onDragLeave={onRowDragLeave}
       onDrop={onRowDrop}
     >
-    <div style={{
+    <div onClick={(e) => { if (e.shiftKey && onMoveTask) { e.stopPropagation(); setShowMove(v => !v); } }}
+    style={{
       display:"flex", alignItems:"center", gap:8,
       padding: compact ? "4px 8px" : "4px 10px",
       background: hoverNest ? accent + "15" : (task.done ? T.surface : T.cardBg),
@@ -829,6 +830,18 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
       )}
       {!isEvent && (
         <PriorityBadge priority={task.priority} onChange={onChangePriority} compact={compact} />
+      )}
+      {onDuplicate && (
+        <button onClick={(e) => { e.stopPropagation(); onDuplicate(); }} title="Duplicate task"
+          style={{ width:22, height:22, borderRadius:4, background:"transparent", border:`1px solid ${T.border}`, color:T.muted, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all 0.15s" }}
+          onMouseEnter={e => { e.currentTarget.style.color = accent; e.currentTarget.style.borderColor = accent; }}
+          onMouseLeave={e => { e.currentTarget.style.color = T.muted; e.currentTarget.style.borderColor = T.border; }}
+        >
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="5" y="5" width="9" height="9" rx="1.5"/>
+            <path d="M3 11H2a1 1 0 01-1-1V2a1 1 0 011-1h8a1 1 0 011 1v1"/>
+          </svg>
+        </button>
       )}
       {onDelete && (
         <button onClick={(e) => {
@@ -2777,7 +2790,7 @@ function RecurringRulesManager({ rules, onEdit, onDelete }) {
 }
 
 // ── DAY VIEW: modern task dashboard with sidebar, stats, inspector ──
-function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars, personView: personViewProp, setPersonView: setPersonViewProp, recRules: recRulesProp, setRecRules: setRecRulesProp }) {
+function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onDuplicate, onMoveTask, isMobile, staff, dayNotes, setDayNotes, recurringTasks, setRecurringTasks, ongoingJobs, setOngoingJobs, toBeCompleted, setToBeCompleted, content, setContent, schedule, onPickDate, avatars, personView: personViewProp, setPersonView: setPersonViewProp, recRules: recRulesProp, setRecRules: setRecRulesProp }) {
   const [_localPersonView, _setLocalPersonView] = useStateV(() => {
     try { const u = localStorage.getItem("prontoHQ.todayUser"); if (u === "oloka" || u === "vanja") return u; } catch(_) {}
     return "both";
@@ -3217,7 +3230,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeProject={onChangeProject} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
+                onAdd={onAdd} onDelete={onDelete} onDuplicate={onDuplicate} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
                 selectMode={selectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds}
               />}
               {showOloka && <PersonColumn name="Oloka" role="Content · Photo, Video, Social" owner="oloka" accent={T.oloka} accentSoft={T.olokaSoft}
@@ -3226,7 +3239,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
                 onToggle={onToggle} onChangePriority={onChangePriority} onChangeOwner={onChangeOwner}
                 onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeProject={onChangeProject} onChangeSubtasks={onChangeSubtasks}
                 onConvertToSubtask={onConvertToSubtask} onChangeNotes={onChangeNotes}
-                onAdd={onAdd} onDelete={onDelete} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
+                onAdd={onAdd} onDelete={onDelete} onDuplicate={onDuplicate} onMoveTask={onMoveTask} onPickDate={onPickDate} avatars={avatars}
                 selectMode={selectMode} selectedIds={selectedIds} setSelectedIds={setSelectedIds}
               />}
             </div>
@@ -3469,7 +3482,7 @@ function SharedTasksPanel({ dateKey, dayNotes, setDayNotes, recurringTasks, toBe
   );
 }
 
-function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars, selectMode, selectedIds, setSelectedIds }) {
+function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, dateKey, onToggle, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeProject, onChangeSubtasks, onConvertToSubtask, onChangeNotes, onAdd, onDelete, onDuplicate, onMoveTask, onPickDate, selectedTaskId, onSelectTask, avatars, selectMode, selectedIds, setSelectedIds }) {
   const [adding, setAdding] = useStateV(false);
   const [text, setText] = useStateV("");
   const [pri, setPri] = useStateV("Normal");
@@ -3561,6 +3574,7 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
                 onConvertToSubtask={onConvertToSubtask}
                 onChangeNotes={onChangeNotes ? (notes) => onChangeNotes(t.id, notes) : undefined}
                 onDelete={onDelete ? () => onDelete(dateKey, t.id) : undefined}
+                onDuplicate={onDuplicate ? () => onDuplicate(dateKey, t) : undefined}
                 onMoveTask={onMoveTask ? (newDate) => {
                   onMoveTask(t.id, dateKey, newDate);
                   if (onPickDate) onPickDate(new Date(newDate + "T00:00"));
@@ -16364,6 +16378,18 @@ function App({ onSwitchWorkspace = () => {} }) {
       return next;
     });
   };
+  const onDuplicateTask = (dateKey, task) => {
+    const { id: _id, updatedAt: _u, ...rest } = task;
+    const newId = Date.now();
+    setTasksByDate(prev => {
+      const arr = prev[dateKey] || [];
+      const idx = arr.findIndex(t => t.id === task.id);
+      const copy = { ...rest, id: newId, done: false, updatedAt: _now() };
+      const next = [...arr];
+      next.splice(idx + 1, 0, copy);
+      return { ...prev, [dateKey]: next };
+    });
+  };
   const onDeleteTask = (dateKey, id) => {
     // Record deletion so the merge knows to suppress this task on other devices
     setDeletedTasks(prev => ({ ...prev, [id]: _now() }));
@@ -16854,7 +16880,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             onChangeText={onChangeText} onChangeCategory={onChangeCategory} onChangeProject={onChangeProject}
             onChangeSubtasks={onChangeSubtasks} onConvertToSubtask={onConvertToSubtask}
             onChangeNotes={onChangeNotes}
-            onAdd={onAdd} onDelete={onDeleteTask} onShift={onShift} onMoveTask={onMoveTask} isMobile={isMobile}
+            onAdd={onAdd} onDelete={onDeleteTask} onDuplicate={onDuplicateTask} onShift={onShift} onMoveTask={onMoveTask} isMobile={isMobile}
             staff={staff}
             dayNotes={dayNotes} setDayNotes={setDayNotes}
             recurringTasks={recurringTasks} setRecurringTasks={setRecurringTasks}
@@ -16911,7 +16937,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           photos={photos} setPhotos={setPhotos}
           onAddToTasks={onAdd}
         />}
-        {tab === "gcalendar" && <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={myIdentity} />}
+        {tab === "gcalendar" && <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={chatAs} />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
         {tab === "emails" && <EmailPipelineView
