@@ -15845,10 +15845,10 @@ function App({ onSwitchWorkspace = () => {} }) {
   }, [tasksByDate]);
   // One-time cleanup: wipe old 2025 content calendar data from localStorage
   useE(() => {
-    if (localStorage.getItem('prontoHQ.contentCleaned2026')) return;
-    localStorage.setItem('prontoHQ.contentCleaned2026', '1');
+    if (localStorage.getItem('prontoHQ.contentCleaned2026b')) return;
+    localStorage.setItem('prontoHQ.contentCleaned2026b', '1');
     try {
-      const raw = localStorage.getItem('prontoHQ');
+      const raw = localStorage.getItem('prontoHQ.state.v1');
       if (raw) {
         const d = JSON.parse(raw);
         if (d.content) {
@@ -15857,7 +15857,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             if (dk >= '2026-01-01') cleaned[dk] = posts;
           }
           d.content = cleaned;
-          localStorage.setItem('prontoHQ', JSON.stringify(d));
+          localStorage.setItem('prontoHQ.state.v1', JSON.stringify(d));
         }
       }
     } catch(_) {}
