@@ -15843,22 +15843,16 @@ function App({ onSwitchWorkspace = () => {} }) {
       return next;
     });
   }, [tasksByDate]);
-  // One-time cleanup: wipe old 2025 content calendar data from localStorage
+  // One-time cleanup: wipe all old content calendar data
   useE(() => {
-    if (localStorage.getItem('prontoHQ.contentCleaned2026b')) return;
-    localStorage.setItem('prontoHQ.contentCleaned2026b', '1');
+    if (localStorage.getItem('prontoHQ.contentWiped2026c')) return;
+    localStorage.setItem('prontoHQ.contentWiped2026c', '1');
     try {
       const raw = localStorage.getItem('prontoHQ.state.v1');
       if (raw) {
         const d = JSON.parse(raw);
-        if (d.content) {
-          const cleaned = {};
-          for (const [dk, posts] of Object.entries(d.content)) {
-            if (dk >= '2026-01-01') cleaned[dk] = posts;
-          }
-          d.content = cleaned;
-          localStorage.setItem('prontoHQ.state.v1', JSON.stringify(d));
-        }
+        d.content = {};
+        localStorage.setItem('prontoHQ.state.v1', JSON.stringify(d));
       }
     } catch(_) {}
     setContent({});
@@ -15881,13 +15875,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   }, [tasksByDate]);
   const [content, setContent] = useS(() => {
     const stored = saved && saved.content !== undefined ? saved.content : null;
-    if (!stored) return {};
-    // Strip any old 2025-seeded entries so stale data from last year doesn't show
-    const cleaned = {};
-    for (const [dk, posts] of Object.entries(stored)) {
-      if (dk >= '2026-01-01') cleaned[dk] = posts;
-    }
-    return cleaned;
+    return stored || {};
   });
   const [chatAs, setChatAs] = useS("vanja");
   const [todayUser, setTodayUser] = useS(() => {
