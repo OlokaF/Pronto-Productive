@@ -16911,7 +16911,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           photos={photos} setPhotos={setPhotos}
           onAddToTasks={onAdd}
         />}
-        {tab === "gcalendar" && <GCalCalendarTab />}
+        {tab === "gcalendar" && <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={myIdentity} />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
         {tab === "emails" && <EmailPipelineView
@@ -18148,28 +18148,102 @@ function GCalEventModal({ onClose, onSaved, editEvent, prefill }) {
 }
 
 // ── GCAL CALENDAR TAB ────────────────────────────────────────────────────────
-function GCalCalendarTab() {
+function GCalCalendarTab({ tasksByDate, myIdentity }) {
   const conf = loadGcalConf();
   const token = conf.accessToken && conf.tokenExpiry > Date.now() ? conf.accessToken : null;
-  const [weekStart, setWeekStart] = useStateV(() => {
-    const d = new Date(); d.setHours(0,0,0,0);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d;
-  });
-  const [events,      setEvents]      = useStateV([]);
-  const [loading,     setLoading]     = useStateV(false);
-  const [fetchErr,    setFetchErr]    = useStateV('');
-  const [modal,       setModal]       = useStateV(null); // null | { edit: eventObj|null, prefill: {} }
-  const [calColors,   setCalColors]   = useStateV({}); // calId → backgroundColor
+  const [viewMode,  setViewMode]  = useStateV('day');
+  const [selDate,   setSelDate]   = useStateV(() => { const d=new Date(); d.setHours(0,0,0,0); return d; });
+  const [events,    setEvents]    = useStateV([]);
+  const [loading,   setLoading]   = useStateV(false);
+  const [fetchErr,  setFetchErr]  = useStateV('');
+  const [modal,     setModal]     = useStateV(null);
+  const [calColors, setCalColors] = useStateV({});
+  const [miniMonth, setMiniMonth] = useStateV(() => { const d=new Date(); d.setDate(1); return d; });
+  const [taskSearch, setTaskSearch] = useStateV('');
+  const [taskFilter, setTaskFilter] = useStateV('all'); // all | unscheduled | scheduled | done
+  const [dragging,  setDragging]  = useStateV(null); // { event, startY, currentOffsetMin }
+  const timelineRef    = useR(null);
+  const fetchEventsRef = useR(null);
 
-  const weekDays = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(d.getDate()+i); return d; });
-  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const todayDk = isoDate(new Date());
+  const selDk   = isoDate(selDate);
+
+  const HOUR_PX   = 120; // px per hour (2px per minute)
+  const SNAP_MIN  = 10;
+  const START_H   = 6;
+  const HOURS     = Array.from({length:17},(_,i)=>i+START_H); // 6 AM – 10 PM
+
+  const fmtTime = (dt) => {
+    if (!dt) return '';
+    return new Date(dt).toLocaleTimeString('en-NZ', { hour:'numeric', minute:'2-digit', hour12:true });
+  };
+  const fmtTimeShort = (dt) => {
+    if (!dt) return '';
+    const d = new Date(dt);
+    const h = d.getHours(), m = d.getMinutes();
+    return `${h}:${String(m).padStart(2,'0')}`;
+  };
+
+  const timeToY = (dt) => {
+    const d = new Date(dt);
+    return (d.getHours() + d.getMinutes()/60 - START_H) * HOUR_PX;
+  };
+
+  // Drag handlers
+  const handleEvtMouseDown = (e, evt) => {
+    if (!evt.start?.dateTime) return;
+    e.preventDefault(); e.stopPropagation();
+    setDragging({ event:evt, startY:e.clientY, currentOffsetMin:0 });
+  };
+
+  const handleMouseMove = React.useCallback((e) => {
+    if (!dragging) return;
+    const deltaY   = e.clientY - dragging.startY;
+    const rawMin   = (deltaY / HOUR_PX) * 60;
+    const snapped  = Math.round(rawMin / SNAP_MIN) * SNAP_MIN;
+    if (snapped !== dragging.currentOffsetMin)
+      setDragging(prev => ({...prev, currentOffsetMin:snapped}));
+  }, [dragging]);
+
+  const handleMouseUp = React.useCallback(async () => {
+    if (!dragging) return;
+    const { event, currentOffsetMin } = dragging;
+    setDragging(null);
+    if (currentOffsetMin === 0) return;
+    const newStart = new Date(new Date(event.start.dateTime).getTime() + currentOffsetMin*60000);
+    const newEnd   = event.end?.dateTime
+      ? new Date(new Date(event.end.dateTime).getTime() + currentOffsetMin*60000)
+      : new Date(newStart.getTime() + 3600000);
+    try {
+      await gcalFetch(token,'PATCH',`/calendars/${encodeURIComponent(event._calId)}/events/${event.id}`,{
+        start:{ dateTime:newStart.toISOString(), timeZone:event.start.timeZone||'Pacific/Auckland' },
+        end:  { dateTime:newEnd.toISOString(),   timeZone:(event.end?.timeZone)||'Pacific/Auckland' },
+      });
+      fetchEventsRef.current?.();
+    } catch(err) { console.error('[Pronto] GCal drag update failed:',err); }
+  }, [dragging, token]);
+
+  useE(() => {
+    if (!dragging) return;
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup',   handleMouseUp);
+    return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
+  }, [dragging, handleMouseMove, handleMouseUp]);
 
   const fetchEvents = React.useCallback(async () => {
     if (!token) return;
     setLoading(true); setFetchErr('');
     try {
-      const min = weekStart.toISOString();
-      const max = new Date(weekStart.getTime() + 7*24*3600*1000).toISOString();
+      let start, end;
+      if (viewMode === 'day') {
+        start = new Date(selDate); start.setHours(0,0,0,0);
+        end   = new Date(selDate); end.setHours(23,59,59,999);
+      } else {
+        start = new Date(selDate);
+        start.setDate(start.getDate() - ((start.getDay()+6)%7));
+        start.setHours(0,0,0,0);
+        end = new Date(start); end.setDate(end.getDate()+7);
+      }
       const pullCals = conf.pullCalendarIds?.length ? conf.pullCalendarIds
                      : (conf.allCalendars||[]).map(c=>c.id).slice(0,10);
       const colors = {};
@@ -18178,99 +18252,382 @@ function GCalCalendarTab() {
       const all = [];
       await Promise.all(pullCals.map(async calId => {
         try {
-          const res = await gcalFetch(token, 'GET', `/calendars/${encodeURIComponent(calId)}/events?timeMin=${encodeURIComponent(min)}&timeMax=${encodeURIComponent(max)}&singleEvents=true&orderBy=startTime&maxResults=250`);
-          (res.items||[]).forEach(e => all.push({ ...e, _calId: calId }));
-        } catch(_) {}
+          const res = await gcalFetch(token,'GET',`/calendars/${encodeURIComponent(calId)}/events?timeMin=${encodeURIComponent(start.toISOString())}&timeMax=${encodeURIComponent(end.toISOString())}&singleEvents=true&orderBy=startTime&maxResults=250`);
+          (res.items||[]).forEach(e => all.push({...e, _calId:calId}));
+        } catch(_){}
       }));
       all.sort((a,b) => (a.start?.dateTime||a.start?.date||'') < (b.start?.dateTime||b.start?.date||'') ? -1 : 1);
       setEvents(all);
     } catch(e) { setFetchErr(e.message); }
     setLoading(false);
-  }, [weekStart, token]);
+  }, [selDate, viewMode, token]);
 
+  useE(() => { fetchEventsRef.current = fetchEvents; }, [fetchEvents]);
   useE(() => { fetchEvents(); }, [fetchEvents]);
 
-  const eventsForDay = (d) => {
-    const dk = isoDate(d);
-    return events.filter(e => {
-      const dt = e.start?.dateTime || e.start?.date || '';
-      return dt.startsWith(dk);
+  const dayEvents = events.filter(e => (e.start?.dateTime||e.start?.date||'').startsWith(selDk));
+
+  // Task backlog helpers
+  const allTasks = React.useMemo(() => {
+    const out = [];
+    Object.entries(tasksByDate||{}).forEach(([dk,tasks]) => {
+      (tasks||[]).forEach(t => { if (!t._deleted) out.push({...t, dateKey:dk}); });
     });
+    return out;
+  }, [tasksByDate]);
+
+  const filteredTasks = React.useMemo(() => {
+    let list = allTasks;
+    if (taskSearch) list = list.filter(t => (t.text||'').toLowerCase().includes(taskSearch.toLowerCase()));
+    if (taskFilter === 'done')        list = list.filter(t => t.done);
+    else if (taskFilter === 'scheduled') list = list.filter(t => !t.done);
+    else if (taskFilter === 'unscheduled') list = list.filter(t => !t.done && t.dateKey < todayDk);
+    const overdue  = list.filter(t => !t.done && t.dateKey < todayDk).sort((a,b)=>a.dateKey<b.dateKey?-1:1);
+    const upcoming = list.filter(t => !t.done && t.dateKey >= todayDk).sort((a,b)=>a.dateKey<b.dateKey?-1:1);
+    const done     = list.filter(t => t.done);
+    return { overdue, upcoming, done };
+  }, [allTasks, taskSearch, taskFilter, todayDk]);
+
+  // Mini calendar helpers
+  const miniDays = () => {
+    const yr = miniMonth.getFullYear(), mo = miniMonth.getMonth();
+    const offset = (new Date(yr,mo,1).getDay()+6)%7;
+    const days = Array(offset).fill(null);
+    const last = new Date(yr,mo+1,0).getDate();
+    for (let d=1; d<=last; d++) days.push(new Date(yr,mo,d));
+    return days;
   };
 
-  const fmtTime = (dt) => {
-    if (!dt) return '';
-    const d = new Date(dt);
-    return d.toLocaleTimeString('en-NZ', { hour:'numeric', minute:'2-digit', hour12:true });
-  };
+  const dayLabel  = selDate.toLocaleDateString('en-NZ',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const dayOfWeek = selDate.toLocaleDateString('en-NZ',{weekday:'long'}).toUpperCase();
+  const userName  = myIdentity ? myIdentity.charAt(0).toUpperCase() + myIdentity.slice(1).toUpperCase() : 'OLOKA';
 
-  const todayDk = isoDate(new Date());
-  const weekLabel = () => {
-    const a = weekDays[0], b = weekDays[6];
-    const sa = a.toLocaleDateString('en-NZ',{day:'numeric',month:'short'});
-    const sb = b.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'});
-    return `${sa} – ${sb}`;
-  };
+  // Category icon map (simple text icons)
+  const catIcon = (cat) => ({
+    'Email':'✉', 'Social Post':'📱', 'Admin':'⚙', 'Content':'📝', 'Design':'🎨', 'Meeting':'👥'
+  }[cat] || '📋');
 
   if (!token) return (
-    <div style={{ padding:'48px 0', textAlign:'center' }}>
-      <p style={{ fontSize:15, color:T.muted, marginBottom:16 }}>Google Calendar is not connected.</p>
-      <p style={{ fontSize:13, color:T.faint }}>Go to <strong style={{color:T.ink}}>Settings → Google Calendar</strong> to connect your account.</p>
+    <div style={{padding:'48px 0',textAlign:'center'}}>
+      <p style={{fontSize:15,color:T.muted,marginBottom:16}}>Google Calendar is not connected.</p>
+      <p style={{fontSize:13,color:T.faint}}>Go to <strong style={{color:T.ink}}>Settings → Google Calendar</strong> to connect your account.</p>
     </div>
   );
 
+  const TEAL = '#26C6A2';
+
+  // For dragging: compute display top/height with live offset applied
+  const evtDisplayY = (e) => {
+    if (!e.start?.dateTime) return null;
+    const isDragging = dragging && dragging.event.id === e.id;
+    const offsetMin  = isDragging ? dragging.currentOffsetMin : 0;
+    const start = new Date(new Date(e.start.dateTime).getTime() + offsetMin*60000);
+    const end   = e.end?.dateTime
+      ? new Date(new Date(e.end.dateTime).getTime() + offsetMin*60000)
+      : new Date(start.getTime()+3600000);
+    const topPx    = (start.getHours() + start.getMinutes()/60 - START_H) * HOUR_PX;
+    const heightPx = Math.max(((end-start)/3600000)*HOUR_PX - 2, 28);
+    const newStartLabel = isDragging ? `${fmtTimeShort(start.toISOString())} – ${fmtTimeShort(end.toISOString())}` : null;
+    return { topPx, heightPx, start, end, newStartLabel };
+  };
+
   return (
-    <div style={{ paddingTop:20 }}>
-      {/* Toolbar */}
-      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18, flexWrap:'wrap' }}>
-        <button onClick={()=>{ const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); }} style={{ padding:'7px 14px', border:`1px solid ${T.border}`, borderRadius:7, background:'transparent', color:T.ink, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>‹ Prev</button>
-        <button onClick={()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-((d.getDay()+6)%7)); setWeekStart(d); }} style={{ padding:'7px 14px', border:`1px solid ${T.border}`, borderRadius:7, background:'transparent', color:T.muted, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>Today</button>
-        <button onClick={()=>{ const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); }} style={{ padding:'7px 14px', border:`1px solid ${T.border}`, borderRadius:7, background:'transparent', color:T.ink, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>Next ›</button>
-        <span style={{ flex:1, fontSize:14, fontWeight:700, color:T.heading }}>{weekLabel()}</span>
-        {loading && <span style={{ fontSize:12, color:T.muted }}>Loading…</span>}
-        <button onClick={()=>setModal({ edit:null, prefill:{ date: isoDate(new Date()) } })} style={{ padding:'8px 16px', background:T.navy, border:'none', borderRadius:7, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>+ New Event</button>
-      </div>
-      {fetchErr && <p style={{ color:'#EF4444', fontSize:12, marginBottom:12 }}>{fetchErr}</p>}
-      {/* Week grid */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:8 }}>
-        {weekDays.map((day, i) => {
-          const dk = isoDate(day);
-          const isToday = dk === todayDk;
-          const dayEvents = eventsForDay(day);
-          return (
-            <div key={dk} style={{ minHeight:160, borderRadius:10, border:`1.5px solid ${isToday?T.navy:T.border}`, background:T.surface, overflow:'hidden' }}>
-              <div style={{ padding:'8px 10px', background:isToday?T.navy:T.surface, borderBottom:`1px solid ${T.border}` }}>
-                <span style={{ fontSize:10, fontWeight:800, color:isToday?'#fff':T.muted, letterSpacing:'0.08em' }}>{DAYS[i]}</span>
-                <span style={{ fontSize:16, fontWeight:900, color:isToday?'#fff':T.ink, marginLeft:6 }}>{day.getDate()}</span>
-                <button onClick={()=>setModal({ edit:null, prefill:{ date:dk } })}
-                  style={{ float:'right', background:'none', border:'none', color:isToday?'rgba(255,255,255,0.7)':T.faint, fontSize:16, cursor:'pointer', lineHeight:1, marginTop:-1 }} title="Add event">+</button>
+    <div style={{display:'flex',gap:0,minHeight:'80vh',userSelect:dragging?'none':'auto'}}>
+
+      {/* ── SIDEBAR ── */}
+      <div style={{width:232,flexShrink:0,paddingRight:20,display:'flex',flexDirection:'column',gap:0,overflowY:'auto',maxHeight:'calc(100vh - 120px)'}}>
+
+        {/* Mini calendar */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontSize:13,fontWeight:800,color:T.ink}}>
+              {miniMonth.toLocaleDateString('en-NZ',{month:'long',year:'numeric'})}
+            </span>
+            <div style={{display:'flex',gap:4}}>
+              <button onClick={()=>{const m=new Date(miniMonth);m.setMonth(m.getMonth()-1);setMiniMonth(m);}}
+                style={{background:'none',border:'none',color:T.muted,cursor:'pointer',fontSize:15,padding:'2px 5px',lineHeight:1,borderRadius:4}}>‹</button>
+              <button onClick={()=>{const m=new Date(miniMonth);m.setMonth(m.getMonth()+1);setMiniMonth(m);}}
+                style={{background:'none',border:'none',color:T.muted,cursor:'pointer',fontSize:15,padding:'2px 5px',lineHeight:1,borderRadius:4}}>›</button>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',textAlign:'center',rowGap:2}}>
+            {['M','T','W','T','F','S','S'].map((d,i)=>(
+              <div key={i} style={{fontSize:10,fontWeight:700,color:T.faint,padding:'2px 0'}}>{d}</div>
+            ))}
+            {miniDays().map((d,i)=>{
+              if (!d) return <div key={`e${i}`}/>;
+              const dk=isoDate(d);
+              const isSel=dk===selDk, isToday=dk===todayDk;
+              return (
+                <button key={dk}
+                  onClick={()=>{setSelDate(new Date(d));setMiniMonth(new Date(d.getFullYear(),d.getMonth(),1));}}
+                  style={{fontSize:11,padding:'4px 2px',borderRadius:'50%',cursor:'pointer',border:'none',fontFamily:'inherit',lineHeight:1,
+                    fontWeight:isSel||isToday?800:400,
+                    background:isSel?T.navy:isToday?T.accent:'transparent',
+                    color:isSel?'#fff':isToday?'#fff':T.ink}}>
+                  {d.getDate()}
+                </button>
+              );
+            })}
+          </div>
+          {/* Legend */}
+          <div style={{display:'flex',gap:10,marginTop:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:'50%',background:'#4F8EF7'}}/><span style={{fontSize:9,color:T.muted}}>Scheduled</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:'50%',background:TEAL}}/><span style={{fontSize:9,color:T.muted}}>Personal</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:'50%',background:'#EF4444'}}/><span style={{fontSize:9,color:T.muted}}>Deadline</span></div>
+          </div>
+        </div>
+
+        {/* Up Next */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontSize:10,fontWeight:800,color:T.ink,letterSpacing:'0.08em'}}>UP NEXT</span>
+            <button style={{fontSize:10,color:T.accent,fontWeight:700,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>View all</button>
+          </div>
+          {dayEvents.length===0 && <div style={{fontSize:11,color:T.faint}}>No events today</div>}
+          {dayEvents.slice(0,5).map(e=>{
+            const color=gcalColorHex(e.colorId,calColors[e._calId]);
+            const st=e.start?.dateTime, en=e.end?.dateTime;
+            const durMin=st&&en?(new Date(en)-new Date(st))/60000:0;
+            return (
+              <div key={e.id} onClick={()=>setModal({edit:e,prefill:null})}
+                style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:10,cursor:'pointer'}}>
+                <div style={{width:3,borderRadius:2,background:color,alignSelf:'stretch',flexShrink:0,minHeight:32}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.ink,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{e.summary||'(no title)'}</div>
+                  <div style={{fontSize:10,color:T.muted}}>{fmtTimeShort(st)} {durMin?`${durMin}m`:''}</div>
+                </div>
               </div>
-              <div style={{ padding:'6px 6px', display:'flex', flexDirection:'column', gap:3 }}>
-                {dayEvents.map(e => {
-                  const color = gcalColorHex(e.colorId, calColors[e._calId]);
-                  const isAllDay = !!e.start?.date && !e.start?.dateTime;
+            );
+          })}
+        </div>
+
+        {/* Task Backlog */}
+        <div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontSize:10,fontWeight:800,color:T.ink,letterSpacing:'0.08em'}}>TASK BACKLOG</span>
+            <span style={{fontSize:10,color:T.muted}}>{(filteredTasks.overdue.length+filteredTasks.upcoming.length)} uncompleted</span>
+          </div>
+          <div style={{position:'relative',marginBottom:8}}>
+            <input value={taskSearch} onChange={e=>setTaskSearch(e.target.value)} placeholder="Search tasks..."
+              style={{width:'100%',padding:'7px 10px 7px 28px',border:`1px solid ${T.border}`,borderRadius:8,fontSize:11,fontFamily:'inherit',background:T.surface,color:T.ink,boxSizing:'border-box',outline:'none'}}/>
+            <span style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',fontSize:11,color:T.faint,pointerEvents:'none'}}>🔍</span>
+          </div>
+          <div style={{display:'flex',gap:4,marginBottom:10}}>
+            {['all','unscheduled','scheduled','done'].map(f=>(
+              <button key={f} onClick={()=>setTaskFilter(f)}
+                style={{padding:'4px 8px',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,
+                  background:taskFilter===f?T.accent:'transparent',color:taskFilter===f?'#fff':T.muted}}>
+                {f.charAt(0).toUpperCase()+f.slice(1)}
+              </button>
+            ))}
+          </div>
+          {filteredTasks.overdue.length>0 && (
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:9,fontWeight:800,color:'#EF4444',letterSpacing:'0.1em',marginBottom:6}}>OVERDUE {filteredTasks.overdue.length}</div>
+              {filteredTasks.overdue.slice(0,5).map(t=>{
+                const daysAgo=Math.round((new Date(todayDk)-new Date(t.dateKey))/(24*3600*1000));
+                return (
+                  <div key={t.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,padding:'5px 8px',borderRadius:7,background:T.surface,border:`1px solid ${T.border}`}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,fontWeight:600,color:T.ink,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{t.text}</div>
+                      <div style={{fontSize:9,color:T.faint}}>{t.category}</div>
+                    </div>
+                    <span style={{fontSize:9,fontWeight:700,color:'#EF4444',background:'#FEE2E2',padding:'2px 6px',borderRadius:10,whiteSpace:'nowrap'}}>{daysAgo>0?`${daysAgo} day${daysAgo>1?'s':''}`:'Today'}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {filteredTasks.upcoming.length>0 && (
+            <div>
+              <div style={{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:'0.1em',marginBottom:6}}>UPCOMING {filteredTasks.upcoming.length}</div>
+              {filteredTasks.upcoming.slice(0,6).map(t=>{
+                const daysAway=Math.round((new Date(t.dateKey)-new Date(todayDk))/(24*3600*1000));
+                const dayLabel=daysAway===0?'Today':daysAway===1?'Tomorrow':new Date(t.dateKey+'T12:00:00').toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short'});
+                return (
+                  <div key={t.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,padding:'5px 8px',borderRadius:7,background:T.surface,border:`1px solid ${T.border}`,cursor:'pointer'}}
+                    onClick={()=>setModal({edit:null,prefill:{title:t.text,date:t.dateKey,colorId:CAT_COLOR_ID[t.category]||'',description:t.notes||''}})}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,fontWeight:600,color:T.ink,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{t.text}</div>
+                      <div style={{fontSize:9,color:T.faint}}>{t.category}</div>
+                    </div>
+                    <span style={{fontSize:9,color:T.muted,whiteSpace:'nowrap'}}>{dayLabel}</span>
+                    <span style={{fontSize:10,color:T.faint}}>›</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── MAIN AREA ── */}
+      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column'}}>
+
+        {/* Page heading */}
+        <div style={{marginBottom:0}}>
+          <div style={{fontSize:10,fontWeight:800,color:T.accent,letterSpacing:'0.12em',marginBottom:2}}>
+            {dayOfWeek}{selDk===todayDk?' · BUILD MY DAY':''}
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:4}}>
+            <div style={{fontSize:24,fontWeight:900,color:T.heading,letterSpacing:'-0.02em',flex:1}}>{dayLabel}</div>
+            {/* View toggle */}
+            <div style={{display:'flex',border:`1px solid ${T.border}`,borderRadius:8,overflow:'hidden'}}>
+              {['Day','Week','Month'].map(v=>(
+                <button key={v} onClick={()=>{ if(v==='Month') return; setViewMode(v.toLowerCase()); }}
+                  style={{padding:'7px 14px',border:'none',borderRadius:0,fontFamily:'inherit',
+                    background:viewMode===v.toLowerCase()?T.navy:'transparent',
+                    color:viewMode===v.toLowerCase()?'#fff':T.muted,
+                    fontSize:11,fontWeight:700,cursor:v==='Month'?'default':'pointer',opacity:v==='Month'?0.4:1}}>
+                  {v}
+                </button>
+              ))}
+            </div>
+            <button style={{padding:'7px 13px',border:`1px solid ${T.border}`,borderRadius:8,background:'#fff',color:T.ink,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:5}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="11" y2="18"/></svg>Filters
+            </button>
+            <button onClick={fetchEvents}
+              style={{padding:'7px 13px',border:`1px solid ${T.border}`,borderRadius:8,background:'#fff',color:T.ink,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:5}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10" stroke="#4285F4" strokeWidth="2.5" strokeLinecap="round"/><path d="M17 12c0-2.76-2.24-5-5-5" stroke="#EA4335" strokeWidth="2.5" strokeLinecap="round"/><path d="M12 22c2.76 0 5-2.24 5-5" stroke="#34A853" strokeWidth="2.5" strokeLinecap="round"/><path d="M7 12c0 2.76 2.24 5 5 5" stroke="#FBBC05" strokeWidth="2.5" strokeLinecap="round"/></svg>
+              {loading?'Syncing…':'Sync Google'}
+            </button>
+            <button onClick={()=>setModal({edit:null,prefill:{date:selDk}})}
+              style={{padding:'7px 14px',background:T.accent,border:'none',borderRadius:8,color:'#fff',fontSize:11,fontWeight:800,letterSpacing:'0.04em',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:5}}>
+              + Plan New Day
+            </button>
+          </div>
+          {/* Day nav */}
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+            <button onClick={()=>{const d=new Date(selDate);d.setDate(d.getDate()-1);setSelDate(d);}}
+              style={{padding:'4px 9px',border:`1px solid ${T.border}`,borderRadius:6,background:'transparent',color:T.ink,fontSize:14,cursor:'pointer',fontFamily:'inherit',lineHeight:1}}>‹</button>
+            <button onClick={()=>{const d=new Date();d.setHours(0,0,0,0);setSelDate(d);setMiniMonth(new Date(d.getFullYear(),d.getMonth(),1));}}
+              style={{padding:'4px 10px',border:`1px solid ${T.border}`,borderRadius:6,background:'transparent',color:T.muted,fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Today</button>
+            <button onClick={()=>{const d=new Date(selDate);d.setDate(d.getDate()+1);setSelDate(d);}}
+              style={{padding:'4px 9px',border:`1px solid ${T.border}`,borderRadius:6,background:'transparent',color:T.ink,fontSize:14,cursor:'pointer',fontFamily:'inherit',lineHeight:1}}>›</button>
+            <span style={{fontSize:11,fontWeight:700,color:T.ink,marginLeft:4}}>{selDate.toLocaleDateString('en-NZ',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span>
+          </div>
+          <p style={{fontSize:11,color:T.muted,margin:'0 0 8px'}}>Drag events on the timeline. Click empty space to create. Snaps to 10-minute intervals.</p>
+          {fetchErr && <p style={{color:'#EF4444',fontSize:11,marginBottom:6}}>{fetchErr}</p>}
+        </div>
+
+        {viewMode==='day' ? (
+          /* ── DAY VIEW: absolute-positioned event blocks on hour grid ── */
+          <div style={{display:'flex',border:`1px solid ${T.border}`,borderRadius:10,overflow:'hidden',flex:1}}>
+            {/* User name band */}
+            <div style={{position:'relative',flex:1}}>
+              <div style={{background:TEAL,padding:'8px 16px',textAlign:'center'}}>
+                <span style={{fontSize:11,fontWeight:800,color:'#fff',letterSpacing:'0.12em'}}>{userName}</span>
+              </div>
+              {/* Timeline */}
+              <div ref={timelineRef} style={{position:'relative',overflowY:'auto',maxHeight:'calc(100vh - 280px)'}}>
+                {/* Hour rows */}
+                {HOURS.map(hour=>{
+                  const label=hour===12?'12:00 PM':hour>12?`${hour-12}:00 PM`:`${hour}:00 AM`;
                   return (
-                    <button key={e.id} onClick={()=>setModal({ edit:e, prefill:null })}
-                      style={{ display:'block', width:'100%', textAlign:'left', padding:'3px 6px', borderRadius:4, background:color+'22', border:`1px solid ${color}44`, cursor:'pointer', fontFamily:'inherit' }}>
-                      <div style={{ fontSize:10, color:color, fontWeight:700, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
-                        {!isAllDay && <span style={{ opacity:0.85, marginRight:4 }}>{fmtTime(e.start.dateTime)}</span>}
-                        {e.summary || '(no title)'}
+                    <div key={hour} style={{display:'flex',height:HOUR_PX,borderBottom:`1px solid ${T.border}22`,cursor:'pointer'}}
+                      onClick={()=>setModal({edit:null,prefill:{date:selDk,time:`${String(hour).padStart(2,'0')}:00`}})}>
+                      <div style={{width:70,flexShrink:0,paddingTop:6,paddingRight:12,textAlign:'right',fontSize:10,fontWeight:600,color:T.faint,userSelect:'none',borderRight:`1px solid ${T.border}22`}}>{label}</div>
+                      <div style={{flex:1}}/>
+                    </div>
+                  );
+                })}
+                {/* Event blocks — absolutely positioned over the grid */}
+                {dayEvents.filter(e=>e.start?.dateTime).map(e=>{
+                  const pos=evtDisplayY(e);
+                  if (!pos) return null;
+                  const color=gcalColorHex(e.colorId,calColors[e._calId]);
+                  const isDrag=dragging&&dragging.event.id===e.id;
+                  const durMin=(pos.end-pos.start)/60000;
+                  const timeRange=`${fmtTimeShort(pos.start.toISOString())} – ${fmtTimeShort(pos.end.toISOString())}`;
+                  return (
+                    <div key={e.id}
+                      onMouseDown={ev=>handleEvtMouseDown(ev,e)}
+                      onClick={ev=>{ if(!isDrag||dragging?.currentOffsetMin===0){ ev.stopPropagation(); setModal({edit:e,prefill:null}); } }}
+                      style={{
+                        position:'absolute', left:70, right:0, top:pos.topPx, height:pos.heightPx,
+                        background:color, borderRadius:6, padding:'4px 40px 4px 10px',
+                        cursor:isDrag?'grabbing':'grab', overflow:'hidden', zIndex:isDrag?10:2,
+                        boxShadow:isDrag?'0 4px 16px rgba(0,0,0,0.22)':'0 1px 3px rgba(0,0,0,0.1)',
+                        transition:isDrag?'none':'box-shadow 0.1s',
+                        opacity:isDrag?0.92:1,
+                      }}>
+                      <div style={{display:'flex',alignItems:'flex-start',gap:8,height:'100%'}}>
+                        <div style={{minWidth:0,flex:1}}>
+                          <div style={{fontSize:11,fontWeight:800,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                            {isDrag&&pos.newStartLabel ? `⟨ ${pos.newStartLabel} ⟩` : `${timeRange}`}
+                          </div>
+                          {pos.heightPx>36 && (
+                            <div style={{fontSize:12,fontWeight:700,color:'rgba(255,255,255,0.95)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                              {catIcon(e.extendedProperties?.private?.category)} {e.summary||'(no title)'}
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={ev=>{ev.stopPropagation();setModal({edit:e,prefill:null});}}
+                          style={{background:'rgba(255,255,255,0.2)',border:'none',color:'#fff',cursor:'pointer',borderRadius:4,padding:'2px 5px',fontSize:14,lineHeight:1,flexShrink:0}}>⋮</button>
                       </div>
-                    </button>
+                    </div>
+                  );
+                })}
+                {/* All-day events */}
+                {dayEvents.filter(e=>!e.start?.dateTime&&e.start?.date).map(e=>{
+                  const color=gcalColorHex(e.colorId,calColors[e._calId]);
+                  return (
+                    <div key={e.id} style={{position:'absolute',left:70,right:0,top:0,zIndex:3,background:color+'33',borderBottom:`2px solid ${color}`,padding:'3px 10px',cursor:'pointer'}}
+                      onClick={()=>setModal({edit:e,prefill:null})}>
+                      <span style={{fontSize:10,fontWeight:800,color:color}}>{e.summary}</span>
+                    </div>
                   );
                 })}
               </div>
             </div>
-          );
-        })}
+          </div>
+        ) : (
+          /* ── WEEK VIEW ── */
+          (()=>{
+            const ws=new Date(selDate);
+            ws.setDate(ws.getDate()-((ws.getDay()+6)%7));
+            const wdays=Array.from({length:7},(_,i)=>{const d=new Date(ws);d.setDate(d.getDate()+i);return d;});
+            return (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:6,flex:1}}>
+                {wdays.map((day,i)=>{
+                  const dk=isoDate(day);
+                  const isToday=dk===todayDk;
+                  const devts=events.filter(e=>(e.start?.dateTime||e.start?.date||'').startsWith(dk));
+                  const WLABELS=['MON','TUE','WED','THU','FRI','SAT','SUN'];
+                  return (
+                    <div key={dk} style={{minHeight:160,borderRadius:9,border:`1.5px solid ${isToday?T.navy:T.border}`,background:T.surface,overflow:'hidden'}}>
+                      <div style={{padding:'7px 8px',background:isToday?T.navy:TEAL+'15',borderBottom:`1px solid ${T.border}`,cursor:'pointer'}}
+                        onClick={()=>{setSelDate(new Date(day));setViewMode('day');}}>
+                        <span style={{fontSize:9,fontWeight:800,color:isToday?'rgba(255,255,255,0.7)':T.muted,letterSpacing:'0.08em'}}>{WLABELS[i]} </span>
+                        <span style={{fontSize:17,fontWeight:900,color:isToday?'#fff':T.ink}}>{day.getDate()}</span>
+                      </div>
+                      <div style={{padding:'4px 4px',display:'flex',flexDirection:'column',gap:2}}>
+                        {devts.slice(0,5).map(e=>{
+                          const color=gcalColorHex(e.colorId,calColors[e._calId]);
+                          return (
+                            <div key={e.id} onClick={()=>setModal({edit:e,prefill:null})}
+                              style={{display:'flex',alignItems:'center',gap:4,padding:'3px 6px',borderRadius:5,background:color,cursor:'pointer',overflow:'hidden'}}>
+                              <div style={{fontSize:9,color:'#fff',fontWeight:700,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>
+                                {fmtTimeShort(e.start?.dateTime)} {e.summary||'(no title)'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {devts.length>5 && <div style={{fontSize:9,color:T.faint,padding:'1px 6px'}}>+{devts.length-5} more</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()
+        )}
       </div>
+
       {modal && (
-        <GCalEventModal
-          editEvent={modal.edit}
-          prefill={modal.prefill}
-          onClose={()=>setModal(null)}
-          onSaved={fetchEvents}
-        />
+        <GCalEventModal editEvent={modal.edit} prefill={modal.prefill}
+          onClose={()=>setModal(null)} onSaved={()=>{setModal(null);fetchEvents();}}/>
       )}
     </div>
   );
