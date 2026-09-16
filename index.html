@@ -13141,6 +13141,7 @@ const DEFAULT_TABS = [
   { key:"team",       label:"TEAM",        on:true },
   { key:"uniform",    label:"UNIFORM",     on:true },
   { key:"resources",  label:"RESOURCES",   on:true },
+  { key:"gcalendar",  label:"CALENDAR",    on:true },
   // settings is accessible via ⚙ gear icon in header — not in tab bar by default
   { key:"settings",   label:"SETTINGS",    on:false },
 ];
@@ -16909,6 +16910,19 @@ function App({ onSwitchWorkspace = () => {} }) {
           photos={photos} setPhotos={setPhotos}
           onAddToTasks={onAdd}
         />}
+        {tab === "gcalendar" && (
+          <div style={{ padding:"24px 0 0", display:"flex", flexDirection:"column", gap:0 }}>
+            <p style={{ fontSize:12, color:T.muted, marginBottom:12 }}>Your Google Calendar — read-only, loaded directly from Google (no Firebase cost).</p>
+            <div style={{ borderRadius:10, overflow:"hidden", border:`1px solid ${T.border}` }}>
+              <iframe
+                src="https://calendar.google.com/calendar/embed?height=700&wkst=2&ctz=Pacific%2FAuckland&src=b2xva2FmMDdAZ21haWwuY29t&src=YzhjMTU1NTY4NjI1MGYwNjE3N2JkZWEwY2FkYzU3YmY5ODUwZTJjOTgyMTRkY2VhNTQxZDg0MmQzMjljMjhiMkBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=NWQ1NzhhZmIwMjA4MmZlYTRmYTFkYjYyZGJlOGRlYTE2YTRjYmJlMjFiNjQ4ZmU5MjAzM2E4MjYwOWE4MDFhYkBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=ZmFtaWx5MTI4MjQ5NDY0Njg1Nzk1MTgzMTJAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=ZGJkYTM4ODliZjk4NDQxNDQ3YzJhYTFmYzdlOTliYjI5NDViMDkyZmI3YmUwZjVjZWE5ODdhYjRhYmMzOTQ2OUBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=NjhtZWk1bm9jbnVuc2owanM3dG8xanZjaDY1amZrcjhAaW1wb3J0LmNhbGVuZGFyLmdvb2dsZS5jb20&src=ZW4tZ2IubmV3X3plYWxhbmQjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&src=ZW4ubmV3X3plYWxhbmQjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&color=%238e24aa&color=%23d81b60&color=%23ad1457&color=%23f09300&color=%23b39ddb&color=%23e67c73&color=%230b8043&color=%230b8043"
+                style={{ border:"none", width:"100%", height:700, display:"block" }}
+                frameBorder="0"
+                scrolling="no"
+              />
+            </div>
+          </div>
+        )}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
         {tab === "emails" && <EmailPipelineView
