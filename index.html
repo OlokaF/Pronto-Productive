@@ -15843,21 +15843,31 @@ function App({ onSwitchWorkspace = () => {} }) {
       return next;
     });
   }, [tasksByDate]);
-  // One-time cleanup: wipe all old content calendar data and record wipe time
+  // One-time cleanup: remove pre-2026 stale content from localStorage (preserves 2026+ content)
   useE(() => {
     if (localStorage.getItem('prontoHQ.contentWiped2026d')) return;
-    const wipeAt = Date.now();
     localStorage.setItem('prontoHQ.contentWiped2026d', '1');
-    localStorage.setItem('prontoHQ.contentWipeAt', String(wipeAt));
     try {
       const raw = localStorage.getItem('prontoHQ.state.v1');
       if (raw) {
         const d = JSON.parse(raw);
-        d.content = {};
-        localStorage.setItem('prontoHQ.state.v1', JSON.stringify(d));
+        if (d.content) {
+          const kept = {};
+          for (const [dk, posts] of Object.entries(d.content)) {
+            if (dk >= '2026-01-01') kept[dk] = posts;
+          }
+          d.content = kept;
+          localStorage.setItem('prontoHQ.state.v1', JSON.stringify(d));
+        }
       }
     } catch(_) {}
-    setContent({});
+    setContent(prev => {
+      const kept = {};
+      for (const [dk, posts] of Object.entries(prev || {})) {
+        if (dk >= '2026-01-01') kept[dk] = posts;
+      }
+      return kept;
+    });
   }, []);
   // One-time cleanup: remove all task entries before 2026-05-22 (pre-app spreadsheet data)
   useE(() => {
@@ -16236,18 +16246,12 @@ function App({ onSwitchWorkspace = () => {} }) {
       if (s.tasksByDate) setTasksByDate(s.tasksByDate);
     }
     if (s.content) {
-      const wipeTime = parseInt(localStorage.getItem('prontoHQ.contentWipeAt') || '0', 10);
-      if (wipeTime) {
-        // Filter out any date-keys where ALL posts were created before the wipe — old data
-        const filtered = {};
-        for (const [dk, posts] of Object.entries(s.content)) {
-          const kept = (posts || []).filter(p => !p._deleted && (p.updatedAt || 0) > wipeTime);
-          if (kept.length) filtered[dk] = posts; // keep the full array if any new post exists
-        }
-        if (Object.keys(filtered).length) setContent(prev => _mergeContent(prev, filtered));
-      } else {
-        setContent(prev => _mergeContent(prev, s.content));
+      // Only accept content dated 2026 or later — blocks old 2025 stale data from Firebase
+      const filtered = {};
+      for (const [dk, posts] of Object.entries(s.content)) {
+        if (dk >= '2026-01-01') filtered[dk] = posts;
       }
+      if (Object.keys(filtered).length) setContent(prev => _mergeContent(prev, filtered));
     }
     if (s.ideas)   setIdeas(prev => _mergeIdeas(prev, s.ideas));       // merge, never replace
     if (s.suppliers) setSuppliers(s.suppliers);
