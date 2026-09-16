@@ -15845,9 +15845,9 @@ function App({ onSwitchWorkspace = () => {} }) {
   }, [tasksByDate]);
   // One-time cleanup: wipe all old content calendar data and record wipe time
   useE(() => {
-    if (localStorage.getItem('prontoHQ.contentWiped2026c')) return;
+    if (localStorage.getItem('prontoHQ.contentWiped2026d')) return;
     const wipeAt = Date.now();
-    localStorage.setItem('prontoHQ.contentWiped2026c', '1');
+    localStorage.setItem('prontoHQ.contentWiped2026d', '1');
     localStorage.setItem('prontoHQ.contentWipeAt', String(wipeAt));
     try {
       const raw = localStorage.getItem('prontoHQ.state.v1');
@@ -18685,42 +18685,43 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
               <div style={{background:TEAL,padding:'8px 16px',textAlign:'center'}}>
                 <span style={{fontSize:11,fontWeight:800,color:'#fff',letterSpacing:'0.12em'}}>{userName}</span>
               </div>
-              {/* Timeline */}
-              <div ref={timelineRef} style={{position:'relative',overflowY:'auto',maxHeight:'calc(100vh - 280px)'}}>
+              {/* Timeline — onDragOver/onDrop on container catches drops that land on event blocks */}
+              <div ref={timelineRef} style={{position:'relative',overflowY:'auto',maxHeight:'calc(100vh - 280px)'}}
+                onDragOver={ev=>ev.preventDefault()}
+                onDrop={ev=>{
+                  ev.preventDefault();
+                  const raw=ev.dataTransfer.getData('application/x-pronto-backlog-task');
+                  if(!raw) return;
+                  const data=JSON.parse(raw);
+                  const rect=ev.currentTarget.getBoundingClientRect();
+                  const scrollTop=ev.currentTarget.scrollTop;
+                  const relY=(ev.clientY - rect.top + scrollTop);
+                  const totalMins = START_H*60 + (relY / HOUR_PX) * 60;
+                  const snappedMins = Math.round(totalMins / SNAP_MIN) * SNAP_MIN;
+                  const hour = Math.floor(snappedMins / 60);
+                  const mins = snappedMins % 60;
+                  const startIso = new Date(`${selDk}T${String(Math.min(hour,23)).padStart(2,'0')}:${String(Math.min(mins,59)).padStart(2,'0')}:00`).toISOString();
+                  const endIso   = new Date(new Date(startIso).getTime() + 1800000).toISOString();
+                  (async () => {
+                    try {
+                      const body = { summary:data.text, description:data.notes||'', start:{dateTime:startIso,timeZone:'Pacific/Auckland'}, end:{dateTime:endIso,timeZone:'Pacific/Auckland'} };
+                      if (data.colorId) body.colorId = data.colorId;
+                      await gcalFetch(token,'POST',`/calendars/primary/events`,body);
+                      fetchEventsRef.current?.();
+                    } catch(err){ console.error('[Pronto] GCal drop save failed:',err); }
+                  })();
+                }}>
                 {/* Hour rows */}
                 {HOURS.map(hour=>{
                   const label=hour===12?'12:00 PM':hour>12?`${hour-12}:00 PM`:`${hour}:00 AM`;
                   return (
                     <div key={hour} style={{display:'flex',height:HOUR_PX,borderBottom:`1px solid ${T.border}22`,cursor:'pointer'}}
                       onClick={(ev)=>{
-                        // Calculate minutes within the hour from click position
                         const rect=ev.currentTarget.getBoundingClientRect();
                         const fracY=(ev.clientY-rect.top)/rect.height;
                         const rawMin=Math.round(fracY*60/SNAP_MIN)*SNAP_MIN;
                         const mins=Math.min(Math.max(rawMin,0),59);
                         setModal({edit:null,prefill:{date:selDk,time:`${String(hour).padStart(2,'0')}:${String(mins).padStart(2,'0')}`}});
-                      }}
-                      onDragOver={ev=>ev.preventDefault()}
-                      onDrop={ev=>{
-                        ev.preventDefault();
-                        const raw=ev.dataTransfer.getData('application/x-pronto-backlog-task');
-                        if(!raw) return;
-                        const data=JSON.parse(raw);
-                        const rect=ev.currentTarget.getBoundingClientRect();
-                        const fracY=(ev.clientY-rect.top)/rect.height;
-                        const rawMin=Math.round(fracY*60/SNAP_MIN)*SNAP_MIN;
-                        const mins=Math.min(Math.max(rawMin,0),59);
-                        const startIso = new Date(`${selDk}T${String(hour).padStart(2,'0')}:${String(mins).padStart(2,'0')}:00`).toISOString();
-                        const endIso   = new Date(new Date(startIso).getTime() + 1800000).toISOString();
-                        // Auto-save immediately — no confirmation needed
-                        (async () => {
-                          try {
-                            const body = { summary:data.text, description:data.notes||'', start:{dateTime:startIso,timeZone:'Pacific/Auckland'}, end:{dateTime:endIso,timeZone:'Pacific/Auckland'} };
-                            if (data.colorId) body.colorId = data.colorId;
-                            await gcalFetch(token,'POST',`/calendars/primary/events`,body);
-                            fetchEventsRef.current?.();
-                          } catch(err){ console.error('[Pronto] GCal drop save failed:',err); }
-                        })();
                       }}>
                       <div style={{width:70,flexShrink:0,paddingTop:6,paddingRight:12,textAlign:'right',fontSize:10,fontWeight:600,color:T.faint,userSelect:'none',borderRight:`1px solid ${T.border}22`}}>{label}</div>
                       <div style={{flex:1}}/>
