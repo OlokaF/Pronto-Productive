@@ -789,6 +789,7 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
             {(task.notes||[]).length ? `${(task.notes||[]).length} NOTE${(task.notes||[]).length !== 1 ? "S" : ""}` : "+ NOTES"}
           </button>
         )}
+        <AddToGCalButton task={task} dateKey={dateKey} />
         {onMoveTask && (
           <button onClick={(e) => { e.stopPropagation(); setShowMove(v => !v); }}
             title="Move to another date"
@@ -16910,19 +16911,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           photos={photos} setPhotos={setPhotos}
           onAddToTasks={onAdd}
         />}
-        {tab === "gcalendar" && (
-          <div style={{ padding:"24px 0 0", display:"flex", flexDirection:"column", gap:0 }}>
-            <p style={{ fontSize:12, color:T.muted, marginBottom:12 }}>Your Google Calendar — read-only, loaded directly from Google (no Firebase cost).</p>
-            <div style={{ borderRadius:10, overflow:"hidden", border:`1px solid ${T.border}` }}>
-              <iframe
-                src="https://calendar.google.com/calendar/embed?height=700&wkst=2&ctz=Pacific%2FAuckland&src=b2xva2FmMDdAZ21haWwuY29t&src=YzhjMTU1NTY4NjI1MGYwNjE3N2JkZWEwY2FkYzU3YmY5ODUwZTJjOTgyMTRkY2VhNTQxZDg0MmQzMjljMjhiMkBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=NWQ1NzhhZmIwMjA4MmZlYTRmYTFkYjYyZGJlOGRlYTE2YTRjYmJlMjFiNjQ4ZmU5MjAzM2E4MjYwOWE4MDFhYkBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=ZmFtaWx5MTI4MjQ5NDY0Njg1Nzk1MTgzMTJAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&src=ZGJkYTM4ODliZjk4NDQxNDQ3YzJhYTFmYzdlOTliYjI5NDViMDkyZmI3YmUwZjVjZWE5ODdhYjRhYmMzOTQ2OUBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=NjhtZWk1bm9jbnVuc2owanM3dG8xanZjaDY1amZrcjhAaW1wb3J0LmNhbGVuZGFyLmdvb2dsZS5jb20&src=ZW4tZ2IubmV3X3plYWxhbmQjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&src=ZW4ubmV3X3plYWxhbmQjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&color=%238e24aa&color=%23d81b60&color=%23ad1457&color=%23f09300&color=%23b39ddb&color=%23e67c73&color=%230b8043&color=%230b8043"
-                style={{ border:"none", width:"100%", height:700, display:"block" }}
-                frameBorder="0"
-                scrolling="no"
-              />
-            </div>
-          </div>
-        )}
+        {tab === "gcalendar" && <GCalCalendarTab />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
         {tab === "emails" && <EmailPipelineView
@@ -18053,6 +18042,259 @@ function gcalEventToExternalBlock(event, owner) {
 // Stable key for a block — used to track it across renders for push detection
 function _gcalBlockKey(b) {
   return b.blockId || b.qeId || (b.taskId ? b.taskId + '|' + b.startMin : null);
+}
+
+// ── GCAL COLOUR PALETTE ──────────────────────────────────────────────────────
+const GCAL_COLORS = [
+  { id:'1', name:'Lavender', hex:'#7986CB' }, { id:'2', name:'Sage',      hex:'#33B679' },
+  { id:'3', name:'Grape',    hex:'#8E24AA' }, { id:'4', name:'Flamingo',  hex:'#E67C73' },
+  { id:'5', name:'Banana',   hex:'#F6BF26' }, { id:'6', name:'Tangerine', hex:'#F4511E' },
+  { id:'7', name:'Peacock',  hex:'#039BE5' }, { id:'8', name:'Graphite',  hex:'#616161' },
+  { id:'9', name:'Blueberry',hex:'#3F51B5' }, { id:'10',name:'Basil',     hex:'#0B8043' },
+  { id:'11',name:'Tomato',   hex:'#D50000' },
+];
+const CAT_COLOR_ID = { 'Social Post':'7', 'Email':'2', 'Admin':'3', 'Content':'5', 'Design':'1', 'Meeting':'9' };
+function gcalColorHex(colorId, calBg) { return GCAL_COLORS.find(c=>c.id===String(colorId))?.hex || calBg || '#039BE5'; }
+
+// ── GCAL EVENT MODAL ─────────────────────────────────────────────────────────
+function GCalEventModal({ onClose, onSaved, editEvent, prefill }) {
+  const conf = loadGcalConf();
+  const token = conf.accessToken && conf.tokenExpiry > Date.now() ? conf.accessToken : null;
+  const cals  = (conf.allCalendars || []).filter(c => !c.accessRole || c.accessRole !== 'freeBusyReader');
+  const [title,    setTitle]    = useStateV(editEvent?.summary || prefill?.title || '');
+  const [calId,    setCalId]    = useStateV(editEvent?._calId || conf.calendarId || (cals[0]?.id) || 'primary');
+  const [date,     setDate]     = useStateV(prefill?.date || isoDate(new Date()));
+  const [startTime,setStartTime]= useStateV(prefill?.startTime || '09:00');
+  const [duration, setDuration] = useStateV(60);
+  const [desc,     setDesc]     = useStateV(editEvent?.description?.replace(/^prontoHQ:[^\n]+\n?/,'') || prefill?.description || '');
+  const [colorId,  setColorId]  = useStateV(editEvent?.colorId || prefill?.colorId || '');
+  const [saving,   setSaving]   = useStateV(false);
+  const [err,      setErr]      = useStateV('');
+
+  if (!token) return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:3000, background:'rgba(15,27,58,0.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:T.bg, borderRadius:14, padding:28, maxWidth:380, width:'100%' }}>
+        <p style={{ color:T.ink, fontSize:14 }}>Google Calendar is not connected. Go to <strong>Settings → Google Calendar</strong> to connect.</p>
+        <button onClick={onClose} style={{ marginTop:16, padding:'8px 18px', background:T.navy, color:'#fff', border:'none', borderRadius:7, cursor:'pointer', fontFamily:'inherit', fontWeight:700 }}>Close</button>
+      </div>
+    </div>
+  );
+
+  const handleSave = async () => {
+    if (!title.trim()) { setErr('Title is required'); return; }
+    setSaving(true); setErr('');
+    try {
+      const startDt = new Date(`${date}T${startTime}:00`);
+      const endDt   = new Date(startDt.getTime() + Number(duration) * 60000);
+      const body = {
+        summary: title.trim(), description: desc,
+        colorId: colorId || undefined,
+        start: { dateTime: startDt.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        end:   { dateTime: endDt.toISOString(),   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+      };
+      if (editEvent?.id)
+        await gcalFetch(token, 'PUT',  `/calendars/${encodeURIComponent(calId)}/events/${editEvent.id}`, body);
+      else
+        await gcalFetch(token, 'POST', `/calendars/${encodeURIComponent(calId)}/events`, body);
+      onSaved(); onClose();
+    } catch(e) { setErr(e.message); }
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!editEvent?.id || !window.confirm('Delete this event from Google Calendar?')) return;
+    try { await gcalFetch(token, 'DELETE', `/calendars/${encodeURIComponent(calId)}/events/${editEvent.id}`); onSaved(); onClose(); }
+    catch(e) { setErr(e.message); }
+  };
+
+  const inp = { padding:'9px 12px', border:`1px solid ${T.border}`, borderRadius:8, fontSize:13, color:T.ink, background:T.surface, fontFamily:'inherit', outline:'none', width:'100%', boxSizing:'border-box' };
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:3000, background:'rgba(15,27,58,0.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:T.bg, borderRadius:14, padding:28, width:'100%', maxWidth:420, boxShadow:'0 20px 60px rgba(0,0,0,0.28)', display:'flex', flexDirection:'column', gap:14 }}>
+        <h3 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:19, color:T.heading, margin:0 }}>{editEvent ? 'Edit Event' : 'New Event'}</h3>
+        <input autoFocus value={title} onChange={e=>setTitle(e.target.value)} placeholder="Event title" style={inp}/>
+        {cals.length > 0 && (
+          <select value={calId} onChange={e=>setCalId(e.target.value)} style={inp}>
+            {cals.map(c=><option key={c.id} value={c.id}>{c.summary}</option>)}
+          </select>
+        )}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+          <input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} style={inp}/>
+        </div>
+        <select value={duration} onChange={e=>setDuration(e.target.value)} style={inp}>
+          {[15,30,45,60,90,120,180,240,480].map(m=><option key={m} value={m}>{m<60?`${m} min`:`${m/60}h${m%60?` ${m%60}m`:''}`}</option>)}
+        </select>
+        <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Description (optional)" rows={3} style={{ ...inp, resize:'vertical' }}/>
+        <div>
+          <p style={{ fontSize:11, fontWeight:700, color:T.muted, marginBottom:6, letterSpacing:'0.05em' }}>COLOUR</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+            <button onClick={()=>setColorId('')} style={{ width:22, height:22, borderRadius:'50%', border:colorId===''?'3px solid '+T.navy:'2px solid '+T.border, background:'#9E9E9E', cursor:'pointer' }} title="Calendar default"/>
+            {GCAL_COLORS.map(c=>(
+              <button key={c.id} onClick={()=>setColorId(c.id)} style={{ width:22, height:22, borderRadius:'50%', border:colorId===c.id?'3px solid '+T.navy:'2px solid transparent', background:c.hex, cursor:'pointer' }} title={c.name}/>
+            ))}
+          </div>
+        </div>
+        {err && <p style={{ color:'#EF4444', fontSize:12 }}>{err}</p>}
+        <div style={{ display:'flex', gap:8, marginTop:4 }}>
+          {editEvent && <button onClick={handleDelete} style={{ padding:'9px 14px', border:'1px solid #EF444440', borderRadius:7, background:'transparent', color:'#EF4444', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Delete</button>}
+          <div style={{ flex:1 }}/>
+          <button onClick={onClose} style={{ padding:'9px 14px', border:`1px solid ${T.border}`, borderRadius:7, background:'transparent', color:T.muted, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding:'9px 18px', background:T.navy, border:'none', borderRadius:7, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', opacity:saving?0.6:1 }}>{saving?'Saving…':'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── GCAL CALENDAR TAB ────────────────────────────────────────────────────────
+function GCalCalendarTab() {
+  const conf = loadGcalConf();
+  const token = conf.accessToken && conf.tokenExpiry > Date.now() ? conf.accessToken : null;
+  const [weekStart, setWeekStart] = useStateV(() => {
+    const d = new Date(); d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d;
+  });
+  const [events,      setEvents]      = useStateV([]);
+  const [loading,     setLoading]     = useStateV(false);
+  const [fetchErr,    setFetchErr]    = useStateV('');
+  const [modal,       setModal]       = useStateV(null); // null | { edit: eventObj|null, prefill: {} }
+  const [calColors,   setCalColors]   = useStateV({}); // calId → backgroundColor
+
+  const weekDays = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(d.getDate()+i); return d; });
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  const fetchEvents = React.useCallback(async () => {
+    if (!token) return;
+    setLoading(true); setFetchErr('');
+    try {
+      const min = weekStart.toISOString();
+      const max = new Date(weekStart.getTime() + 7*24*3600*1000).toISOString();
+      const pullCals = conf.pullCalendarIds?.length ? conf.pullCalendarIds
+                     : (conf.allCalendars||[]).map(c=>c.id).slice(0,10);
+      const colors = {};
+      (conf.allCalendars||[]).forEach(c => { colors[c.id] = c.backgroundColor; });
+      setCalColors(colors);
+      const all = [];
+      await Promise.all(pullCals.map(async calId => {
+        try {
+          const res = await gcalFetch(token, 'GET', `/calendars/${encodeURIComponent(calId)}/events?timeMin=${encodeURIComponent(min)}&timeMax=${encodeURIComponent(max)}&singleEvents=true&orderBy=startTime&maxResults=250`);
+          (res.items||[]).forEach(e => all.push({ ...e, _calId: calId }));
+        } catch(_) {}
+      }));
+      all.sort((a,b) => (a.start?.dateTime||a.start?.date||'') < (b.start?.dateTime||b.start?.date||'') ? -1 : 1);
+      setEvents(all);
+    } catch(e) { setFetchErr(e.message); }
+    setLoading(false);
+  }, [weekStart, token]);
+
+  useE(() => { fetchEvents(); }, [fetchEvents]);
+
+  const eventsForDay = (d) => {
+    const dk = isoDate(d);
+    return events.filter(e => {
+      const dt = e.start?.dateTime || e.start?.date || '';
+      return dt.startsWith(dk);
+    });
+  };
+
+  const fmtTime = (dt) => {
+    if (!dt) return '';
+    const d = new Date(dt);
+    return d.toLocaleTimeString('en-NZ', { hour:'numeric', minute:'2-digit', hour12:true });
+  };
+
+  const todayDk = isoDate(new Date());
+  const weekLabel = () => {
+    const a = weekDays[0], b = weekDays[6];
+    const sa = a.toLocaleDateString('en-NZ',{day:'numeric',month:'short'});
+    const sb = b.toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'});
+    return `${sa} – ${sb}`;
+  };
+
+  if (!token) return (
+    <div style={{ padding:'48px 0', textAlign:'center' }}>
+      <p style={{ fontSize:15, color:T.muted, marginBottom:16 }}>Google Calendar is not connected.</p>
+      <p style={{ fontSize:13, color:T.faint }}>Go to <strong style={{color:T.ink}}>Settings → Google Calendar</strong> to connect your account.</p>
+    </div>
+  );
+
+  return (
+    <div style={{ paddingTop:20 }}>
+      {/* Toolbar */}
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18, flexWrap:'wrap' }}>
+        <button onClick={()=>{ const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); }} style={{ padding:'7px 14px', border:`1px solid ${T.border}`, borderRadius:7, background:'transparent', color:T.ink, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>‹ Prev</button>
+        <button onClick={()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-((d.getDay()+6)%7)); setWeekStart(d); }} style={{ padding:'7px 14px', border:`1px solid ${T.border}`, borderRadius:7, background:'transparent', color:T.muted, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>Today</button>
+        <button onClick={()=>{ const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); }} style={{ padding:'7px 14px', border:`1px solid ${T.border}`, borderRadius:7, background:'transparent', color:T.ink, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>Next ›</button>
+        <span style={{ flex:1, fontSize:14, fontWeight:700, color:T.heading }}>{weekLabel()}</span>
+        {loading && <span style={{ fontSize:12, color:T.muted }}>Loading…</span>}
+        <button onClick={()=>setModal({ edit:null, prefill:{ date: isoDate(new Date()) } })} style={{ padding:'8px 16px', background:T.navy, border:'none', borderRadius:7, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>+ New Event</button>
+      </div>
+      {fetchErr && <p style={{ color:'#EF4444', fontSize:12, marginBottom:12 }}>{fetchErr}</p>}
+      {/* Week grid */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:8 }}>
+        {weekDays.map((day, i) => {
+          const dk = isoDate(day);
+          const isToday = dk === todayDk;
+          const dayEvents = eventsForDay(day);
+          return (
+            <div key={dk} style={{ minHeight:160, borderRadius:10, border:`1.5px solid ${isToday?T.navy:T.border}`, background:T.surface, overflow:'hidden' }}>
+              <div style={{ padding:'8px 10px', background:isToday?T.navy:T.surface, borderBottom:`1px solid ${T.border}` }}>
+                <span style={{ fontSize:10, fontWeight:800, color:isToday?'#fff':T.muted, letterSpacing:'0.08em' }}>{DAYS[i]}</span>
+                <span style={{ fontSize:16, fontWeight:900, color:isToday?'#fff':T.ink, marginLeft:6 }}>{day.getDate()}</span>
+                <button onClick={()=>setModal({ edit:null, prefill:{ date:dk } })}
+                  style={{ float:'right', background:'none', border:'none', color:isToday?'rgba(255,255,255,0.7)':T.faint, fontSize:16, cursor:'pointer', lineHeight:1, marginTop:-1 }} title="Add event">+</button>
+              </div>
+              <div style={{ padding:'6px 6px', display:'flex', flexDirection:'column', gap:3 }}>
+                {dayEvents.map(e => {
+                  const color = gcalColorHex(e.colorId, calColors[e._calId]);
+                  const isAllDay = !!e.start?.date && !e.start?.dateTime;
+                  return (
+                    <button key={e.id} onClick={()=>setModal({ edit:e, prefill:null })}
+                      style={{ display:'block', width:'100%', textAlign:'left', padding:'3px 6px', borderRadius:4, background:color+'22', border:`1px solid ${color}44`, cursor:'pointer', fontFamily:'inherit' }}>
+                      <div style={{ fontSize:10, color:color, fontWeight:700, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+                        {!isAllDay && <span style={{ opacity:0.85, marginRight:4 }}>{fmtTime(e.start.dateTime)}</span>}
+                        {e.summary || '(no title)'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {modal && (
+        <GCalEventModal
+          editEvent={modal.edit}
+          prefill={modal.prefill}
+          onClose={()=>setModal(null)}
+          onSaved={fetchEvents}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── ADD-TO-GCAL BUTTON (used on task cards) ──────────────────────────────────
+function AddToGCalButton({ task, dateKey }) {
+  const [open, setOpen] = useStateV(false);
+  const conf = loadGcalConf();
+  if (!conf.enabled || !conf.accessToken) return null;
+  const prefill = {
+    title:       task.text,
+    date:        dateKey,
+    description: task.notes || '',
+    colorId:     CAT_COLOR_ID[task.category] || '',
+  };
+  return (
+    <>
+      <button onClick={e=>{ e.stopPropagation(); setOpen(true); }}
+        style={{ padding:'3px 7px', border:`1px solid ${T.border}`, borderRadius:5, background:'transparent', color:T.muted, fontSize:10, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}
+        title="Add to Google Calendar">📅 Cal</button>
+      {open && <GCalEventModal prefill={prefill} editEvent={null} onClose={()=>setOpen(false)} onSaved={()=>setOpen(false)}/>}
+    </>
+  );
 }
 
 function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tasksByDate, selDate, todayUser }) {
