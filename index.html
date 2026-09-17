@@ -16315,7 +16315,11 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.postApprovals) setPostApprovals(prev => { const byId = {}; [...(prev||[]), ...(Array.isArray(s.postApprovals)?s.postApprovals:Object.values(s.postApprovals||{}))].forEach(p => { if (!p||!p.id) return; const ex = byId[p.id]; if (!ex || (p.updatedAt||0) > (ex.updatedAt||0)) byId[p.id] = p; }); return Object.values(byId).sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||"")); });
     if (s.videoEvents) setVideoEvents(s.videoEvents);
     // videoQueue is localStorage-only — never overwrite from Firebase sync
-    if (s.visibleTabs) setVisibleTabs(s.visibleTabs);
+    if (s.visibleTabs) setVisibleTabs(prev => {
+      let tabs = Array.isArray(s.visibleTabs) ? [...s.visibleTabs] : (prev || []);
+      ALWAYS_ON_TABS.forEach(k => { if (!tabs.includes(k)) tabs.unshift(k); });
+      return tabs;
+    });
     if (s.contentLabels) setContentLabels(s.contentLabels);
     if (s.videoLabels) setVideoLabels(s.videoLabels);
     if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
