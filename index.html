@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     @font-face {
-      font-family: "ProximaNova Black";
-      src: url("assets/ProximaNova-Black.ttf") format("truetype");
+      font-family: "210 Supersize Black";
+      src: url("assets/210SupersizeBlack.ttf") format("truetype");
       font-weight: 900;
       font-display: swap;
     }
@@ -718,7 +718,7 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
     >
     <div style={{
       display:"flex", alignItems:"center", gap:8,
-      padding: compact ? "4px 8px" : "4px 10px",
+      padding: compact ? "3px 6px" : "3px 8px",
       background: hoverNest ? accent + "15" : (task.done ? T.surface : T.cardBg),
       border:`1px solid ${hoverNest ? accent : T.border}`,
       borderLeft:`3px solid ${task.done ? T.borderStrong : accent}`,
@@ -741,14 +741,14 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
         {onChangeText ? (
           <EditableText value={task.text} onChange={onChangeText} multiline allowEmpty
             placeholder="Task" style={{
-              fontSize:13, fontWeight:500, lineHeight:1.3,
+              fontSize:11.5, fontWeight:500, lineHeight:1.3,
               color: task.done ? T.faint : T.ink,
               textDecoration: task.done ? "line-through" : "none",
               flexShrink:1, minWidth:60,
             }}/>
         ) : (
           <span style={{
-            fontSize:13, fontWeight:500, lineHeight:1.3,
+            fontSize:11.5, fontWeight:500, lineHeight:1.3,
             color: task.done ? T.faint : T.ink,
             textDecoration: task.done ? "line-through" : "none",
             whiteSpace:"normal", wordBreak:"break-word",
@@ -1933,7 +1933,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
           width:400, padding:18, boxShadow:"0 18px 40px rgba(15,27,58,0.18)",
         }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:14, color:"#14295A", letterSpacing:"0.04em" }}>LIVE SYNC</p>
+            <p style={{ fontFamily:"'Outfit',sans-serif", fontWeight:800, fontSize:14, color:"#14295A", letterSpacing:"0.04em" }}>LIVE SYNC</p>
             <div style={{ display:"flex", alignItems:"center", gap:6 }}>
               <span style={{ width:8, height:8, borderRadius:"50%", background:dotColor }}></span>
               <span style={{ fontSize:11, fontWeight:700, color:dotColor }}>{dotLabel}</span>
@@ -2536,7 +2536,7 @@ function TaskAddModal({ onClose, onAdd, dateKey, defaultOwner }) {
   return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:2000, background:'rgba(15,27,58,0.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:T.bg, borderRadius:14, padding:'24px', width:'100%', maxWidth:380, boxShadow:'0 20px 60px rgba(0,0,0,0.28)' }}>
-        <h3 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:20, color:T.heading, marginBottom:18 }}>Add Task</h3>
+        <h3 style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:900, fontSize:20, color:T.heading, marginBottom:18 }}>Add Task</h3>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <input autoFocus value={text} onChange={e=>setText(e.target.value)}
             onKeyDown={e=>{ if(e.key==='Enter') submit(); if(e.key==='Escape') onClose(); }}
@@ -2627,7 +2627,7 @@ function RecurringRuleModal({ onClose, onSave, editRule }) {
   return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:2100, background:'rgba(15,27,58,0.5)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:T.bg, borderRadius:14, padding:'24px', width:'100%', maxWidth:460, boxShadow:'0 20px 60px rgba(0,0,0,0.28)', maxHeight:'90vh', overflowY:'auto' }}>
-        <h3 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:20, color:T.heading, marginBottom:6 }}>{editRule?'Edit':'New'} Recurring Task</h3>
+        <h3 style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:900, fontSize:20, color:T.heading, marginBottom:6 }}>{editRule?'Edit':'New'} Recurring Task</h3>
         <p style={{ color:T.muted, fontSize:12, marginBottom:18 }}>This task will be added to the task list automatically on matching days.</p>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div>
@@ -3002,11 +3002,11 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
 
       {/* ── LEFT SIDEBAR ── */}
       {!isMobile && (
-        <div style={{ width:216, flexShrink:0, paddingRight:20, borderRight:`1px solid ${T.border}`, marginRight:24 }}>
+        <div style={{ width:185, flexShrink:0, paddingRight:16, borderRight:`1px solid ${T.border}`, marginRight:18 }}>
 
           {/* Mini calendar */}
-          <div style={{ marginBottom:22 }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+          <div style={{ marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
               <button onClick={() => setSideCalOffset(o => o-1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:17, padding:"2px 5px", lineHeight:1 }}>‹</button>
               <span style={{ fontSize:11, fontWeight:800, color:T.heading, letterSpacing:"0.08em" }}>{MONTHS[sideCm].slice(0,3).toUpperCase()} {sideCy}</span>
               <button onClick={() => setSideCalOffset(o => o+1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:17, padding:"2px 5px", lineHeight:1 }}>›</button>
@@ -3039,11 +3039,11 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
           </div>
 
           {/* View filters */}
-          <div style={{ marginBottom:22 }}>
-            <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", marginBottom:8 }}>VIEW TASKS</p>
+          <div style={{ marginBottom:16 }}>
+            <p style={{ fontSize:8.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", marginBottom:6 }}>VIEW TASKS</p>
             {VIEW_FILTERS.map(vf => (
               <button key={vf.key} onClick={() => { setViewFilter(vf.key); setStatsFilter(null); }}
-                style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", padding:"7px 10px", borderRadius:6, marginBottom:2, background:viewFilter===vf.key?T.navy+"12":"transparent", border:viewFilter===vf.key?`1px solid ${T.navy}28`:"1px solid transparent", color:viewFilter===vf.key?T.navy:T.text, fontSize:12, fontWeight:viewFilter===vf.key?700:400, cursor:"pointer", textAlign:"left", fontFamily:"inherit", transition:"all 0.1s" }}>
+                style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", padding:"5px 8px", borderRadius:5, marginBottom:1, background:viewFilter===vf.key?T.navy+"12":"transparent", border:viewFilter===vf.key?`1px solid ${T.navy}28`:"1px solid transparent", color:viewFilter===vf.key?T.navy:T.text, fontSize:11, fontWeight:viewFilter===vf.key?700:400, cursor:"pointer", textAlign:"left", fontFamily:"inherit", transition:"all 0.1s" }}>
                 <span>{vf.label}</span>
                 <span style={{ fontSize:10, fontWeight:700, color:viewFilter===vf.key?T.navy:T.faint, background:viewFilter===vf.key?T.navy+"18":T.surface2, padding:"1px 7px", borderRadius:10 }}>{vf.count}</span>
               </button>
@@ -3052,7 +3052,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
 
           {/* Tags */}
           <div>
-            <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", marginBottom:8 }}>TAGS</p>
+            <p style={{ fontSize:8.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", marginBottom:6 }}>TAGS</p>
             <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
               {TAGS_LIST.map(tag => {
                 const color = CAT_COLOR[tag] || T.muted;
@@ -3075,27 +3075,27 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
       <div style={{ flex:1, minWidth:0 }}>
 
         {/* Header */}
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, flexWrap:"wrap", gap:8 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6, flexWrap:"wrap", gap:6 }}>
           <div>
-            <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.14em", marginBottom:2 }}>{DAYS_LONG[selDate.getDay()].toUpperCase()} · {selDate.getDate()} {MONTHS[selDate.getMonth()].toUpperCase()} {selDate.getFullYear()}</p>
-            <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:20, letterSpacing:"-0.01em", color:T.heading, lineHeight:1, margin:0 }}>{isToday ? "Today's Tasks" : `${DAYS_LONG[selDate.getDay()]}'s Tasks`}</h2>
+            <p style={{ fontSize:9, fontWeight:800, color:T.gold, letterSpacing:"0.14em", marginBottom:1 }}>{DAYS_LONG[selDate.getDay()].toUpperCase()} · {selDate.getDate()} {MONTHS[selDate.getMonth()].toUpperCase()} {selDate.getFullYear()}</p>
+            <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:17, letterSpacing:"-0.01em", color:T.heading, lineHeight:1, margin:0 }}>{isToday ? "Today's Tasks" : `${DAYS_LONG[selDate.getDay()]}'s Tasks`}</h2>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <div style={{ position:"relative", display:"flex", alignItems:"center" }}>
               <svg style={{ position:"absolute", left:9, pointerEvents:"none" }} width="13" height="13" viewBox="0 0 20 20" fill="none" stroke={T.faint} strokeWidth="2"><circle cx="9" cy="9" r="7"/><path d="M16 16l-3-3"/></svg>
-              <input value={taskSearch} onChange={e => setTaskSearch(e.target.value)} placeholder="Search tasks..." style={{ paddingLeft:28, paddingRight:10, paddingTop:7, paddingBottom:7, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:7, color:T.text, fontSize:12.5, outline:"none", fontFamily:"inherit", width:170 }}/>
+              <input value={taskSearch} onChange={e => setTaskSearch(e.target.value)} placeholder="Search tasks..." style={{ paddingLeft:26, paddingRight:8, paddingTop:5, paddingBottom:5, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:11.5, outline:"none", fontFamily:"inherit", width:150 }}/>
             </div>
-            <button onClick={() => setShowFilters(v => !v)} style={{ display:"flex", alignItems:"center", gap:5, padding:"7px 14px", background: showFilters || viewFilter !== "all" || activeTag ? T.navy+"12" : T.cardBg, border:`1px solid ${showFilters || viewFilter !== "all" || activeTag ? T.navy+"40" : T.border}`, borderRadius:7, color: showFilters || viewFilter !== "all" || activeTag ? T.navy : T.text, fontSize:12.5, fontWeight: showFilters || viewFilter !== "all" || activeTag ? 700 : 600, cursor:"pointer", fontFamily:"inherit" }}>
+            <button onClick={() => setShowFilters(v => !v)} style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 11px", background: showFilters || viewFilter !== "all" || activeTag ? T.navy+"12" : T.cardBg, border:`1px solid ${showFilters || viewFilter !== "all" || activeTag ? T.navy+"40" : T.border}`, borderRadius:6, color: showFilters || viewFilter !== "all" || activeTag ? T.navy : T.text, fontSize:11.5, fontWeight: showFilters || viewFilter !== "all" || activeTag ? 700 : 600, cursor:"pointer", fontFamily:"inherit" }}>
               <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="17" y2="6"/><line x1="6" y1="10" x2="14" y2="10"/><line x1="9" y1="14" x2="11" y2="14"/></svg>
               Filters{(viewFilter !== "all" || activeTag) ? " •" : ""}
             </button>
-            <button onClick={() => { setSelectMode(v => { if(v) setSelectedIds(new Set()); return !v; }); }} style={{ padding:"7px 14px", background:selectMode?T.gold:T.cardBg, color:selectMode?"#fff":T.text, border:`1px solid ${selectMode?T.gold:T.border}`, borderRadius:7, fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+            <button onClick={() => { setSelectMode(v => { if(v) setSelectedIds(new Set()); return !v; }); }} style={{ padding:"5px 11px", background:selectMode?T.gold:T.cardBg, color:selectMode?"#fff":T.text, border:`1px solid ${selectMode?T.gold:T.border}`, borderRadius:6, fontSize:11.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
               {selectMode ? "✕ CANCEL SELECT" : "SELECT"}
             </button>
             <div style={{ position:"relative" }}>
               <div style={{ display:"flex", borderRadius:7, overflow:"hidden", border:`1px solid ${T.navy}` }}>
-                <button onClick={() => setShowAddModal(true)} style={{ padding:"7px 16px", background:T.navy, border:"none", color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>+ Add Task</button>
-                <button onClick={() => setShowDropdown(v=>!v)} style={{ padding:"7px 10px", background:T.navy+"dd", border:"none", borderLeft:`1px solid rgba(255,255,255,0.2)`, color:"#fff", fontSize:12, cursor:"pointer" }}>▾</button>
+                <button onClick={() => setShowAddModal(true)} style={{ padding:"5px 13px", background:T.navy, border:"none", color:"#fff", fontSize:11.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>+ Add Task</button>
+                <button onClick={() => setShowDropdown(v=>!v)} style={{ padding:"5px 9px", background:T.navy+"dd", border:"none", borderLeft:`1px solid rgba(255,255,255,0.2)`, color:"#fff", fontSize:11, cursor:"pointer" }}>▾</button>
               </div>
               {showDropdown && (
                 <>
@@ -3159,32 +3159,32 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
 
 
         {/* PERSON SWITCHER */}
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, flexWrap:"wrap", gap:10 }}>
-          <div style={{ display:"flex", background:T.surface, borderRadius:8, padding:3, gap:2 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6, flexWrap:"wrap", gap:8 }}>
+          <div style={{ display:"flex", background:T.surface, borderRadius:7, padding:2, gap:1 }}>
             {/* Both */}
-            <button onClick={() => setPersonView("both")} style={{ padding:"7px 16px", borderRadius:6, background:personView==="both"?T.navy:"transparent", color:personView==="both"?"#fff":T.muted, border:"none", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:6 }}>⊞ Both</button>
+            <button onClick={() => setPersonView("both")} style={{ padding:"5px 12px", borderRadius:5, background:personView==="both"?T.navy:"transparent", color:personView==="both"?"#fff":T.muted, border:"none", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:5 }}>⊞ Both</button>
             {/* Vanja */}
-            <button onClick={() => setPersonView("vanja")} style={{ padding:"7px 16px", borderRadius:6, background:personView==="vanja"?T.vanja+"22":"transparent", border:`1px solid ${personView==="vanja"?T.vanja:"transparent"}`, color:personView==="vanja"?T.vanja:T.muted, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:7 }}>
+            <button onClick={() => setPersonView("vanja")} style={{ padding:"5px 12px", borderRadius:5, background:personView==="vanja"?T.vanja+"22":"transparent", border:`1px solid ${personView==="vanja"?T.vanja:"transparent"}`, color:personView==="vanja"?T.vanja:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:6 }}>
               <div style={{ width:22, height:22, borderRadius:"50%", overflow:"hidden", border:`2px solid ${personView==="vanja"?T.vanja:T.border}`, background:T.vanjaSoft, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
                 {(avatars&&avatars.vanja)?<img src={avatars.vanja} alt="V" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>:<span style={{ fontSize:10, fontWeight:900, color:T.vanja }}>V</span>}
               </div>
               Vanja
             </button>
             {/* Oloka */}
-            <button onClick={() => setPersonView("oloka")} style={{ padding:"7px 16px", borderRadius:6, background:personView==="oloka"?T.oloka+"22":"transparent", border:`1px solid ${personView==="oloka"?T.oloka:"transparent"}`, color:personView==="oloka"?T.oloka:T.muted, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:7 }}>
+            <button onClick={() => setPersonView("oloka")} style={{ padding:"5px 12px", borderRadius:5, background:personView==="oloka"?T.oloka+"22":"transparent", border:`1px solid ${personView==="oloka"?T.oloka:"transparent"}`, color:personView==="oloka"?T.oloka:T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s", display:"flex", alignItems:"center", gap:6 }}>
               <div style={{ width:22, height:22, borderRadius:"50%", overflow:"hidden", border:`2px solid ${personView==="oloka"?T.oloka:T.border}`, background:T.olokaSoft, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
                 {(avatars&&avatars.oloka)?<img src={avatars.oloka} alt="O" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>:<span style={{ fontSize:10, fontWeight:900, color:T.oloka }}>O</span>}
               </div>
               Oloka (Me)
             </button>
           </div>
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            <span style={{ fontSize:11, color:T.muted }}>Group by:</span>
-            <select style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:6, color:T.text, fontSize:12, padding:"5px 10px", fontFamily:"inherit", cursor:"pointer" }}>
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            <span style={{ fontSize:10.5, color:T.muted }}>Group by:</span>
+            <select style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:5, color:T.text, fontSize:11, padding:"4px 8px", fontFamily:"inherit", cursor:"pointer" }}>
               <option>Priority</option><option>Category</option><option>Status</option>
             </select>
             <button onClick={() => setShowMonthSidebar(v => !v)}
-              style={{ padding:"7px 13px", borderRadius:7, background:showMonthSidebar?T.navy:T.cardBg, border:`1px solid ${showMonthSidebar?T.navy:T.border}`, color:showMonthSidebar?"#fff":T.text, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5, whiteSpace:"nowrap" }}>
+              style={{ padding:"5px 11px", borderRadius:6, background:showMonthSidebar?T.navy:T.cardBg, border:`1px solid ${showMonthSidebar?T.navy:T.border}`, color:showMonthSidebar?"#fff":T.text, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:4, whiteSpace:"nowrap" }}>
               📅 This Month
             </button>
           </div>
@@ -3201,7 +3201,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
         {/* Weekend notice */}
         {isWeekend && realTasks.length === 0 && (
           <div style={{ padding:"40px 20px", background:T.surface, border:`1px dashed ${T.border}`, borderRadius:8, textAlign:"center" }}>
-            <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontSize:22, color:T.heading, marginBottom:4 }}>WEEKEND</p>
+            <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontSize:22, color:T.heading, marginBottom:4 }}>WEEKEND</p>
             <p style={{ color:T.muted, fontSize:13 }}>No scheduled tasks. Mon–Fri 7am–5pm.</p>
           </div>
         )}
@@ -3281,13 +3281,13 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
         const doneCount = items.filter(it => it.done).length;
         const pct = items.length ? Math.round(doneCount/items.length*100) : 0;
         return (
-          <div style={{ width:265, flexShrink:0, paddingLeft:20, borderLeft:`1px solid ${T.border}`, marginLeft:12 }}>
+          <div style={{ width:230, flexShrink:0, paddingLeft:16, borderLeft:`1px solid ${T.border}`, marginLeft:10 }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
               <div style={{ flex:1 }}>
                 <p style={{ fontSize:9, fontWeight:800, color:T.faint, letterSpacing:"0.14em", margin:0 }}>MONTHLY GOALS</p>
                 <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:3 }}>
                   <button onClick={() => setMonthOffset(o => o-1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:16, padding:"0 3px", lineHeight:1 }}>‹</button>
-                  <span style={{ fontSize:15, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{mn} {yr !== new Date().getFullYear() ? yr : ''}</span>
+                  <span style={{ fontSize:15, fontWeight:800, color:T.heading, fontFamily:"'Outfit',sans-serif" }}>{mn} {yr !== new Date().getFullYear() ? yr : ''}</span>
                   <button onClick={() => setMonthOffset(o => o+1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:16, padding:"0 3px", lineHeight:1 }}>›</button>
                   {!isCurrentMonth && <button onClick={() => setMonthOffset(0)} style={{ fontSize:9, fontWeight:700, color:T.navy, background:T.navy+"12", border:`1px solid ${T.navy}30`, borderRadius:4, padding:"1px 6px", cursor:"pointer", fontFamily:"inherit" }}>Today</button>}
                 </div>
@@ -3336,7 +3336,7 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
               <div>
                 <p style={{ fontSize:9.5, fontWeight:800, color:T.faint, letterSpacing:"0.12em", margin:0 }}>SETTINGS</p>
-                <h3 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:20, color:T.heading, margin:"3px 0 0" }}>🔁 Recurring Rules</h3>
+                <h3 style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:900, fontSize:20, color:T.heading, margin:"3px 0 0" }}>🔁 Recurring Rules</h3>
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                 <button onClick={() => { setShowRulesManager(false); setEditingRule(null); setShowRecurModal(true); }} style={{ padding:"8px 14px", background:T.navy, border:"none", borderRadius:7, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>+ New Rule</button>
@@ -3517,19 +3517,19 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
     <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, overflow:"hidden" }}>
 
       {/* Column header */}
-      <div style={{ padding:"14px 16px", borderBottom:`1px solid ${T.border}`, background:T.surface }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:38, height:38, borderRadius:"50%", background:accentSoft, border:`2px solid ${accent}`, display:"flex", alignItems:"center", justifyContent:"center", color:accent, fontWeight:900, fontSize:15, fontFamily:"'ProximaNova Black', sans-serif", overflow:"hidden", flexShrink:0 }}>
+      <div style={{ padding:"10px 14px", borderBottom:`1px solid ${T.border}`, background:T.surface }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:32, height:32, borderRadius:"50%", background:accentSoft, border:`2px solid ${accent}`, display:"flex", alignItems:"center", justifyContent:"center", color:accent, fontWeight:900, fontSize:13, fontFamily:"'Outfit', sans-serif", overflow:"hidden", flexShrink:0 }}>
               {(avatars&&avatars[owner])?<img src={avatars[owner]} alt={name} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>:<span>{name[0]}</span>}
             </div>
             <div>
-              <p style={{ margin:0, color:T.heading, fontWeight:800, fontSize:14, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:"0.02em", textTransform:"uppercase" }}>{name}</p>
+              <p style={{ margin:0, color:T.heading, fontWeight:800, fontSize:14, fontFamily:"'Outfit', sans-serif", letterSpacing:"0.02em", textTransform:"uppercase" }}>{name}</p>
               <p style={{ margin:"1px 0 0", color:T.muted, fontSize:10.5 }}>{role}</p>
             </div>
           </div>
           <div style={{ textAlign:"right" }}>
-            <p style={{ margin:"0 0 2px", color:accent, fontSize:14, fontWeight:800, fontFamily:"'ProximaNova Black', sans-serif" }}>{pct}%</p>
+            <p style={{ margin:"0 0 2px", color:accent, fontSize:14, fontWeight:800, fontFamily:"'Outfit', sans-serif" }}>{pct}%</p>
             <p style={{ margin:"0 0 5px", color:T.muted, fontSize:10, letterSpacing:"0.04em" }}>Complete</p>
             <div style={{ width:80, height:3, background:T.surface2, borderRadius:2 }}>
               <div style={{ width:`${pct}%`, height:"100%", background:accent, borderRadius:2, transition:"width 0.4s" }}></div>
@@ -3547,8 +3547,8 @@ function PersonColumn({ name, role, owner, accent, accentSoft, tasks, allTasks, 
       </div>
 
       {/* Task list */}
-      <div style={{ padding:"10px 10px 0" }}>
-        <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+      <div style={{ padding:"8px 8px 0" }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
           {visible.map(t => (
             <div key={t.id} onDoubleClick={() => !selectMode && onSelectTask && onSelectTask(t.id)}
               style={{ cursor:"pointer", borderRadius:8, outline:selectedTaskId===t.id?`2px solid ${accent}50`:"none", outlineOffset:2, display:"flex", alignItems:"flex-start", gap:6 }}>
@@ -3801,7 +3801,7 @@ function WeekView({ selDate, tasksByDate, content, onPickDate, onToggle, onShift
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                     <div>
                       <p style={{ margin:0, fontSize:9, fontWeight:800, color:isToday?T.gold:T.muted, letterSpacing:"0.12em" }}>{DAYS[d.getDay()].toUpperCase()}</p>
-                      <p style={{ margin:0, fontSize:22, fontWeight:800, fontFamily:"'ProximaNova Black', sans-serif", color:isToday?T.gold:T.ink, lineHeight:1, letterSpacing:"-0.02em" }}>{d.getDate()}</p>
+                      <p style={{ margin:0, fontSize:22, fontWeight:800, fontFamily:"'210 Supersize Black', sans-serif", color:isToday?T.gold:T.ink, lineHeight:1, letterSpacing:"-0.02em" }}>{d.getDate()}</p>
                     </div>
                     <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:3 }}>
                       {isToday && <span style={{ background:T.gold, color:"#000", fontSize:7.5, fontWeight:900, padding:"2px 6px", borderRadius:2, letterSpacing:"0.1em" }}>TODAY</span>}
@@ -4005,7 +4005,7 @@ function MonthView({ selDate, tasksByDate, content, onPickDate, onMoveTask, onAd
         <div style={{ padding:"14px 20px 12px", borderBottom:`1px solid ${T.border}`, background:T.surface, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
             <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:2 }}>MONTH VIEW</p>
-            <p style={{ fontSize:15, fontWeight:800, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{MONTHS[month]} {year}</p>
+            <p style={{ fontSize:15, fontWeight:800, color:T.heading, fontFamily:"'Outfit', sans-serif" }}>{MONTHS[month]} {year}</p>
           </div>
           <div style={{ display:"flex", gap:16 }}>
             {[["📋",totalM,"Total"],["✅",doneM,"Done"],["⚠",overdueM,"Remaining"]].map(([ic,v,l])=>(
@@ -4049,7 +4049,7 @@ function MonthView({ selDate, tasksByDate, content, onPickDate, onMoveTask, onAd
                     style={{ minHeight:100, padding:"6px 8px 8px", background:hoverDate===dk&&inMonth?T.surface:!inMonth?T.surface2:isToday?T.gold+"0A":isWeekend?T.surface:T.cardBg, borderRight:di<6?`1px solid ${T.border}`:"none", cursor:inMonth?"pointer":"default", opacity:inMonth?1:0.5, outline:hoverDate===dk&&inMonth?`2px dashed ${T.gold}`:isToday?`2px solid ${T.gold}30`:"none", outlineOffset:-2, transition:"background 0.15s", display:"flex", flexDirection:"column", boxSizing:"border-box" }}>
                     {/* Date number row */}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
-                      <span style={{ fontSize:isToday?16:13, fontWeight:800, fontFamily:"'ProximaNova Black', sans-serif", color:isToday?T.gold:isWeekend&&!inMonth?T.faint:isWeekend?T.faint:T.ink, lineHeight:1 }}>
+                      <span style={{ fontSize:isToday?16:13, fontWeight:800, fontFamily:"'210 Supersize Black', sans-serif", color:isToday?T.gold:isWeekend&&!inMonth?T.faint:isWeekend?T.faint:T.ink, lineHeight:1 }}>
                         {d.getDate()}
                         {isToday&&<span style={{ display:"inline-block", marginLeft:4, width:4, height:4, background:T.gold, borderRadius:"50%", verticalAlign:"middle" }}></span>}
                       </span>
@@ -4155,7 +4155,7 @@ function ContentCalendar_DEPRECATED({ selDate, onPickDate }) {
     <div>
       <div style={{ marginBottom:24 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:6 }}>WEEK OF {monday.getDate()} {MONTHS[monday.getMonth()].slice(0,3).toUpperCase()}</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:42, letterSpacing:"-0.02em", marginBottom:6, lineHeight:0.95, color:T.heading }}>CONTENT CALENDAR</h1>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:32, letterSpacing:"-0.02em", marginBottom:4, lineHeight:0.95, color:T.heading }}>CONTENT CALENDAR</h1>
         <p style={{ color:T.muted, fontSize:13 }}>What we're posting Mon–Fri.</p>
       </div>
 
@@ -4174,7 +4174,7 @@ function ContentCalendar_DEPRECATED({ selDate, onPickDate }) {
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
                 <div>
                   <p style={{ color: isToday ? T.gold : T.muted, fontSize:10, fontWeight:800, letterSpacing:"0.14em", marginBottom:3 }}>{DAYS[d.getDay()].toUpperCase()}</p>
-                  <p style={{ fontSize:32, fontWeight:800, fontFamily:"'ProximaNova Black', sans-serif", color: isToday ? T.gold : T.ink, lineHeight:1, letterSpacing:"-0.02em" }}>{d.getDate()}</p>
+                  <p style={{ fontSize:32, fontWeight:800, fontFamily:"'210 Supersize Black', sans-serif", color: isToday ? T.gold : T.ink, lineHeight:1, letterSpacing:"-0.02em" }}>{d.getDate()}</p>
                 </div>
                 {isToday && <span style={{ background:T.gold, color:"#fff", fontSize:8.5, fontWeight:800, padding:"3px 7px", borderRadius:3, letterSpacing:"0.1em" }}>TODAY</span>}
               </div>
@@ -4194,7 +4194,7 @@ function ContentCalendar_DEPRECATED({ selDate, onPickDate }) {
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"18px 22px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:18, background:T.gold }}></span>
-          <p style={{ fontWeight:800, fontSize:14, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:"0.02em", color:T.heading }}>MONTHLY PILLARS</p>
+          <p style={{ fontWeight:800, fontSize:14, fontFamily:"'Outfit', sans-serif", letterSpacing:"0.02em", color:T.heading }}>MONTHLY PILLARS</p>
           <span style={{ color:T.muted, fontSize:11 }}>Must-ships across May</span>
         </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -4418,7 +4418,7 @@ function ChatView({ msgs, setMsgs, chatAs, setChatAs, tasksByDate, onJumpToTask 
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:22, flexWrap:"wrap", gap:14 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:6 }}>TEAM · 2 ACTIVE</p>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:42, letterSpacing:"-0.02em", marginBottom:6, lineHeight:0.95, color:T.heading }}>TEAM CHAT</h1>
+          <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:32, letterSpacing:"-0.02em", marginBottom:4, lineHeight:0.95, color:T.heading }}>TEAM CHAT</h1>
           <p style={{ color:T.muted, fontSize:13 }}>Tap the paperclip to mention a task or send a photo. Hold the mic to record a voice note.</p>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -4460,7 +4460,7 @@ function ChatView({ msgs, setMsgs, chatAs, setChatAs, tasksByDate, onJumpToTask 
                   background: m.from==="vanja" ? T.vanjaSoft : T.olokaSoft,
                   border:`1.5px solid ${acc}`,
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:10.5, fontWeight:800, color:acc, fontFamily:"'ProximaNova Black', sans-serif",
+                  fontSize:10.5, fontWeight:800, color:acc, fontFamily:"'Outfit', sans-serif",
                 }}>{m.from==="vanja" ? "V" : "O"}</div>
                 <span style={{ color:T.muted, fontSize:10.5, letterSpacing:"0.04em" }}>{m.from==="vanja"?"Vanja":"Oloka"} · {m.time}</span>
               </div>
@@ -5004,7 +5004,7 @@ function NotificationsBell({ tasksByDate, schedule, staff, msgs, chatAs, dismiss
         }}>
           <div style={{ padding:"12px 16px", background:T.navy, color:"#fff", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div>
-              <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:12, letterSpacing:"0.1em" }}>NOTIFICATIONS</p>
+              <p style={{ fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:12, letterSpacing:"0.1em" }}>NOTIFICATIONS</p>
               <p style={{ fontSize:10.5, opacity:0.7, marginTop:2 }}>{todayD.toLocaleDateString("en-NZ", { weekday:"long", day:"numeric", month:"long" })}</p>
             </div>
             {count > 0 && (
@@ -5159,7 +5159,7 @@ function TodayPicker({ onSelect, avatars, onAvatarChange }) {
   return (
     <div style={{ maxWidth: 480, margin: "60px auto 0", textAlign: "center" }}>
       <p style={{ color: T.gold, fontSize: 10, letterSpacing: "0.18em", fontWeight: 800, marginBottom: 10 }}>PRONTO HQ</p>
-      <h1 style={{ fontFamily: "'ProximaNova Black', sans-serif", fontWeight: 900, fontSize: 38, color: T.heading, lineHeight: 1, marginBottom: 8 }}>Who's working today?</h1>
+      <h1 style={{ fontFamily: "'210 Supersize Black', sans-serif", fontWeight: 900, fontSize: 30, color: T.heading, lineHeight: 1, marginBottom: 6 }}>Who's working today?</h1>
       <p style={{ color: T.muted, fontSize: 13, marginBottom: 36 }}>Select your account to see your personalised dashboard.</p>
       <div style={{ display: "flex", gap: 16 }}>
         {users.map(u => (
@@ -5183,7 +5183,7 @@ function TodayPicker({ onSelect, avatars, onAvatarChange }) {
                   width: 56, height: 56, borderRadius: "50%",
                   background: u.soft, border: `2px solid ${u.color}`,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontFamily: "'ProximaNova Black', sans-serif", fontSize: 22, fontWeight: 900, color: u.color,
+                  fontFamily: "'210 Supersize Black', sans-serif", fontSize: 22, fontWeight: 900, color: u.color,
                 }}>{u.initial}</div>
               )}
               <button
@@ -5200,7 +5200,7 @@ function TodayPicker({ onSelect, avatars, onAvatarChange }) {
               <input ref={fileRefs[u.key]} type="file" accept="image/*" style={{ display: "none" }}
                 onChange={e => handleUpload(u.key, e)} />
             </div>
-            <p style={{ fontFamily: "'ProximaNova Black', sans-serif", fontWeight: 800, fontSize: 16, color: T.heading, marginBottom: 4 }}>{u.name}</p>
+            <p style={{ fontFamily: "'210 Supersize Black', sans-serif", fontWeight: 800, fontSize: 16, color: T.heading, marginBottom: 4 }}>{u.name}</p>
             <p style={{ fontSize: 11, color: T.muted }}>{u.role}</p>
           </button>
         ))}
@@ -5392,16 +5392,16 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
   ];
 
   const SCard = ({ color, bg, icon, label, val, sub, onClick }) => (
-    <button onClick={onClick} style={{ padding:"16px 18px", textAlign:"left", cursor:"pointer", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, fontFamily:"inherit", transition:"all 0.15s", flex:1 }}
+    <button onClick={onClick} style={{ padding:"11px 14px", textAlign:"left", cursor:"pointer", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, fontFamily:"inherit", transition:"all 0.15s", flex:1 }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = color+"60"; e.currentTarget.style.background = bg||T.cardBg; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.cardBg; }}
     >
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-        <div style={{ width:36, height:36, borderRadius:10, background:bg||color+"20", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>{icon}</div>
-        <span style={{ fontSize:32, fontWeight:900, fontFamily:"'ProximaNova Black', sans-serif", color, lineHeight:1 }}>{val}</span>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
+        <div style={{ width:30, height:30, borderRadius:8, background:bg||color+"20", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15 }}>{icon}</div>
+        <span style={{ fontSize:26, fontWeight:900, fontFamily:"'210 Supersize Black', sans-serif", color, lineHeight:1 }}>{val}</span>
       </div>
-      <p style={{ fontSize:12, fontWeight:700, color:T.heading, marginBottom:2 }}>{label}</p>
-      <p style={{ fontSize:10.5, color:T.muted }}>{sub}</p>
+      <p style={{ fontSize:11, fontWeight:700, color:T.heading, marginBottom:1 }}>{label}</p>
+      <p style={{ fontSize:10, color:T.muted }}>{sub}</p>
     </button>
   );
 
@@ -5409,10 +5409,10 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
     <div style={{ display:"flex", gap:0, alignItems:"flex-start" }}>
 
       {/* ── LEFT SIDEBAR ── */}
-      <div style={{ width:220, flexShrink:0, paddingRight:20, borderRight:`1px solid ${T.border}`, marginRight:24 }}>
+      <div style={{ width:185, flexShrink:0, paddingRight:16, borderRight:`1px solid ${T.border}`, marginRight:18 }}>
 
         {/* Mini calendar */}
-        <div style={{ marginBottom:24 }}>
+        <div style={{ marginBottom:16 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
             <button onClick={() => setSideCalOffset(o => o-1)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:17, padding:"2px 5px", lineHeight:1 }}>‹</button>
             <span style={{ fontSize:11, fontWeight:800, color:T.heading, letterSpacing:"0.08em" }}>{MONTHS[sideCm].slice(0,3).toUpperCase()} {sideCy}</span>
@@ -5498,10 +5498,10 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
           <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14 }}>
             {userAvatar
               ? <img src={userAvatar} alt={userName} style={{ width:52, height:52, borderRadius:"50%", objectFit:"cover", border:`2px solid ${userAccent}`, flexShrink:0 }}/>
-              : <div style={{ width:52, height:52, borderRadius:"50%", background:userSoft, border:`2px solid ${userAccent}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontSize:20, fontWeight:900, color:userAccent, flexShrink:0 }}>{userName[0]||"?"}</div>
+              : <div style={{ width:52, height:52, borderRadius:"50%", background:userSoft, border:`2px solid ${userAccent}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'210 Supersize Black', sans-serif", fontSize:20, fontWeight:900, color:userAccent, flexShrink:0 }}>{userName[0]||"?"}</div>
             }
             <div>
-              <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.02em", lineHeight:1, color:T.heading, margin:0 }}>
+              <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.02em", lineHeight:1, color:T.heading, margin:0 }}>
                 Good {greetingWord}, {userName} 👋
               </h1>
               <p style={{ color:T.muted, fontSize:13, marginTop:4 }}>Let's make today count.</p>
@@ -5525,7 +5525,7 @@ function TodayDashboard({ tasksByDate, schedule, content, staff, todayUser, avat
         {myDelegated.length > 0 && (
           <div style={{ background:"#EFF6FF", border:"1.5px solid #3B82F6", borderRadius:12, padding:"14px 18px", marginBottom:20 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-              <div style={{ width:28, height:28, borderRadius:"50%", background:"#3B82F6", color:"#fff", fontFamily:"'ProximaNova Black',sans-serif", fontSize:13, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center" }}>B</div>
+              <div style={{ width:28, height:28, borderRadius:"50%", background:"#3B82F6", color:"#fff", fontFamily:"'210 Supersize Black',sans-serif", fontSize:13, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center" }}>B</div>
               <div>
                 <p style={{ fontSize:12, fontWeight:800, color:"#1D4ED8", margin:0 }}>Tasks from Bronson</p>
                 <p style={{ fontSize:10.5, color:"#3B82F6", margin:0 }}>{myDelegated.filter(i=>!i.done).length} open · delegated to you</p>
@@ -6356,7 +6356,7 @@ function PlanView({ plan, setPlan }) {
       <div style={{ marginBottom:24 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>FOUR QUARTERS · TWELVE MONTHS · CLICK ANY CELL TO EDIT</p>
         <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:8 }}>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>YEARLY PLAN {planYear}</h1>
+          <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>YEARLY PLAN {planYear}</h1>
           <div style={{ display:"flex", gap:4, alignItems:"center", paddingTop:6 }}>
             <button onClick={() => setPlanYear(y => y - 1)} style={{ width:32, height:32, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:16, fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
             <button onClick={() => setPlanYear(y => y + 1)} style={{ width:32, height:32, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:16, fontFamily:"inherit", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
@@ -6392,7 +6392,7 @@ function PlanView({ plan, setPlan }) {
                 position:"sticky", left:0, zIndex:1,
               }}>
                 <span style={{ width:3, alignSelf:"stretch", background:color }}></span>
-                <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.01em", lineHeight:1.2 }}>
+                <p style={{ fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.01em", lineHeight:1.2 }}>
                   {sec.key.toUpperCase()}
                 </p>
               </div>
@@ -6440,7 +6440,7 @@ function PlanView({ plan, setPlan }) {
       <div style={{ marginTop:30 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:18, background:T.oloka }}></span>
-          <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>STAFF CHALLENGE IDEAS</h2>
+          <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>STAFF CHALLENGE IDEAS</h2>
           <span style={{ color:T.muted, fontSize:11 }}>· {plan.challenges.length}</span>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(300px, 1fr))", gap:10 }}>
@@ -7502,7 +7502,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
           <div style={{ marginBottom:24 }}>
             <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.16em", marginBottom:6 }}>TODAY · BUILD MY DAY</p>
             <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-              <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:34, letterSpacing:"-0.025em", lineHeight:1.05, color:T.heading, margin:0 }}>
+              <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:34, letterSpacing:"-0.025em", lineHeight:1.05, color:T.heading, margin:0 }}>
                 {schedView === "day"
                   ? selDate.toLocaleDateString("en-AU", { weekday:"long", day:"numeric", month:"long", year:"numeric" })
                   : schedView === "week"
@@ -7670,7 +7670,7 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                       <div key={wdk} onClick={() => !spanDragStart && setMonthPopupDate(wdk)}
                         style={{ padding:"10px 8px", textAlign:"center", cursor:"pointer", borderLeft:`1px solid #dadce0`, background: isTodayW ? "#e8f0fe" : "transparent" }}>
                         <div style={{ fontSize:9, fontWeight:600, letterSpacing:"0.08em", color:isWeekend?"#aaa":"#70757a", marginBottom:2 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][di]}</div>
-                        <div style={{ width:32, height:32, borderRadius:"50%", background: isTodayW ? "#1a73e8" : "transparent", color: isTodayW ? "#fff" : isWeekend ? "#aaa" : "#3c4043", fontSize:18, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 4px", fontFamily:"'ProximaNova Black', sans-serif" }}>{d.getDate()}</div>
+                        <div style={{ width:32, height:32, borderRadius:"50%", background: isTodayW ? "#1a73e8" : "transparent", color: isTodayW ? "#fff" : isWeekend ? "#aaa" : "#3c4043", fontSize:18, fontWeight:900, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 4px", fontFamily:"'210 Supersize Black', sans-serif" }}>{d.getDate()}</div>
                         {isTodayW ? <div style={{ fontSize:9, color:"#1a73e8", fontWeight:600 }}>{Math.floor(dayLeftW/60)}h {dayLeftW%60}m left</div> : <div style={{ height:13 }} />}
                       </div>
                     );
@@ -7759,9 +7759,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   const pct = total > 0 ? Math.round(done/total*100) : 0;
                   return (
                     <div style={{ display:"flex", gap:24, padding:"14px 20px", background:T.surface, border:`1px solid ${T.border}`, borderTop:"none", borderRadius:"0 0 8px 8px", flexWrap:"wrap" }}>
-                      <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{Math.floor(weekTotalMin/60)}h {weekTotalMin%60}m</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Total Planned</div></div>
-                      <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{weekTaskCount}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Tasks Planned</div></div>
-                      <div><div style={{ fontSize:20, fontWeight:900, color:"#10B981", fontFamily:"'ProximaNova Black', sans-serif" }}>{pct}%</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Completion Rate</div></div>
+                      <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black', sans-serif" }}>{Math.floor(weekTotalMin/60)}h {weekTotalMin%60}m</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Total Planned</div></div>
+                      <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black', sans-serif" }}>{weekTaskCount}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Tasks Planned</div></div>
+                      <div><div style={{ fontSize:20, fontWeight:900, color:"#10B981", fontFamily:"'210 Supersize Black', sans-serif" }}>{pct}%</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Completion Rate</div></div>
                     </div>
                   );
                 })()}
@@ -7878,9 +7878,9 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                   </div>
                 </div>
                 <div style={{ display:"flex", gap:24, padding:"14px 20px", background:T.surface, border:`1px solid ${T.border}`, borderTop:"none", borderRadius:"0 0 8px 8px", flexWrap:"wrap" }}>
-                  <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{daysPlanned}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Days Planned</div></div>
-                  <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif" }}>{monthTaskCount}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Tasks</div></div>
-                  <div><div style={{ fontSize:20, fontWeight:900, color:"#10B981", fontFamily:"'ProximaNova Black', sans-serif" }}>{monthPct}%</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Completion Rate</div></div>
+                  <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black', sans-serif" }}>{daysPlanned}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Days Planned</div></div>
+                  <div><div style={{ fontSize:20, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black', sans-serif" }}>{monthTaskCount}</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Tasks</div></div>
+                  <div><div style={{ fontSize:20, fontWeight:900, color:"#10B981", fontFamily:"'210 Supersize Black', sans-serif" }}>{monthPct}%</div><div style={{ fontSize:10, color:T.muted, fontWeight:700 }}>Completion Rate</div></div>
                 </div>
               </div>
             );
@@ -8038,17 +8038,17 @@ function ScheduleView({ selDate, tasksByDate, schedule, setSchedule, dayNotes, s
                 <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:12 }}>DAY SUMMARY</p>
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
                   <div style={{ padding:"10px 12px", background:T.surface, borderRadius:8, border:`1px solid ${T.border}` }}>
-                    <div style={{ fontSize:18, fontWeight:900, color:T.navy, fontFamily:"'ProximaNova Black', sans-serif" }}>{scheduledCount}</div>
+                    <div style={{ fontSize:18, fontWeight:900, color:T.navy, fontFamily:"'210 Supersize Black', sans-serif" }}>{scheduledCount}</div>
                     <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>Tasks Scheduled</div>
                   </div>
                   <div style={{ padding:"10px 12px", background:T.surface, borderRadius:8, border:`1px solid ${T.border}` }}>
-                    <div style={{ fontSize:18, fontWeight:900, color:"#3B82F6", fontFamily:"'ProximaNova Black', sans-serif" }}>{Math.floor(focusMin/60)}h {focusMin%60}m</div>
+                    <div style={{ fontSize:18, fontWeight:900, color:"#3B82F6", fontFamily:"'210 Supersize Black', sans-serif" }}>{Math.floor(focusMin/60)}h {focusMin%60}m</div>
                     <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>Focus Time</div>
                   </div>
                 </div>
                 {dk === isoDate(today()) && (
                   <div style={{ padding:"10px 12px", background:T.gold+"10", borderRadius:8, border:`1px solid ${T.gold}44` }}>
-                    <div style={{ fontSize:16, fontWeight:900, color:T.gold, fontFamily:"'ProximaNova Black', sans-serif" }}>{Math.floor(dayLeftR/60)}h {dayLeftR%60}m</div>
+                    <div style={{ fontSize:16, fontWeight:900, color:T.gold, fontFamily:"'210 Supersize Black', sans-serif" }}>{Math.floor(dayLeftR/60)}h {dayLeftR%60}m</div>
                     <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>Left in your day</div>
                     <div style={{ height:4, background:T.border, borderRadius:2, marginTop:6 }}>
                       <div style={{ height:"100%", width:`${Math.min(100,(dayLeftR/((SCHED_END-SCHED_START)*60))*100).toFixed(0)}%`, background:T.gold, borderRadius:2 }} />
@@ -8282,9 +8282,9 @@ function UnscheduledColumn({ name, owner, accent, accentSoft, todays, others, dr
           width:30, height:30, borderRadius:"50%",
           background:accentSoft, border:`1.5px solid ${accent}`,
           display:"flex", alignItems:"center", justifyContent:"center",
-          color:accent, fontWeight:800, fontSize:13, fontFamily:"'ProximaNova Black', sans-serif",
+          color:accent, fontWeight:800, fontSize:13, fontFamily:"'210 Supersize Black', sans-serif",
         }}>{name[0]}</div>
-        <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.ink, letterSpacing:"0.04em", textTransform:"uppercase" }}>{name}</p>
+        <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.ink, letterSpacing:"0.04em", textTransform:"uppercase" }}>{name}</p>
         <span style={{ fontSize:10.5, color:T.muted, fontWeight:700, letterSpacing:"0.04em" }}>
           {totalCount} unscheduled
         </span>
@@ -8470,7 +8470,7 @@ function TimeColumn({
       <div style={{
         height:32, display:"flex", alignItems:"center", justifyContent:"center", gap:8,
         background:"#fff", color:accent,
-        fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800,
+        fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800,
         fontSize:11, letterSpacing:"0.12em",
         borderBottom:`2px solid ${accent}`,
         position:"sticky", top:0, zIndex:2,
@@ -8981,7 +8981,7 @@ function EventModal({ block, task, owner, selDate, onSave, onDelete, onClose }) 
         <div style={{ padding:"16px 22px 14px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ width:10, height:10, borderRadius:"50%", background:ownerColor }}></span>
-            <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>
+            <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>
               EVENT · {owner === "vanja" ? "VANJA" : "OLOKA"}
             </p>
           </div>
@@ -9563,7 +9563,7 @@ function IdeasSidePanel({ toPostList, setToPostList, dayNotes, setDayNotes, onId
       <div style={{ padding:"12px 14px", borderBottom:`1px solid ${T.border}`, background:T.surface, borderRadius:"8px 8px 0 0" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
           <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.06em" }}>&#x1F4A1; IDEAS</p>
+            <p style={{ fontFamily:"'Outfit',sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.06em" }}>&#x1F4A1; IDEAS</p>
             <span style={{ background:T.navy, color:"#fff", fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:10 }}>{safeList.length}</span>
           </div>
           <div style={{ display:"flex", gap:5, alignItems:"center" }}>
@@ -9688,7 +9688,7 @@ function IdeaCaptureModal({ onClose, onAddToCalendar, onAddUnscheduled }) {
     <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
       <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:420, boxShadow:"0 24px 60px rgba(15,27,58,0.35)", borderTop:`4px solid ${tc.color}` }}>
         <div style={{ padding:"16px 20px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>CAPTURE IDEA</p>
+          <p style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>CAPTURE IDEA</p>
           <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.muted, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>&#x00D7;</button>
         </div>
         <div style={{ padding:"16px 20px" }}>
@@ -9884,7 +9884,7 @@ function MachinesToPushPanel({ machinesToPush, setMachinesToPush, compact }) {
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:T.surface, borderBottom:`1px solid ${T.border}` }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:14 }}>🚜</span>
-          <span style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:12, color:T.heading, letterSpacing:"0.08em" }}>MACHINES TO PUSH</span>
+          <span style={{ fontFamily:"'Outfit',sans-serif", fontWeight:900, fontSize:12, color:T.heading, letterSpacing:"0.08em" }}>MACHINES TO PUSH</span>
           {safeList.length > 0 && <span style={{ background:T.urgent, color:"#fff", fontSize:9, fontWeight:900, padding:"1px 6px", borderRadius:8 }}>{safeList.length}</span>}
         </div>
         <button onClick={() => { setAdding(true); setTimeout(() => inputRef.current && inputRef.current.focus(), 50); }} style={{ background:T.navy, color:"#fff", border:"none", borderRadius:4, padding:"3px 10px", fontSize:9, fontWeight:800, cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.06em" }}>+ ADD</button>
@@ -10041,7 +10041,7 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>
             {calView==="week" ? `WEEK OF ${startOfWeek(selDate).getDate()} ${MONTHS[startOfWeek(selDate).getMonth()].toUpperCase().slice(0,3)}` : calView==="month" ? `${MONTHS[selDate.getMonth()].toUpperCase()} ${selDate.getFullYear()}` : "ALL DATES"}
           </p>
-          <h1 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>CONTENT CALENDAR</h1>
+          <h1 style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>CONTENT CALENDAR</h1>
           <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Click a calendar date to select it, then use <strong style={{ color:T.ink }}>Add to Calendar</strong> in the To Post List.</p>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
@@ -10201,7 +10201,7 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
       {deleteConfirm && (
         <div onClick={() => setDeleteConfirm(null)} style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(15,27,58,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:"32px 16px" }}>
           <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:10, width:"100%", maxWidth:380, padding:24, boxShadow:"0 24px 60px rgba(15,27,58,0.35)" }}>
-            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:14, color:T.heading, marginBottom:8 }}>Remove post from calendar?</p>
+            <p style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:800, fontSize:14, color:T.heading, marginBottom:8 }}>Remove post from calendar?</p>
             <p style={{ fontSize:12, color:T.muted, marginBottom:20, lineHeight:1.5 }}>"{deleteConfirm.post?.title || "Untitled"}" &#x2014; what would you like to do with it?</p>
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
               <button onClick={returnToList} style={{
@@ -10245,7 +10245,7 @@ function MonthlyPillarsBar({ selDate, content }) {
     <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"18px 22px", marginTop:24 }}>
       <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap" }}>
         <span style={{ width:4, height:18, background:T.gold }}></span>
-        <p style={{ fontWeight:800, fontSize:14, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:"0.02em", color:T.heading }}>MONTHLY PILLARS</p>
+        <p style={{ fontWeight:800, fontSize:14, fontFamily:"'210 Supersize Black', sans-serif", letterSpacing:"0.02em", color:T.heading }}>MONTHLY PILLARS</p>
         <span style={{ color:T.muted, fontSize:11 }}>{MONTHS[month]} {year} · auto-tracked from posts</span>
         <span style={{ marginLeft:"auto", fontSize:11, fontWeight:700, color: doneCount === MONTHLY_PILLARS.length ? T.oloka : T.muted, letterSpacing:"0.04em" }}>
           {doneCount}/{MONTHLY_PILLARS.length} complete
@@ -10319,7 +10319,7 @@ function ContentWeek({ selDate, content, todayD, updatePost, deletePost, addPost
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
               <div>
                 <p style={{ color: isToday ? T.gold : T.muted, fontSize:10, fontWeight:800, letterSpacing:"0.14em", marginBottom:3 }}>{DAYS[d.getDay()].toUpperCase()}</p>
-                <p style={{ fontSize:30, fontWeight:800, fontFamily:"'ProximaNova Black', sans-serif", color: isToday ? T.gold : T.ink, lineHeight:1, letterSpacing:"-0.02em" }}>{d.getDate()}</p>
+                <p style={{ fontSize:30, fontWeight:800, fontFamily:"'210 Supersize Black', sans-serif", color: isToday ? T.gold : T.ink, lineHeight:1, letterSpacing:"-0.02em" }}>{d.getDate()}</p>
               </div>
               {isToday && <span style={{ background:T.gold, color:"#fff", fontSize:8.5, fontWeight:800, padding:"3px 7px", borderRadius:3, letterSpacing:"0.1em" }}>TODAY</span>}
             </div>
@@ -10399,7 +10399,7 @@ function ContentMonth({ selDate, content, todayD, updatePost, deletePost, addPos
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:3 }}>
                   <span style={{
                     fontSize: isToday ? 17 : 14, fontWeight:800,
-                    fontFamily:"'ProximaNova Black', sans-serif",
+                    fontFamily:"'210 Supersize Black', sans-serif",
                     color: isToday ? T.gold : isWeekend ? T.faint : T.ink,
                     letterSpacing:"-0.01em",
                   }}>{d.getDate()}{isToday && <span style={{ display:"inline-block", marginLeft:6, width:5, height:5, background:T.gold, borderRadius:"50%", verticalAlign:"middle" }}></span>}</span>
@@ -10518,7 +10518,7 @@ function PostModal({ post, onSave, onClose, onDelete }) {
         maxHeight:"calc(100vh - 64px)", overflowY:"auto",
       }}>
         <div style={{ padding:"18px 22px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.06em" }}>
+          <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.06em" }}>
             {post ? "EDIT POST" : "NEW POST"}
           </p>
           <button onClick={onClose} style={{
@@ -10710,14 +10710,14 @@ function StaffCard({ staff, idx, onChange, onDelete }) {
           border: `2px solid ${pcol ? PERSONALITY_COLORS[pcol] : T.borderStrong}`,
           background: pcol ? PERSONALITY_COLORS[pcol]+"20" : T.surface,
           color: pcol ? PERSONALITY_COLORS[pcol] : T.muted,
-          fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18,
+          fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:18,
         }}>
           {(staff.name || "?")[0].toUpperCase()}
         </div>
         <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontSize:14, fontWeight:800, color:T.ink, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:"0.01em" }}>
+          <p style={{ fontSize:14, fontWeight:800, color:T.ink, fontFamily:"'210 Supersize Black', sans-serif", letterSpacing:"0.01em" }}>
             <EditableText value={staff.name} onChange={v => onChange({ ...staff, name: v })} placeholder="Name"
-              style={{ fontSize:14, fontWeight:800, color:T.ink, fontFamily:"'ProximaNova Black', sans-serif" }}/>
+              style={{ fontSize:14, fontWeight:800, color:T.ink, fontFamily:"'210 Supersize Black', sans-serif" }}/>
           </p>
           <p style={{ fontSize:10.5, color:T.muted, marginTop:2, letterSpacing:"0.04em" }}>
             <select value={staff.gender || ""} onChange={e => onChange({ ...staff, gender: e.target.value })} style={{
@@ -10836,7 +10836,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
       <div style={{ marginBottom:24, display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:14 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{staff.filter(s=>!s.deleted).length} STAFF · CLICK ANY FIELD TO EDIT</p>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>THE TEAM</h1>
+          <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>THE TEAM</h1>
           <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Everyone at Pronto. Birthdays, start dates, personality colors and the things they're into.</p>
         </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -10864,7 +10864,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
         <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"14px 18px", marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
             <span style={{ width:4, height:16, background:T.gold }}></span>
-            <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13, letterSpacing:"0.02em", color:T.heading }}>NEXT 5 BIRTHDAYS</p>
+            <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:13, letterSpacing:"0.02em", color:T.heading }}>NEXT 5 BIRTHDAYS</p>
           </div>
           <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
             {upcoming.slice(0,5).map((s, i) => (
@@ -10873,7 +10873,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
                 borderRadius:6, padding:"8px 14px",
                 display:"flex", alignItems:"center", gap:10,
               }}>
-                <div style={{ width:32, height:32, borderRadius:"50%", background:T.gold+"20", border:`1.5px solid ${T.gold}`, display:"flex", alignItems:"center", justifyContent:"center", color:T.gold, fontWeight:800, fontSize:13, fontFamily:"'ProximaNova Black', sans-serif" }}>{(s.name || "?")[0].toUpperCase()}</div>
+                <div style={{ width:32, height:32, borderRadius:"50%", background:T.gold+"20", border:`1.5px solid ${T.gold}`, display:"flex", alignItems:"center", justifyContent:"center", color:T.gold, fontWeight:800, fontSize:13, fontFamily:"'210 Supersize Black', sans-serif" }}>{(s.name || "?")[0].toUpperCase()}</div>
                 <div>
                   <p style={{ fontSize:13, fontWeight:700, color:T.ink, lineHeight:1.1 }}>{s.name}</p>
                   <p style={{ fontSize:10.5, color:T.muted, marginTop:2, letterSpacing:"0.04em" }}>
@@ -10910,7 +10910,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
           <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"14px 18px", marginBottom:20 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
               <span style={{ width:4, height:16, background:NAVY }}></span>
-              <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13, letterSpacing:"0.02em", color:T.heading }}>NEXT 5 START DATE ANNIVERSARIES</p>
+              <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:13, letterSpacing:"0.02em", color:T.heading }}>NEXT 5 START DATE ANNIVERSARIES</p>
             </div>
             <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
               {upcomingStarts.slice(0, 5).map((s, i) => (
@@ -10919,7 +10919,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
                   borderRadius:6, padding:"8px 14px",
                   display:"flex", alignItems:"center", gap:10,
                 }}>
-                  <div style={{ width:32, height:32, borderRadius:"50%", background:NAVY+"20", border:`1.5px solid ${NAVY}`, display:"flex", alignItems:"center", justifyContent:"center", color:NAVY, fontWeight:800, fontSize:13, fontFamily:"'ProximaNova Black', sans-serif" }}>{(s.name || "?")[0].toUpperCase()}</div>
+                  <div style={{ width:32, height:32, borderRadius:"50%", background:NAVY+"20", border:`1.5px solid ${NAVY}`, display:"flex", alignItems:"center", justifyContent:"center", color:NAVY, fontWeight:800, fontSize:13, fontFamily:"'210 Supersize Black', sans-serif" }}>{(s.name || "?")[0].toUpperCase()}</div>
                   <div>
                     <p style={{ fontSize:13, fontWeight:700, color:T.ink, lineHeight:1.1 }}>{s.name}</p>
                     <p style={{ fontSize:10.5, color:T.muted, marginTop:2, letterSpacing:"0.04em" }}>
@@ -10961,7 +10961,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
       <div style={{ marginTop:30 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:18, background:T.gold }}></span>
-          <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>LUNCH WINNERS</h2>
+          <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>LUNCH WINNERS</h2>
           <span style={{ color:T.muted, fontSize:11 }}>· {lunches.filter(l=>!lunchBlocked(l)&&!l.had).length} remaining · {lunches.filter(l=>!lunchBlocked(l)&&l.had).length} done</span>
         </div>
         <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", background:T.cardBg }}>
@@ -11064,7 +11064,7 @@ function ResourcesView({ ...props }) {
       background: sub===k ? T.cardBg : "transparent",
       color: sub===k ? T.navy : T.muted,
       border:"none",
-      fontFamily:"'ProximaNova Black', sans-serif",
+      fontFamily:"'210 Supersize Black', sans-serif",
       fontWeight:800, fontSize:11.5, letterSpacing:"0.1em",
       cursor:"pointer",
       borderBottom: sub===k ? `2px solid ${T.gold}` : "2px solid transparent",
@@ -11076,7 +11076,7 @@ function ResourcesView({ ...props }) {
     <div>
       <div style={{ marginBottom:18 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>EVERYTHING ELSE · CLICK ANY ITEM TO EDIT</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>RESOURCES</h1>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>RESOURCES</h1>
         <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Everything else from the marketing workbook — fully editable. Add, edit and delete as you go.</p>
       </div>
 
@@ -11117,7 +11117,7 @@ function IdeasPanel({ ideas, setIdeas, onAddToTasks }) {
     <div style={{ marginBottom:28 }}>
       <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
         <span style={{ width:4, height:16, background:color }}></span>
-        <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>
+        <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>
           {title.toUpperCase()} · {ideas[kind].filter(x=>!x.done).length}
           {ideas[kind].some(x=>x.done) && <span style={{ fontSize:11, fontWeight:500, color:T.muted, letterSpacing:"0.04em" }}> ({ideas[kind].filter(x=>x.done).length} done)</span>}
         </h2>
@@ -11283,7 +11283,7 @@ function IdeaModal({ idea, color, onChange, onClose, onDelete }) {
         maxHeight:"calc(100vh - 64px)", overflowY:"auto",
       }}>
         <div style={{ padding:"16px 22px 14px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>IDEA</p>
+          <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:13, color:T.heading, letterSpacing:"0.06em" }}>IDEA</p>
           <button onClick={onClose} style={{
             background:"transparent", border:"none", color:T.muted, cursor:"pointer",
             fontSize:18, padding:0, lineHeight:1, fontFamily:"inherit",
@@ -11439,7 +11439,7 @@ function SuppliersPanel({ suppliers, setSuppliers }) {
           <div key={type}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
               <span style={{ width:4, height:16, background:col }}></span>
-              <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>{type}</h2>
+              <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>{type}</h2>
               <span style={{ color:T.muted, fontSize:11 }}>· {list.length}</span>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))", gap:10 }}>
@@ -11672,7 +11672,7 @@ function BudgetPanel({ budget, setBudget }) {
     <div style={{ marginBottom:24 }}>
       <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
         <span style={{ width:4, height:16, background:headerColor }}></span>
-        <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>{sectionTitle}</h2>
+        <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>{sectionTitle}</h2>
       </div>
       <div style={{ overflowX:"auto", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8 }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11.5 }}>
@@ -11701,7 +11701,7 @@ function BudgetPanel({ budget, setBudget }) {
                   {b.values.map((v, ci) => (
                     <td key={ci} style={{ padding:"3px 6px", textAlign:"right", color: v > 0 ? (isTotal ? T.navy : T.ink) : T.faint }}>
                       <EditableNumber value={v} prefix="$" onChange={nv => updateRowCell(which, i, ci, nv)}
-                        style={{ fontSize:11.5, fontWeight: isTotal ? 800 : 500, fontFamily: isTotal ? "'ProximaNova Black', sans-serif" : "inherit" }}/>
+                        style={{ fontSize:11.5, fontWeight: isTotal ? 800 : 500, fontFamily: isTotal ? "'210 Supersize Black', sans-serif" : "inherit" }}/>
                     </td>
                   ))}
                   <td style={{ padding:"4px 8px" }}>
@@ -11727,7 +11727,7 @@ function BudgetPanel({ budget, setBudget }) {
       <div style={{ marginBottom:24 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:16, background:T.gold }}></span>
-          <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>ANNUAL BUDGET TARGETS</h2>
+          <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>ANNUAL BUDGET TARGETS</h2>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:10 }}>
           {budget.annual.map((a, i) => {
@@ -11747,9 +11747,9 @@ function BudgetPanel({ budget, setBudget }) {
                   <EditableText value={a.label} onChange={v => updateAnnual(i, "label", v)} 
                     style={{ fontSize:10.5, fontWeight:700, color: isTotal ? "#fff" : T.muted, letterSpacing:"0.08em", textTransform:"uppercase" }}/>
                 </p>
-                <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize: isTotal ? 26 : 22, color: isTotal ? T.gold : T.navy, letterSpacing:"-0.01em" }}>
+                <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize: isTotal ? 26 : 22, color: isTotal ? T.gold : T.navy, letterSpacing:"-0.01em" }}>
                   <EditableNumber value={a.amount} prefix="$" onChange={v => updateAnnual(i, "amount", v)}
-                    style={{ fontSize: isTotal ? 26 : 22, fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, color: isTotal ? T.gold : T.navy }}/>
+                    style={{ fontSize: isTotal ? 26 : 22, fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, color: isTotal ? T.gold : T.navy }}/>
                 </p>
               </div>
             );
@@ -11826,7 +11826,7 @@ function BudgetCharts({ budget }) {
     <div style={{ marginTop:32 }}>
       <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
         <span style={{ width:4, height:16, background:T.gold }}></span>
-        <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>VISUAL BREAKDOWN</h2>
+        <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.1em" }}>VISUAL BREAKDOWN</h2>
         <span style={{ color:T.muted, fontSize:11 }}>Auto-generated from the tables above</span>
       </div>
 
@@ -11857,7 +11857,7 @@ function SummaryChip({ label, value, color, prefix = "" }) {
       borderRadius:6, padding:"12px 16px",
     }}>
       <p style={{ fontSize:9.5, color:T.muted, fontWeight:800, letterSpacing:"0.12em", marginBottom:4 }}>{label}</p>
-      <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:22, color, letterSpacing:"-0.01em" }}>
+      <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:22, color, letterSpacing:"-0.01em" }}>
         {prefix}${Math.round(value).toLocaleString("en-NZ")}
       </p>
     </div>
@@ -11871,7 +11871,7 @@ function ChartCard({ title, subtitle, children }) {
       padding:"18px 20px", marginBottom:14,
     }}>
       <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:14 }}>
-        <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.12em" }}>{title}</p>
+        <p style={{ fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.12em" }}>{title}</p>
         {subtitle && <span style={{ fontSize:10.5, color:T.muted, fontStyle:"italic" }}>{subtitle}</span>}
       </div>
       {children}
@@ -12019,7 +12019,7 @@ function OnboardingPanel({ onboarding, setOnboarding, onAddToTasks }) {
           <div key={sec.key}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
               <span style={{ width:4, height:16, background:T.gold }}></span>
-              <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13.5, color:T.heading, letterSpacing:"0.1em" }}>{sec.title}</h2>
+              <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:13.5, color:T.heading, letterSpacing:"0.1em" }}>{sec.title}</h2>
               <span style={{ color:T.muted, fontSize:11 }}>· {done}/{items.length}</span>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -12061,7 +12061,7 @@ function OnboardingPanel({ onboarding, setOnboarding, onAddToTasks }) {
       <div>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:16, background:T.oloka }}></span>
-          <h2 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13.5, color:T.heading, letterSpacing:"0.1em" }}>OLOKA'S FULL JOB LIST</h2>
+          <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:13.5, color:T.heading, letterSpacing:"0.1em" }}>OLOKA'S FULL JOB LIST</h2>
           <span style={{ color:T.muted, fontSize:11 }}>· {onboarding.olokasFullList.length}</span>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -12100,7 +12100,7 @@ function CoursesPanel({ courses, setCourses, onAddToTasks }) {
     <div>
       <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:18 }}>
         <div style={{ padding:"10px 18px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6 }}>
-          <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:22, color:T.heading, lineHeight:1 }}>{done}/{total}</p>
+          <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:22, color:T.heading, lineHeight:1 }}>{done}/{total}</p>
           <p style={{ fontSize:10, color:T.muted, letterSpacing:"0.1em", fontWeight:700, marginTop:4 }}>COURSES COMPLETED</p>
         </div>
         <div style={{ flex:1, height:6, background:T.surface2, borderRadius:3, maxWidth:300 }}>
@@ -12166,9 +12166,9 @@ function TestimonialsPanel({ testimonials, setTestimonials, onAddToTasks }) {
               fontSize:9.5, color: t.done ? T.oloka : T.gold, fontWeight:800, letterSpacing:"0.12em", marginBottom:5,
               background:"transparent", border:"none", cursor:"pointer", padding:0, fontFamily:"inherit",
             }}>{t.done ? "✓ CAPTURED" : "○ TO CAPTURE"}</button>
-            <p style={{ fontSize:15, fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, color:T.heading, marginBottom:3, paddingRight:30 }}>
+            <p style={{ fontSize:15, fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, color:T.heading, marginBottom:3, paddingRight:30 }}>
               <EditableText value={t.name} onChange={v => update(i, { name:v })} placeholder="Name"
-                style={{ fontSize:15, fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, color:T.heading }}/>
+                style={{ fontSize:15, fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, color:T.heading }}/>
             </p>
             <p style={{ fontSize:12, color:T.muted }}>
               <EditableText value={t.company} onChange={v => update(i, { company:v })} placeholder="Company"
@@ -12572,7 +12572,7 @@ function ConnectPlatformModal({ existing, onSave, onSaveMany, onClose }) {
 
         {/* ── PICK PLATFORM ── */}
         {step === "pick" && (<>
-          <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", marginBottom:4 }}>Connect a Platform</div>
+          <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif", marginBottom:4 }}>Connect a Platform</div>
           <div style={{ fontSize:13, color:T.muted, marginBottom:20 }}>Facebook and Instagram connect via official Meta login. Other platforms use a manual handle.</div>
           {available.length === 0 && <div style={{ textAlign:"center", color:T.muted, fontSize:13, padding:"24px 0" }}>All platforms are already connected ✓</div>}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
@@ -12603,7 +12603,7 @@ function ConnectPlatformModal({ existing, onSave, onSaveMany, onClose }) {
           <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
             <span style={{ fontSize:32 }}>{chosen.icon}</span>
             <div>
-              <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>Connect {chosen.label}</div>
+              <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>Connect {chosen.label}</div>
               <div style={{ fontSize:12, color:T.muted }}>{isMetaPlatform ? "Connects via your Facebook account" : "Enter your account details"}</div>
             </div>
           </div>
@@ -12659,7 +12659,7 @@ function ConnectPlatformModal({ existing, onSave, onSaveMany, onClose }) {
 
         {/* ── SELECT PAGES (after Meta OAuth success) ── */}
         {step === "oauth-select" && (<>
-          <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", marginBottom:4 }}>Select Pages to Connect</div>
+          <div style={{ fontSize:18, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif", marginBottom:4 }}>Select Pages to Connect</div>
           <div style={{ fontSize:13, color:T.muted, marginBottom:20 }}>
             {oauthPages.length} page{oauthPages.length !== 1 ? "s" : ""} found. Tick the ones you want to use in Pronto HQ.
           </div>
@@ -12887,7 +12887,7 @@ function AnalyticsView({ postApprovals, content }) {
       {/* Header row */}
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
         <div>
-          <div style={{ fontSize:22, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", letterSpacing:"-0.01em" }}>Analytics Overview</div>
+          <div style={{ fontSize:22, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif", letterSpacing:"-0.01em" }}>Analytics Overview</div>
           <div style={{ fontSize:13, color:T.muted, marginTop:2 }}>Track, analyse and grow your social media performance.</div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -12918,7 +12918,7 @@ function AnalyticsView({ postApprovals, content }) {
               </div>
             </div>
             <div style={{ fontSize:10, color:T.muted, marginBottom:2 }}>{p.metric}</div>
-            <div style={{ fontSize:24, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", lineHeight:1 }}>{p.value}</div>
+            <div style={{ fontSize:24, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif", lineHeight:1 }}>{p.value}</div>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:6 }}>
               <span style={{ fontSize:11, fontWeight:700, color:"#10B981" }}>▲ {p.pct}</span>
               <Sparkline data={p.data} color={PC[p.key]} width={52} height={22}/>
@@ -12980,7 +12980,7 @@ function AnalyticsView({ postApprovals, content }) {
         <div style={{ flex:"2", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"18px 20px" }}>
           <div style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:4 }}>Audience Growth</div>
           <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:12 }}>
-            <span style={{ fontSize:26, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>18.7K</span>
+            <span style={{ fontSize:26, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>18.7K</span>
             <span style={{ fontSize:13, fontWeight:700, color:"#10B981" }}>▲ 24.7%</span>
             <span style={{ fontSize:11, color:T.muted }}>Total Followers</span>
           </div>
@@ -13226,7 +13226,7 @@ function MobileTodayPage({ todayUser, tasksByDate, schedule, machinesToPush, set
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
         <div>
           <div style={{ fontSize:11, color:T.gold, fontWeight:700, letterSpacing:"0.1em" }}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"}).toUpperCase()}</div>
-          <h1 style={{ fontSize:26, fontWeight:900, color:T.heading, margin:"4px 0", fontFamily:"'ProximaNova Black',sans-serif" }}>{greeting}, {name} 👋</h1>
+          <h1 style={{ fontSize:26, fontWeight:900, color:T.heading, margin:"4px 0", fontFamily:"'210 Supersize Black',sans-serif" }}>{greeting}, {name} 👋</h1>
           <p style={{ fontSize:12, color:T.muted, margin:0 }}>Let's make today count.</p>
         </div>
         <div style={{ position:"relative", width:72, height:72 }}>
@@ -13250,7 +13250,7 @@ function MobileTodayPage({ todayUser, tasksByDate, schedule, machinesToPush, set
         ].map(s => (
           <div key={s.label} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"12px 8px", textAlign:"center" }}>
             <div style={{ fontSize:18 }}>{s.icon}</div>
-            <div style={{ fontSize:20, fontWeight:900, color:s.color, fontFamily:"'ProximaNova Black',sans-serif", lineHeight:1 }}>{s.val}</div>
+            <div style={{ fontSize:20, fontWeight:900, color:s.color, fontFamily:"'210 Supersize Black',sans-serif", lineHeight:1 }}>{s.val}</div>
             <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2 }}>{s.label}</div>
           </div>
         ))}
@@ -13455,7 +13455,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
               <button key={dk2} onClick={()=>setSelDate(new Date(dk2+"T12:00:00"))}
                 style={{ flexShrink:0, width:52, padding:"8px 0", borderRadius:12, border:`2px solid ${isSelected?T.navy:"transparent"}`, background:isSelected?T.navy:"transparent", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, fontFamily:"inherit" }}>
                 <span style={{ fontSize:9, fontWeight:700, color:isSelected?"rgba(255,255,255,0.7)":T.muted }}>{dayNames[d.getDay()]}</span>
-                <span style={{ width:32, height:32, borderRadius:"50%", background:isSelected?"rgba(255,255,255,0.15)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:900, color:isSelected?"#fff":isToday?T.gold:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{d.getDate()}</span>
+                <span style={{ width:32, height:32, borderRadius:"50%", background:isSelected?"rgba(255,255,255,0.15)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:900, color:isSelected?"#fff":isToday?T.gold:T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>{d.getDate()}</span>
                 {hasTasks && <div style={{ width:5, height:5, borderRadius:"50%", background:isSelected?"rgba(255,255,255,0.5)":T.gold }}/>}
               </button>
             );
@@ -13466,7 +13466,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
       <div style={{ padding:"16px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
           <div>
-            <h1 style={{ fontSize:22, fontWeight:900, color:T.heading, margin:0, fontFamily:"'ProximaNova Black',sans-serif" }}>Today's Tasks</h1>
+            <h1 style={{ fontSize:22, fontWeight:900, color:T.heading, margin:0, fontFamily:"'210 Supersize Black',sans-serif" }}>Today's Tasks</h1>
             <p style={{ fontSize:11, color:T.muted, margin:"2px 0 0" }}>Plan, prioritise and get things done.</p>
           </div>
           <button onClick={()=>setAddingTask(true)}
@@ -13494,7 +13494,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
             { l:"Overdue", v:overdue, c:"#F59E0B" },
           ].map(s=>(
             <div key={s.l} style={{ flexShrink:0, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:"10px 14px", textAlign:"center", minWidth:70 }}>
-              <div style={{ fontSize:20, fontWeight:900, color:s.c, fontFamily:"'ProximaNova Black',sans-serif" }}>{s.v}</div>
+              <div style={{ fontSize:20, fontWeight:900, color:s.c, fontFamily:"'210 Supersize Black',sans-serif" }}>{s.v}</div>
               <div style={{ fontSize:9, color:T.muted, fontWeight:700, marginTop:2, whiteSpace:"nowrap" }}>{s.l}</div>
             </div>
           ))}
@@ -13648,7 +13648,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
 
                 {isBreakMode ? (
                   <>
-                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 12px", fontFamily:"'ProximaNova Black',sans-serif" }}>Add a Break</p>
+                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 12px", fontFamily:"'210 Supersize Black',sans-serif" }}>Add a Break</p>
                     <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>TYPE</p>
                     <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:14 }}>
                       {breakTypes.map(([l,v])=>(
@@ -13664,7 +13664,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
                   </>
                 ) : (
                   <>
-                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 4px", fontFamily:"'ProximaNova Black',sans-serif" }}>Add to Schedule</p>
+                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 4px", fontFamily:"'210 Supersize Black',sans-serif" }}>Add to Schedule</p>
                     <p style={{ fontSize:12, color:T.muted, margin:"0 0 14px", lineHeight:1.4 }}>{schedulingTask?.text}</p>
                     <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>DURATION</p>
                     <div style={{ display:"flex", gap:5, marginBottom:14 }}>
@@ -13714,7 +13714,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
                 <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 14px" }}/>
                 {editSheet.field === "category" ? (
                   <>
-                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 4px", fontFamily:"'ProximaNova Black',sans-serif" }}>Category</p>
+                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 4px", fontFamily:"'210 Supersize Black',sans-serif" }}>Category</p>
                     <p style={{ fontSize:12, color:T.muted, margin:"0 0 16px" }}>{task.text||task.title}</p>
                     <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                       {cats.map(c => {
@@ -13732,7 +13732,7 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
                   </>
                 ) : (
                   <>
-                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 4px", fontFamily:"'ProximaNova Black',sans-serif" }}>Priority</p>
+                    <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 4px", fontFamily:"'210 Supersize Black',sans-serif" }}>Priority</p>
                     <p style={{ fontSize:12, color:T.muted, margin:"0 0 16px" }}>{task.text||task.title}</p>
                     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                       {[["Normal","⚪ Normal",T.muted],["High","🟡 High","#F59E0B"],["Urgent","🔴 Urgent","#EF4444"]].map(([p,l,c])=>{
@@ -14037,7 +14037,7 @@ function MobileStickyDateBar({ selDateKey, setSelDateKey, schedule, tasksByDate 
             <button key={dk} onClick={()=>setSelDateKey(dk)}
               style={{ flexShrink:0, width:54, padding:"6px 0 8px", borderRadius:12, border:`2px solid ${isSel?T.navy:"transparent"}`, background:isSel?T.navy:"transparent", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, fontFamily:"inherit" }}>
               <span style={{ fontSize:9, fontWeight:700, letterSpacing:"0.05em", color:isSel?"rgba(255,255,255,0.65)":T.muted }}>{DAY_NAMES[d.getDay()]}</span>
-              <span style={{ width:34, height:34, borderRadius:"50%", background:isSel?"rgba(255,255,255,0.15)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:isSel?"#fff":isToday?T.gold:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{d.getDate()}</span>
+              <span style={{ width:34, height:34, borderRadius:"50%", background:isSel?"rgba(255,255,255,0.15)":"transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:isSel?"#fff":isToday?T.gold:T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>{d.getDate()}</span>
               <div style={{ width:6, height:6, borderRadius:"50%", background:hasBlocks?(isSel?"rgba(255,255,255,0.5)":T.gold):"transparent" }}/>
             </button>
           );
@@ -14283,7 +14283,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
     <div style={{ padding:"0 0 24px" }}>
       <div style={{ padding:"12px 16px 8px", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
         <div>
-          <div style={{ fontSize:16, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>
+          <div style={{ fontSize:16, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>
             {new Date(dk+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
           </div>
           {isToday && <div style={{ fontSize:11, color:T.gold, fontWeight:700 }}>{Math.floor(dayLeft/60)}h {dayLeft%60}m left in day</div>}
@@ -14301,7 +14301,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
           <div key={s.l} style={{ flexShrink:0, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, padding:"12px 14px", minWidth:100 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
               <span style={{ fontSize:16 }}>{s.icon}</span>
-              <span style={{ fontSize:20, fontWeight:900, color:s.c, fontFamily:"'ProximaNova Black',sans-serif" }}>{s.v}</span>
+              <span style={{ fontSize:20, fontWeight:900, color:s.c, fontFamily:"'210 Supersize Black',sans-serif" }}>{s.v}</span>
             </div>
             <div style={{ fontSize:11, fontWeight:800, color:T.ink }}>{s.l}</div>
             <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{s.sub}</div>
@@ -14437,7 +14437,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
             <div style={{ background:T.cardBg, borderRadius:"18px 18px 0 0", padding:"20px 20px 36px" }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}/>
-              <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 2px", fontFamily:"'ProximaNova Black',sans-serif" }}>Adjust Duration</p>
+              <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 2px", fontFamily:"'210 Supersize Black',sans-serif" }}>Adjust Duration</p>
               <p style={{ fontSize:12, color:T.muted, margin:"0 0 16px" }}>{label} · starts {fmtTime(eb.startMin)}</p>
               <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
                 {opts.map(m => {
@@ -14457,7 +14457,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
               <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, marginBottom:20 }}>
                 <button onClick={()=>updateBlockDuration(eb, Math.max(15, cur-15))}
                   style={{ width:44, height:44, borderRadius:"50%", border:`2px solid ${T.border}`, background:"transparent", fontSize:22, color:T.ink, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>−</button>
-                <span style={{ fontSize:18, fontWeight:900, color:T.heading, minWidth:60, textAlign:"center", fontFamily:"'ProximaNova Black',sans-serif" }}>
+                <span style={{ fontSize:18, fontWeight:900, color:T.heading, minWidth:60, textAlign:"center", fontFamily:"'210 Supersize Black',sans-serif" }}>
                   {cur < 60 ? `${cur}m` : (cur%60===0 ? `${cur/60}h` : `${Math.floor(cur/60)}h ${cur%60}m`)}
                 </span>
                 <button onClick={()=>updateBlockDuration(eb, cur+15)}
@@ -14492,7 +14492,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
           <div style={{ background:T.cardBg, borderRadius:"18px 18px 0 0", padding:"20px 20px 36px", maxHeight:"85vh", overflowY:"auto" }}
             onClick={e=>e.stopPropagation()}>
             <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}/>
-            <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 16px", fontFamily:"'ProximaNova Black',sans-serif" }}>Add a Break</p>
+            <p style={{ fontWeight:900, fontSize:15, color:T.navy, margin:"0 0 16px", fontFamily:"'210 Supersize Black',sans-serif" }}>Add a Break</p>
             <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>TYPE</p>
             <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
               {[["☕","Coffee"],["🍽","Lunch"],["🚶","Walk"],["😴","Rest"],["📞","Call"]].map(([icon,type])=>(
@@ -14561,7 +14561,7 @@ function MobileDayView({ dk, schedule, setSchedule, tasksByDate, tasksByIdRef, t
             <div style={{ background:T.cardBg, borderRadius:"18px 18px 0 0", padding:"20px 20px 32px", maxHeight:"80vh", overflowY:"auto" }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}></div>
-              <p style={{ fontWeight:900, fontSize:16, color:T.navy, margin:"0 0 2px", fontFamily:"'ProximaNova Black',sans-serif" }}>Schedule a Task</p>
+              <p style={{ fontWeight:900, fontSize:16, color:T.navy, margin:"0 0 2px", fontFamily:"'210 Supersize Black',sans-serif" }}>Schedule a Task</p>
               <p style={{ fontSize:12, color:T.muted, margin:"0 0 16px" }}>at {fmtTime(pickingMin)}</p>
               <p style={{ fontSize:10, fontWeight:800, color:T.muted, letterSpacing:"0.1em", margin:"0 0 8px" }}>DURATION</p>
               <div style={{ display:"flex", gap:6, marginBottom:18 }}>
@@ -14778,7 +14778,7 @@ function MobileWeekView({ dk, setSelDateKey, setView, schedule, setSchedule, tas
     <div style={{overflow:"hidden",paddingBottom:4}}>
       {/* Nav header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 12px 2px"}}>
-        <span style={{fontSize:13,fontWeight:900,color:T.heading,fontFamily:"'ProximaNova Black',sans-serif"}}>
+        <span style={{fontSize:13,fontWeight:900,color:T.heading,fontFamily:"'210 Supersize Black',sans-serif"}}>
           {MONTHS[monday.getMonth()].slice(0,3)} {monday.getDate()} – {MONTHS[addDays(monday,6).getMonth()].slice(0,3)} {addDays(monday,6).getDate()} {addDays(monday,6).getFullYear()}
         </span>
         <div style={{display:"flex",gap:6}}>
@@ -14802,7 +14802,7 @@ function MobileWeekView({ dk, setSelDateKey, setView, schedule, setSchedule, tas
               <div key={wdk} onClick={()=>{setSelDateKey(wdk);setView("day");}}
                 style={{width:WEEK_COL_W,flexShrink:0,textAlign:"center",padding:"4px 0 5px",cursor:"pointer",borderLeft:i>0?`1px solid ${T.border}`:"none",borderBottom:isToday?`2.5px solid ${T.gold}`:"2.5px solid transparent"}}>
                 <div style={{fontSize:8,fontWeight:700,color:isToday?T.gold:T.muted,letterSpacing:"0.08em"}}>{DAY_NAMES[i]}</div>
-                <div style={{width:26,height:26,borderRadius:"50%",background:isToday?T.gold:isSel?T.navy:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto",fontSize:14,fontWeight:900,color:isToday||isSel?"#fff":T.heading,fontFamily:"'ProximaNova Black',sans-serif"}}>{d.getDate()}</div>
+                <div style={{width:26,height:26,borderRadius:"50%",background:isToday?T.gold:isSel?T.navy:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto",fontSize:14,fontWeight:900,color:isToday||isSel?"#fff":T.heading,fontFamily:"'210 Supersize Black',sans-serif"}}>{d.getDate()}</div>
                 {taskCount>0
                   ? <><div style={{fontSize:7.5,fontWeight:700,color:isToday?T.gold:T.muted,lineHeight:1.3}}>{Math.floor(totalMin/60)}h{totalMin%60?` ${totalMin%60}m`:""}</div>
                       <div style={{fontSize:7,color:T.faint,lineHeight:1.2}}>{taskCount}t</div></>
@@ -14979,7 +14979,7 @@ function MobileMonthView({ dk, setSelDateKey, setView, schedule, tasksByDate, on
       {/* Month header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 4px 12px" }}>
         <button onClick={()=>setMonthOffset(o=>o-1)} style={{ width:32,height:32,borderRadius:"50%",border:`1px solid ${T.border}`,background:T.cardBg,cursor:"pointer",fontFamily:"inherit",fontSize:14 }}>‹</button>
-        <span style={{ fontSize:17, fontWeight:900, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{MONTHS[month]} {yearAdj}</span>
+        <span style={{ fontSize:17, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>{MONTHS[month]} {yearAdj}</span>
         <button onClick={()=>setMonthOffset(o=>o+1)} style={{ width:32,height:32,borderRadius:"50%",border:`1px solid ${T.border}`,background:T.cardBg,cursor:"pointer",fontFamily:"inherit",fontSize:14 }}>›</button>
       </div>
 
@@ -15003,7 +15003,7 @@ function MobileMonthView({ dk, setSelDateKey, setView, schedule, tasksByDate, on
           return (
             <button key={i} onClick={()=>{ if (onDayClick) { onDayClick(mdk); } else { setSelDateKey(mdk); setView("day"); } }}
               style={{ background:isSel?T.navy:T.cardBg, border:`1.5px solid ${isSel?T.navy:isToday?T.gold:T.border}`, borderRadius:10, padding:"6px 4px", cursor:"pointer", fontFamily:"inherit", minHeight:72, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-              <span style={{ fontSize:13, fontWeight:900, color:isSel?"#fff":isToday?T.gold:T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{d}</span>
+              <span style={{ fontSize:13, fontWeight:900, color:isSel?"#fff":isToday?T.gold:T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>{d}</span>
               {blocks.length>0 && (
                 <>
                   <div style={{ display:"flex", gap:2, justifyContent:"center", flexWrap:"wrap" }}>
@@ -15032,7 +15032,7 @@ function MobileMonthView({ dk, setSelDateKey, setView, schedule, tasksByDate, on
             { l:"Total Hours", v:`${Math.floor(monthMin/60)}h ${monthMin%60}m`, c:T.gold },
           ].map(s=>(
             <div key={s.l}>
-              <div style={{ fontSize:18, fontWeight:900, color:s.c||T.heading, fontFamily:"'ProximaNova Black',sans-serif" }}>{s.v}</div>
+              <div style={{ fontSize:18, fontWeight:900, color:s.c||T.heading, fontFamily:"'210 Supersize Black',sans-serif" }}>{s.v}</div>
               <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>{s.l}</div>
             </div>
           ))}
@@ -15172,7 +15172,7 @@ function MobileContentPage({ content, setContent, todayUser, toPostList, setToPo
           <div style={{ textAlign:"center" }}>
             <p style={{ fontSize:9, fontWeight:800, letterSpacing:"0.18em", color:T.gold, margin:0 }}>CONTENT CALENDAR</p>
             <button onClick={goToday} style={{ background:"none", border:"none", cursor:isCurrentMonth?"default":"pointer", fontFamily:"inherit", padding:0 }}>
-              <p style={{ fontSize:18, fontWeight:900, fontFamily:"'ProximaNova Black',sans-serif", color:isCurrentMonth?T.heading:T.navy, margin:0, letterSpacing:"-0.02em" }}>{MONTHS[selDate.getMonth()]} {selDate.getFullYear()}</p>
+              <p style={{ fontSize:18, fontWeight:900, fontFamily:"'210 Supersize Black',sans-serif", color:isCurrentMonth?T.heading:T.navy, margin:0, letterSpacing:"-0.02em" }}>{MONTHS[selDate.getMonth()]} {selDate.getFullYear()}</p>
             </button>
           </div>
           <button onClick={nextMonth} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontSize:18, width:34, height:34, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"inherit" }}>›</button>
@@ -15511,7 +15511,7 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
           <span style={{ fontSize:14 }}>🖥</span> Desktop
         </button>
 
-        <span style={{ fontSize:13, fontWeight:900, color:T.navy, letterSpacing:"0.05em", fontFamily:"'ProximaNova Black',sans-serif" }}>PRONTO HQ</span>
+        <span style={{ fontSize:13, fontWeight:900, color:T.navy, letterSpacing:"0.05em", fontFamily:"'210 Supersize Black',sans-serif" }}>PRONTO HQ</span>
 
         <button onClick={() => setShowSheet(true)} style={{
           display:"flex", alignItems:"center", gap:5,
@@ -15538,7 +15538,7 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
           }} onClick={e => e.stopPropagation()}>
             <div style={{ width:40, height:4, borderRadius:2, background:T.border, margin:"0 auto 16px" }}></div>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
-              <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:16, color:T.navy }}>LIVE SYNC</p>
+              <p style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:800, fontSize:16, color:T.navy }}>LIVE SYNC</p>
               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                 <span style={{ width:8, height:8, borderRadius:"50%", background:dotColor }}></span>
                 <span style={{ fontSize:12, fontWeight:700, color:dotColor }}>
@@ -15618,7 +15618,7 @@ function MobileMorePage({ setForceMobile }) {
   ];
   return (
     <div style={{ padding:16 }}>
-      <h2 style={{ fontSize:20, fontWeight:900, color:T.heading, margin:"0 0 16px", fontFamily:"'ProximaNova Black',sans-serif" }}>More</h2>
+      <h2 style={{ fontSize:20, fontWeight:900, color:T.heading, margin:"0 0 16px", fontFamily:"'210 Supersize Black',sans-serif" }}>More</h2>
       <div style={{ display:"flex", flexDirection:"column", gap:2, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
         {items.map((item,i) => (
           <div key={item.label} style={{ display:"flex", alignItems:"center", gap:14, padding:"14px 16px", borderBottom:i<items.length-1?`1px solid ${T.border}`:"none" }}>
@@ -15801,7 +15801,12 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [tab, setTab] = useS("tasks");
   const [view, setView] = useS("day");
   const [contentView, setContentView] = useS("week");  // controls Content tab nav & view
-  const [goals, setGoals] = useS(() => loadOr("goals", () => []));
+  const [goals, setGoals] = useS(() => {
+    const stored = loadOr("goals", () => null);
+    if (stored && stored.length > 0) return stored;
+    try { const fb = JSON.parse(localStorage.getItem('prontoHQ.goals.v1') || 'null'); if (fb && fb.length > 0) return fb; } catch(_) {}
+    return [];
+  });
   const [goalTemplates, setGoalTemplates] = useS(() => loadOr("goalTemplates", () => DEFAULT_GOAL_TEMPLATES));
   const [deletedTasks, setDeletedTasks] = useS(() => loadOr("deletedTasks", () => ({})));
   const deletedTasksRef = useR({}); // mirror of deletedTasks state — safe to read in async callbacks
@@ -16090,21 +16095,27 @@ function App({ onSwitchWorkspace = () => {} }) {
   }, []); // run once on mount
 
 
-  // Autosave on any change — also schedules a KV write via syncRef (debounced 1.5 s)
-  // Skip the very first render so we don't overwrite Firebase before the initial sync arrives
-  const _autosaveSkipFirst = useR(true);
+  // Autosave on any change — writes to localStorage immediately, Firebase debounced 1.5s
+  // On first render only, we delay the Firebase write by 4s so the initial Firebase sync can
+  // arrive and merge first (preventing a stale localStorage state from overwriting Firebase).
+  const _fbReady = useR(false);
+  useE(() => { const t = setTimeout(() => { _fbReady.current = true; }, 4000); return () => clearTimeout(t); }, []);
   useE(() => {
-    if (_autosaveSkipFirst.current) { _autosaveSkipFirst.current = false; return; }
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
-    if (syncRef.current) syncRef.current.scheduleWrite(state);
+    if (_fbReady.current && syncRef.current) syncRef.current.scheduleWrite(state);
   // tasksByDate, deletedTasks, schedule, actualSchedule excluded — they're stripped from the Firebase payload and have their own sync paths
   }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList, goals, goalTemplates]);
-  // Dedicated immediate content save — second independent persistence path for content calendar
+  // Dedicated immediate saves — second independent persistence paths
+  const GOALS_LS_KEY = 'prontoHQ.goals.v1';
   useE(() => {
     if (!content || Object.keys(content).length === 0) return;
     try { localStorage.setItem(CONTENT_LS_KEY, JSON.stringify(content)); } catch(_) {}
   }, [content]);
+  useE(() => {
+    if (!goals || goals.length === 0) return;
+    try { localStorage.setItem(GOALS_LS_KEY, JSON.stringify(goals)); } catch(_) {}
+  }, [goals]);
   // Keep deletedTasksRef in sync so async callbacks (onApplyTasks) see fresh tombstones
   useE(() => { deletedTasksRef.current = deletedTasks; }, [deletedTasks]);
   // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
@@ -16261,6 +16272,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   // ── Apply a full state blob (used by Sheet pull) ──
   const applyState = (s) => {
     if (!s) return;
+    _fbReady.current = true; // Firebase has synced — safe to write back now
     // Once the flat tasks channel has seeded state, ignore task fields in the state blob
     if (!tasksFromFlatPathRef.current) {
       if (s.deletedTasks) setDeletedTasks(s.deletedTasks);
@@ -16563,11 +16575,11 @@ function App({ onSwitchWorkspace = () => {} }) {
 
   const tabBtn = (key, label, badge) => (
     <button key={key} onClick={() => setTab(key)} style={{
-      padding: isMobile ? "9px 11px" : "11px 20px",
+      padding: isMobile ? "7px 10px" : "8px 16px",
       background: tab===key ? T.navy : "transparent",
       border:"none",
       color: tab===key ? "#fff" : T.muted,
-      fontFamily:"'ProximaNova Black', sans-serif",
+      fontFamily:"'210 Supersize Black', sans-serif",
       fontWeight:800, fontSize: isMobile ? 10 : 12, letterSpacing: isMobile ? "0.06em" : "0.1em",
       cursor:"pointer", whiteSpace:"nowrap",
       borderBottom: tab===key ? `3px solid ${T.gold}` : "3px solid transparent",
@@ -16652,7 +16664,7 @@ function App({ onSwitchWorkspace = () => {} }) {
       {/* Header */}
       <header className="app-header" style={{
         display:"flex", alignItems:"center", justifyContent:"space-between",
-        padding:"16px 32px", background:T.cardBg,
+        padding:"10px 28px", background:T.cardBg,
         borderBottom:`1px solid ${T.border}`, flexWrap:"wrap", gap:16,
       }}>
         <div style={{ display:"flex", alignItems:"center", gap:18 }}>
@@ -16669,7 +16681,7 @@ function App({ onSwitchWorkspace = () => {} }) {
                 onClick={() => setBrandingModal(true)}
                 title="Click to edit branding"
                 style={{
-                  height:48, width:"auto", display:"block", objectFit:"contain",
+                  height:38, width:"auto", display:"block", objectFit:"contain",
                   cursor:"pointer", borderRadius:4, transition:"opacity 0.15s",
                   filter: needsInvert ? "brightness(0) saturate(100%)" : "none",
                 }}
@@ -16680,8 +16692,8 @@ function App({ onSwitchWorkspace = () => {} }) {
           })()}
           <div style={{ height:30, width:1, background:T.border }}></div>
           <div>
-            <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:19, letterSpacing:"0.02em", color:T.heading, lineHeight:1 }}>{branding.appName || "PRONTO"}</p>
-            <p style={{ color:T.muted, fontSize:9.5, letterSpacing:"0.16em", fontWeight:700, marginTop:3 }}>{branding.appSubtitle || "PRODUCTIVE"}</p>
+            <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:16, letterSpacing:"0.02em", color:T.heading, lineHeight:1 }}>{branding.appName || "PRONTO"}</p>
+            <p style={{ color:T.muted, fontSize:8.5, letterSpacing:"0.16em", fontWeight:700, marginTop:2 }}>{branding.appSubtitle || "PRODUCTIVE"}</p>
           </div>
         </div>
         <div className="app-header-extras" style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
@@ -16882,7 +16894,7 @@ function App({ onSwitchWorkspace = () => {} }) {
       </div>
       <div className="tab-row" style={{
         display:"flex", alignItems:"flex-end", justifyContent:"space-between",
-        padding:"0 32px", background:T.cardBg, borderBottom:`1px solid ${T.border}`,
+        padding:"0 28px", background:T.cardBg, borderBottom:`1px solid ${T.border}`,
         gap:20, flexWrap:"wrap",
       }}>
         <div style={{ display:"flex", alignItems:"flex-end", gap:0, flexWrap:"wrap" }}>
@@ -16893,7 +16905,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             })}
           </div>
           {tab === "tasks" && (
-            <div style={{ display:"flex", marginLeft:16, marginBottom:0, alignItems:"flex-end", gap:0, height:44, paddingBottom:0 }}>
+            <div style={{ display:"flex", marginLeft:16, marginBottom:0, alignItems:"flex-end", gap:0, height:36, paddingBottom:0 }}>
               {[
                 { k:"oloka", label:"OLOKA", color: T.oloka },
                 { k:"vanja", label:"VANJA", color: T.vanja },
@@ -16919,7 +16931,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           <div className="date-strip" style={{ display:"flex", alignItems:"center", gap:12, paddingBottom:10 }}>
             <div style={{ display:"flex", alignItems:"center", gap:0, border:`1px solid ${T.border}`, borderRadius:6, overflow:"hidden", background:T.cardBg }}>
               <IconBtn onClick={() => navigateDate(-1)} label="Previous" style={{ border:"none", borderRadius:0, borderRight:`1px solid ${T.border}` }}><Chev dir="left"/></IconBtn>
-              <span className="date-strip-label" style={{ padding:"0 16px", fontSize:12, fontWeight:700, color:T.ink, fontFamily:"inherit", letterSpacing:"0.02em", minWidth:240, textAlign:"center" }}>{dateLabel}</span>
+              <span className="date-strip-label" style={{ padding:"0 14px", fontSize:11.5, fontWeight:700, color:T.ink, fontFamily:"inherit", letterSpacing:"0.02em", minWidth:200, textAlign:"center" }}>{dateLabel}</span>
               <IconBtn onClick={() => navigateDate(1)} label="Next" style={{ border:"none", borderRadius:0, borderLeft:`1px solid ${T.border}` }}><Chev dir="right"/></IconBtn>
             </div>
             {tab === "tasks" && (
@@ -16934,11 +16946,11 @@ function App({ onSwitchWorkspace = () => {} }) {
       </div>
 
       {/* Main */}
-      <main className="main-content" style={{ flex:1, padding:`${(tab==="tasks"&&view==="day")?"14px":"28px"} 32px 60px`, overflowY:"auto", maxWidth:1500, width:"100%", margin:"0 auto", boxSizing:"border-box" }}>
+      <main className="main-content" style={{ flex:1, padding:`${(tab==="tasks"&&view==="day")?"10px":"20px"} 24px 40px`, overflowY:"auto", maxWidth:1500, width:"100%", margin:"0 auto", boxSizing:"border-box" }}>
         {heading && (
           <div className="page-header-block" style={{ marginBottom:20 }}>
             <p className="page-header-eyebrow" style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{heading.eyebrow}</p>
-            <h1 className="page-header-big" style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:8 }}>{heading.big}</h1>
+            <h1 className="page-header-big" style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:38, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading, marginBottom:6 }}>{heading.big}</h1>
             <p className="page-header-sub" style={{ color:T.muted, fontSize:13.5 }}>{heading.sub}</p>
           </div>
         )}
@@ -17039,7 +17051,7 @@ function App({ onSwitchWorkspace = () => {} }) {
               boxShadow:"-8px 0 40px rgba(0,0,0,0.2)", overflowY:"auto", padding:"28px 32px",
             }} onClick={e => e.stopPropagation()}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
-                <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:18, color:T.heading, letterSpacing:"0.06em" }}>SETTINGS</p>
+                <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:18, color:T.heading, letterSpacing:"0.06em" }}>SETTINGS</p>
                 <button onClick={() => setSettingsOpen(false)} style={{ background:"transparent", border:"none", color:T.muted, fontSize:22, cursor:"pointer", lineHeight:1 }}>×</button>
               </div>
               <SettingsView
@@ -17092,7 +17104,7 @@ function ActivityView({ log, onClear }) {
     <div>
       <div style={{ marginBottom:24 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>TEAM ACTIVITY</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>ACTIVITY</h1>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>ACTIVITY</h1>
         <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Everything your team has done — tasks completed, added and changed.</p>
       </div>
 
@@ -17197,7 +17209,7 @@ function BrandingModal({ branding, setBranding, onClose }) {
         padding:"28px 32px", width:460, boxShadow:"0 20px 60px rgba(0,0,0,0.3)",
       }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-          <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.08em" }}>EDIT BRANDING</p>
+          <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color:T.heading, letterSpacing:"0.08em" }}>EDIT BRANDING</p>
           <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.muted, fontSize:18, cursor:"pointer" }}>×</button>
         </div>
 
@@ -17213,7 +17225,7 @@ function BrandingModal({ branding, setBranding, onClose }) {
         <div style={{ marginBottom:14 }}>
           <p style={{ fontSize:10.5, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>APP NAME</p>
           <input value={name} onChange={e => setName(e.target.value)}
-            style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"9px 12px", fontSize:14, fontWeight:800, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:"0.04em", boxSizing:"border-box" }}/>
+            style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"9px 12px", fontSize:14, fontWeight:800, color:T.heading, fontFamily:"'210 Supersize Black', sans-serif", letterSpacing:"0.04em", boxSizing:"border-box" }}/>
         </div>
         <div style={{ marginBottom:24 }}>
           <p style={{ fontSize:10.5, fontWeight:800, color:T.muted, letterSpacing:"0.1em", marginBottom:6 }}>SUBTITLE</p>
@@ -17320,17 +17332,17 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
       }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
           {av ? <img src={av} style={{ width:36, height:36, borderRadius:"50%", objectFit:"cover", border:`2px solid ${color}` }}/> :
-            <div style={{ width:36, height:36, borderRadius:"50%", background:soft, border:`2px solid ${color}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:14, color }}>{name[0]}</div>
+            <div style={{ width:36, height:36, borderRadius:"50%", background:soft, border:`2px solid ${color}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:14, color }}>{name[0]}</div>
           }
           <div>
-            <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:13, color:T.heading }}>{name}</p>
+            <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:13, color:T.heading }}>{name}</p>
             <p style={{ fontSize:10, color:T.muted }}>{filterPerson===user ? "Click to show all" : "Click to filter"}</p>
           </div>
         </div>
         <div style={{ display:"flex", gap:8 }}>
           {[{ l:"PENDING", v:s.pending, c:"#F59E0B" }, { l:"APPROVED", v:s.approved, c:"#059669" }, { l:"CHANGES", v:s.changes, c:"#DC2626" }].map(x => (
             <div key={x.l} style={{ textAlign:"center" }}>
-              <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:20, color:x.c, lineHeight:1 }}>{x.v}</p>
+              <p style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:20, color:x.c, lineHeight:1 }}>{x.v}</p>
               <p style={{ fontSize:8.5, color:T.muted, fontWeight:700, letterSpacing:"0.08em" }}>{x.l}</p>
             </div>
           ))}
@@ -17344,7 +17356,7 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
       <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>CONTENT WORKFLOW</p>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>APPROVALS</h1>
+          <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>APPROVALS</h1>
           <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Submit posts · Vanja reviews · Track status per person.</p>
         </div>
         <button onClick={() => setAdding(true)} style={{
@@ -17379,7 +17391,7 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
       {/* Add post form */}
       {adding && (
         <div style={{ background:T.cardBg, border:`2px solid ${T.gold}`, borderRadius:10, padding:"20px 24px", marginBottom:20 }}>
-          <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.1em", marginBottom:16 }}>NEW POST SUBMISSION</p>
+          <p style={{ fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:12, color:T.heading, letterSpacing:"0.1em", marginBottom:16 }}>NEW POST SUBMISSION</p>
           <div style={{ marginBottom:12 }}>
             <p style={{ fontSize:10.5, fontWeight:800, color:T.muted, letterSpacing:"0.08em", marginBottom:6 }}>PLATFORM</p>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
@@ -17452,7 +17464,7 @@ function PostApprovalView({ postApprovals, setPostApprovals, todayUser, avatars 
               <div key={post.id} style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderLeft:`3px solid ${sc.color}`, borderRadius:10, padding:"18px 20px" }}>
                 <div style={{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:10 }}>
                   {creator.av ? <img src={creator.av} style={{ width:32, height:32, borderRadius:"50%", objectFit:"cover", border:`2px solid ${creator.color}`, flexShrink:0 }}/> :
-                    <div style={{ width:32, height:32, borderRadius:"50%", background:creator.color+"20", border:`2px solid ${creator.color}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:12, color:creator.color, flexShrink:0 }}>{creator.name[0]}</div>
+                    <div style={{ width:32, height:32, borderRadius:"50%", background:creator.color+"20", border:`2px solid ${creator.color}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:12, color:creator.color, flexShrink:0 }}>{creator.name[0]}</div>
                   }
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4, flexWrap:"wrap" }}>
@@ -17682,7 +17694,7 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
     <div>
       <div style={{ marginBottom:20 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:'0.18em', fontWeight:800, marginBottom:4 }}>FILMING & PRODUCTION</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:'-0.025em', lineHeight:0.92, color:T.heading, marginBottom:0 }}>VIDEO SCHEDULE</h1>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:'-0.025em', lineHeight:0.92, color:T.heading, marginBottom:0 }}>VIDEO SCHEDULE</h1>
       </div>
 
       {/* Add new */}
@@ -17757,7 +17769,7 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
       {shiftItem && (
         <div onClick={()=>setShiftItem(null)} style={{ position:'fixed', inset:0, zIndex:2100, background:'rgba(15,27,58,0.5)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div onClick={e=>e.stopPropagation()} style={{ background:T.bg, borderRadius:12, padding:24, width:'100%', maxWidth:340, boxShadow:'0 20px 60px rgba(0,0,0,0.28)' }}>
-            <h3 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:18, color:T.heading, marginBottom:4 }}>Add to Task Calendar</h3>
+            <h3 style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:900, fontSize:18, color:T.heading, marginBottom:4 }}>Add to Task Calendar</h3>
             <p style={{ fontSize:12, color:T.muted, marginBottom:14 }}>{shiftItem.title}</p>
             <input type="date" value={shiftDate} onChange={e=>setShiftDate(e.target.value)}
               style={{ width:'100%', padding:'8px 10px', border:`1px solid ${T.border}`, borderRadius:7, fontSize:13, color:T.ink, background:T.surface, fontFamily:'inherit', outline:'none', boxSizing:'border-box', marginBottom:16 }}/>
@@ -18223,7 +18235,7 @@ function GCalEventModal({ onClose, onSaved, editEvent, prefill }) {
   return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:3000, background:'rgba(15,27,58,0.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:T.bg, borderRadius:14, padding:28, width:'100%', maxWidth:420, boxShadow:'0 20px 60px rgba(0,0,0,0.28)', display:'flex', flexDirection:'column', gap:14 }}>
-        <h3 style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:900, fontSize:19, color:T.heading, margin:0 }}>{editEvent ? 'Edit Event' : 'New Event'}</h3>
+        <h3 style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:900, fontSize:19, color:T.heading, margin:0 }}>{editEvent ? 'Edit Event' : 'New Event'}</h3>
         <input autoFocus value={title} onChange={e=>setTitle(e.target.value)} placeholder="Event title" style={inp}/>
         {cals.length > 0 && (
           <select value={calId} onChange={e=>setCalId(e.target.value)} style={inp}>
@@ -20155,7 +20167,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
   };
 
   const SectionTitle = ({ children }) => (
-    <p style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:800, fontSize:11, color:T.heading, letterSpacing:"0.1em", marginBottom:14, paddingBottom:8, borderBottom:`1px solid ${T.border}` }}>{children}</p>
+    <p style={{ fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:11, color:T.heading, letterSpacing:"0.1em", marginBottom:14, paddingBottom:8, borderBottom:`1px solid ${T.border}` }}>{children}</p>
   );
 
   const Card = ({ children }) => (
@@ -20177,7 +20189,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
     <div style={{ maxWidth:640 }}>
       <div style={{ marginBottom:24 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>CONFIGURATION</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:50, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>SETTINGS</h1>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>SETTINGS</h1>
         <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Personalise your Pronto Productive experience.</p>
       </div>
 
@@ -20191,7 +20203,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
                 {(avatars && avatars[u.key]) ? (
                   <img src={avatars[u.key]} alt={u.name} style={{ width:64, height:64, borderRadius:"50%", objectFit:"cover", border:`2px solid ${u.color}` }}/>
                 ) : (
-                  <div style={{ width:64, height:64, borderRadius:"50%", background:u.soft, border:`2px solid ${u.color}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'ProximaNova Black', sans-serif", fontSize:24, fontWeight:900, color:u.color }}>{u.name[0]}</div>
+                  <div style={{ width:64, height:64, borderRadius:"50%", background:u.soft, border:`2px solid ${u.color}`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'210 Supersize Black', sans-serif", fontSize:24, fontWeight:900, color:u.color }}>{u.name[0]}</div>
                 )}
                 <button onClick={() => avatarFileRefs[u.key].current && avatarFileRefs[u.key].current.click()} style={{ position:"absolute", bottom:-2, right:-2, width:22, height:22, borderRadius:"50%", background:T.gold, border:`2px solid ${T.cardBg}`, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10 }}>📷</button>
               </div>
@@ -20453,7 +20465,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
       borderLeft:`4px solid ${color}`,
     }}>
       <span style={{ fontSize:18 }}>{icon}</span>
-      <span style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:15, letterSpacing:"-0.01em", color:T.heading, flex:1 }}>{title}</span>
+      <span style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:15, letterSpacing:"-0.01em", color:T.heading, flex:1 }}>{title}</span>
       <span style={{ fontSize:11, color:T.muted }}>{expandedSections[sectionKey] ? "▲" : "▼"}</span>
     </button>
   );
@@ -20484,13 +20496,13 @@ function UniformView({ uniform, setUniform, staff = [] }) {
               onKeyDown={e => { if(e.key==="Enter") commitEdit(); if(e.key==="Escape") setEditing(false); }}
               style={{ width:32, textAlign:"center", fontSize:13, fontWeight:700,
                 color:T.ink, background:T.bg, border:`1px solid ${T.oloka}`,
-                borderRadius:3, outline:"none", fontFamily:"'ProximaNova Black', sans-serif", padding:0 }}
+                borderRadius:3, outline:"none", fontFamily:"'210 Supersize Black', sans-serif", padding:0 }}
             />
           ) : (
             <span onClick={startEdit} title="Click to type a number"
               style={{ minWidth:26, textAlign:"center", fontSize:13, fontWeight:700,
                 color: count === 0 ? T.faint : count <= 2 ? "#EF4444" : T.ink,
-                fontFamily:"'ProximaNova Black', sans-serif", cursor:"text",
+                fontFamily:"'210 Supersize Black', sans-serif", cursor:"text",
               }}>{count}</span>
           )}
           <button onClick={() => adjustCount(sec, item, size, 1)} style={{
@@ -20547,7 +20559,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                     );
                   })}
                   <td style={{ padding:"8px 10px", textAlign:"center", borderBottom:`1px solid ${T.border}`, borderLeft:`2px solid ${T.navy}` }}>
-                    <span style={{ fontSize:14, fontWeight:800, color: itemTotal > 0 ? T.navy : T.faint, fontFamily:"'ProximaNova Black', sans-serif" }}>
+                    <span style={{ fontSize:14, fontWeight:800, color: itemTotal > 0 ? T.navy : T.faint, fontFamily:"'210 Supersize Black', sans-serif" }}>
                       {itemTotal}
                     </span>
                   </td>
@@ -20620,7 +20632,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:16 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:6 }}>INVENTORY</p>
-          <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:"-0.025em", lineHeight:0.95, color:T.heading, marginBottom:6 }}>UNIFORM<br/>& MERCH</h1>
+          <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:"-0.025em", lineHeight:0.95, color:T.heading, marginBottom:6 }}>UNIFORM<br/>& MERCH</h1>
         </div>
         <div style={{ display:"flex", gap:12 }}>
           {[
@@ -20629,7 +20641,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
             { label:"MERCH",   val:grandTotalMerch,  color:T.gold },
           ].map(s => (
             <div key={s.label} style={{ padding:"10px 16px", background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:8, textAlign:"center", minWidth:80 }}>
-              <div style={{ fontSize:26, fontWeight:900, color:s.color, fontFamily:"'ProximaNova Black', sans-serif", lineHeight:1 }}>{s.val}</div>
+              <div style={{ fontSize:26, fontWeight:900, color:s.color, fontFamily:"'210 Supersize Black', sans-serif", lineHeight:1 }}>{s.val}</div>
               <div style={{ fontSize:8.5, color:T.muted, fontWeight:800, letterSpacing:"0.1em", marginTop:3 }}>{s.label}</div>
             </div>
           ))}
@@ -20691,7 +20703,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                             display:"flex", alignItems:"center", justifyContent:"center",
                             opacity: count === 0 ? 0.4 : 1,
                           }}>−</button>
-                          <span style={{ minWidth:36, textAlign:"center", fontSize:20, fontWeight:900, color: count === 0 ? T.faint : T.navy, fontFamily:"'ProximaNova Black', sans-serif" }}>{count}</span>
+                          <span style={{ minWidth:36, textAlign:"center", fontSize:20, fontWeight:900, color: count === 0 ? T.faint : T.navy, fontFamily:"'210 Supersize Black', sans-serif" }}>{count}</span>
                           <button onClick={() => adjustCount("merch", it.key, null, 1)} style={{
                             width:28, height:28, borderRadius:6, border:`1px solid ${T.border}`,
                             background:T.cardBg, color:T.muted, cursor:"pointer", fontSize:18, lineHeight:1,
@@ -20785,7 +20797,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                           <td style={{ padding:"10px 16px", fontSize:13, fontWeight:800, color:T.ink, borderBottom:`1px solid ${T.border}` }}>{e.staff}</td>
                           <td style={{ padding:"10px 16px", fontSize:12, color:T.ink, borderBottom:`1px solid ${T.border}` }}>{e.item}</td>
                           <td style={{ padding:"10px 16px", fontSize:12, color:T.muted, borderBottom:`1px solid ${T.border}` }}>{e.size || "—"}</td>
-                          <td style={{ padding:"10px 16px", fontSize:13, fontWeight:900, color:T.oloka, borderBottom:`1px solid ${T.border}`, fontFamily:"'ProximaNova Black', sans-serif" }}>{e.qty}</td>
+                          <td style={{ padding:"10px 16px", fontSize:13, fontWeight:900, color:T.oloka, borderBottom:`1px solid ${T.border}`, fontFamily:"'210 Supersize Black', sans-serif" }}>{e.qty}</td>
                           <td style={{ padding:"6px 10px", textAlign:"center", borderBottom:`1px solid ${T.border}` }}>
                             <button onClick={() => deleteLogEntry(i)} title="Remove this entry" style={{
                               width:24, height:24, borderRadius:4, border:`1px solid #EF444444`,
@@ -20827,7 +20839,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                 <p style={{ fontSize:10, fontWeight:700, color:T.muted, marginBottom:6, letterSpacing:"0.08em" }}>QUANTITY</p>
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                   <button onClick={() => setIssueQty(q => Math.max(1, q-1))} style={{ width:36, height:36, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:20, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                  <span style={{ fontSize:20, fontWeight:900, color:T.ink, minWidth:44, textAlign:"center", fontFamily:"'ProximaNova Black', sans-serif" }}>{issueQty}</span>
+                  <span style={{ fontSize:20, fontWeight:900, color:T.ink, minWidth:44, textAlign:"center", fontFamily:"'210 Supersize Black', sans-serif" }}>{issueQty}</span>
                   <button onClick={() => setIssueQty(q => Math.min(getCount(issueModal.sec, issueModal.itemKey, issueModal.size), q+1))} style={{ width:36, height:36, borderRadius:6, border:`1px solid ${T.border}`, background:T.surface, color:T.ink, cursor:"pointer", fontSize:20, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                 </div>
               </div>
@@ -20882,7 +20894,7 @@ function PasswordGate({ children }) {
       <div style={{ textAlign:"center" }}>
         <img src="assets/pronto-icon.png" style={{ width:52, marginBottom:16, opacity:0.95 }} onError={e => e.target.style.display='none'} />
         <p style={{ color:"#FFC030", fontSize:10, letterSpacing:"0.2em", fontWeight:800, marginBottom:6 }}>PRONTO HIRE</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:32, color:"#FFFFFF", marginBottom:6 }}>WHO'S WORKING TODAY?</h1>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:26, color:"#FFFFFF", marginBottom:4 }}>WHO'S WORKING TODAY?</h1>
         <p style={{ color:"#7A9AC8", fontSize:13 }}>Select your account to get started</p>
       </div>
       <div style={{ display:"flex", gap:20 }}>
@@ -20910,7 +20922,7 @@ function PasswordGate({ children }) {
                   width:64, height:64, borderRadius:"50%", background:u.color,
                   display:"flex", alignItems:"center", justifyContent:"center",
                   fontSize:26, fontWeight:900, color:"#fff",
-                  fontFamily:"'ProximaNova Black', sans-serif",
+                  fontFamily:"'210 Supersize Black', sans-serif",
                 }}>{u.name[0]}</div>
               );
             })()}
@@ -20931,7 +20943,7 @@ function PasswordGate({ children }) {
       <div style={{ textAlign:"center", padding:"0 24px", width:"100%", maxWidth:380 }}>
         <img src="assets/pronto-icon.png" style={{ width:52, marginBottom:20, opacity:0.95 }} onError={e => e.target.style.display='none'} />
         <p style={{ color:"#FFC030", fontSize:10, letterSpacing:"0.2em", fontWeight:800, marginBottom:10 }}>PRONTO HIRE</p>
-        <h1 style={{ fontFamily:"'ProximaNova Black', sans-serif", fontWeight:900, fontSize:36, color:"#FFFFFF", letterSpacing:"-0.02em", marginBottom:6, lineHeight:1 }}>PRONTO PRODUCTIVE</h1>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, color:"#FFFFFF", letterSpacing:"-0.02em", marginBottom:6, lineHeight:1 }}>PRONTO PRODUCTIVE</h1>
         <p style={{ color:"#7A9AC8", fontSize:13, marginBottom:32 }}>Team access only</p>
         <div style={{
           display:"flex", gap:0, border:`2px solid ${shake ? "#FF6055" : "#1E3A78"}`,
@@ -20987,7 +20999,7 @@ class AppErrorBoundary extends React.Component {
     if (this.state.error) {
       const T2 = window.__currentTheme || {};
       return (
-        <div style={{ padding:32, fontFamily:"'ProximaNova',sans-serif", background: T2.bg||"#fff", minHeight:"100vh" }}>
+        <div style={{ padding:32, fontFamily:"'Outfit',sans-serif", background: T2.bg||"#fff", minHeight:"100vh" }}>
           <div style={{ maxWidth:600, margin:"0 auto" }}>
             <div style={{ fontSize:32, marginBottom:8 }}>⚠️</div>
             <h2 style={{ color:"#EF4444", fontWeight:900, margin:"0 0 8px" }}>Something went wrong</h2>
@@ -22382,7 +22394,7 @@ function OutlookSettingsModal({ onClose, onSaved }) {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:22 }}>&#x1F4C5;</span>
-            <p style={{ fontFamily:"'ProximaNova Black',sans-serif", fontWeight:800, fontSize:15, color:T.heading, letterSpacing:"0.02em", margin:0 }}>Outlook Calendar Setup</p>
+            <p style={{ fontFamily:"'210 Supersize Black',sans-serif", fontWeight:800, fontSize:15, color:T.heading, letterSpacing:"0.02em", margin:0 }}>Outlook Calendar Setup</p>
           </div>
           <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:T.muted, fontSize:20, padding:0, lineHeight:1 }}>&#x00D7;</button>
         </div>
@@ -22771,7 +22783,7 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
     <div style={{ padding:'24px 28px', maxWidth:1100 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
-          <h2 style={{ fontSize:20, fontWeight:800, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:'0.04em' }}>GOALS</h2>
+          <h2 style={{ fontSize:20, fontWeight:800, color:T.heading, fontFamily:"'210 Supersize Black', sans-serif", letterSpacing:'0.04em' }}>GOALS</h2>
           <p style={{ fontSize:12, color:T.muted, marginTop:2 }}>Track what you're working towards</p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
@@ -22811,7 +22823,7 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
               </div>
             ))}
           </div>
-          <h3 style={{ fontSize:22, fontWeight:900, fontFamily:"'ProximaNova Black',sans-serif", color:T.heading, marginBottom:10, letterSpacing:'-0.02em' }}>No goals yet</h3>
+          <h3 style={{ fontSize:22, fontWeight:900, fontFamily:"'210 Supersize Black',sans-serif", color:T.heading, marginBottom:10, letterSpacing:'-0.02em' }}>No goals yet</h3>
           <p style={{ fontSize:13, color:T.muted, marginBottom:28, maxWidth:360, textAlign:'center', lineHeight:1.6 }}>
             Set a go-live date, pick a template, and Pronto auto-generates every task you need to get there.
           </p>
@@ -22859,7 +22871,7 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
 
                   {/* Card body */}
                   <div style={{ padding:'14px 16px' }}>
-                    <p style={{ fontWeight:800, fontSize:13.5, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", marginBottom:4, lineHeight:1.3, letterSpacing:'0.01em' }}>{goal.name}</p>
+                    <p style={{ fontWeight:800, fontSize:13.5, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif", marginBottom:4, lineHeight:1.3, letterSpacing:'0.01em' }}>{goal.name}</p>
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
                       <span style={{ fontSize:11, color:GOAL_OWNER_COLOR()[goal.owner]||T.muted, fontWeight:700 }}>{GOAL_OWNER_LABEL[goal.owner]||'—'}</span>
                       <span style={{ color:T.faint, fontSize:10 }}>·</span>
@@ -23138,9 +23150,9 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
           <div style={{ flex:1, minWidth:0 }}>
             {editingName ? (
               <input value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>e.key==='Enter'&&e.target.blur()} autoFocus
-                style={{ fontSize:28, fontWeight:900, color:'#fff', background:'rgba(255,255,255,0.15)', border:'2px solid rgba(255,255,255,0.4)', borderRadius:8, padding:'4px 12px', fontFamily:"'ProximaNova Black',sans-serif", width:'100%', boxSizing:'border-box', outline:'none' }} />
+                style={{ fontSize:28, fontWeight:900, color:'#fff', background:'rgba(255,255,255,0.15)', border:'2px solid rgba(255,255,255,0.4)', borderRadius:8, padding:'4px 12px', fontFamily:"'210 Supersize Black',sans-serif", width:'100%', boxSizing:'border-box', outline:'none' }} />
             ) : (
-              <h1 onClick={()=>setEditingName(true)} style={{ fontSize:28, fontWeight:900, color:'#fff', fontFamily:"'ProximaNova Black',sans-serif", letterSpacing:'-0.02em', lineHeight:1.1, cursor:'text', display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+              <h1 onClick={()=>setEditingName(true)} style={{ fontSize:28, fontWeight:900, color:'#fff', fontFamily:"'210 Supersize Black',sans-serif", letterSpacing:'-0.02em', lineHeight:1.1, cursor:'text', display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
                 {goal.name} <span style={{ fontSize:14, opacity:0.6, fontWeight:400 }}>✎</span>
               </h1>
             )}
@@ -23224,7 +23236,7 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
           <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:'18px 20px' }}>
             <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:12 }}>PROGRESS</p>
             <div style={{ display:'flex', alignItems:'baseline', gap:6, marginBottom:10 }}>
-              <span style={{ fontSize:36, fontWeight:900, fontFamily:"'ProximaNova Black',sans-serif", color:cfg.color, lineHeight:1 }}>{prog.pct}%</span>
+              <span style={{ fontSize:36, fontWeight:900, fontFamily:"'210 Supersize Black',sans-serif", color:cfg.color, lineHeight:1 }}>{prog.pct}%</span>
               <span style={{ fontSize:12, color:T.muted }}>{prog.done}/{prog.total} done</span>
             </div>
             <div style={{ height:8, background:T.surface2||T.border, borderRadius:4, overflow:'hidden' }}>
@@ -23299,7 +23311,7 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
       {reschedulePreview && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={()=>setReschedulePreview(null)}>
           <div style={{ background:T.bg, borderRadius:14, padding:28, maxWidth:500, width:'100%', maxHeight:'80vh', overflowY:'auto' }} onClick={e=>e.stopPropagation()}>
-            <h3 style={{ fontSize:16, fontWeight:800, color:T.heading, marginBottom:6, fontFamily:"'ProximaNova Black',sans-serif" }}>Reschedule Preview</h3>
+            <h3 style={{ fontSize:16, fontWeight:800, color:T.heading, marginBottom:6, fontFamily:"'210 Supersize Black',sans-serif" }}>Reschedule Preview</h3>
             <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>Moving {reschedulePreview.deltaDays>0?'+':''}{reschedulePreview.deltaDays} days · {reschedulePreview.items.length} task{reschedulePreview.items.length!==1?'s':''} will move.</p>
             {reschedulePreview.items.length>0 ? (
               <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden', marginBottom:20 }}>
