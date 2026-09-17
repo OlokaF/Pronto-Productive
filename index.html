@@ -845,7 +845,7 @@ function TaskRow({ task, dateKey, onToggle, onChangePriority, onChangeOwner, onC
       {onDelete && (
         <button onClick={(e) => {
           e.stopPropagation();
-          if (confirm(`Delete this task?\n\n"${task.text}"`)) onDelete();
+          onDelete();
         }} title="Delete task" style={{
           width:22, height:22, borderRadius:4,
           background:"transparent", border:`1px solid ${T.border}`,
@@ -2451,7 +2451,7 @@ function TaskInspector({ task, dateKey, onClose, onToggle, onChangePriority, onC
       {onDelete && (
         <div style={{ padding:"10px 16px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"flex-end" }}>
           <button onClick={() => {
-            if (confirm(`Delete this task?\n\n"${task.text}"`)) { onDelete(dateKey, task.id); onClose(); }
+            onDelete(dateKey, task.id); onClose();
           }} style={{
             display:"flex", alignItems:"center", gap:6,
             padding:"6px 12px", borderRadius:5, background:"transparent",
@@ -3077,8 +3077,8 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
         {/* Header */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6, flexWrap:"wrap", gap:6 }}>
           <div>
-            <p style={{ fontSize:9, fontWeight:800, color:T.gold, letterSpacing:"0.14em", marginBottom:1 }}>{DAYS_LONG[selDate.getDay()].toUpperCase()} · {selDate.getDate()} {MONTHS[selDate.getMonth()].toUpperCase()} {selDate.getFullYear()}</p>
-            <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:17, letterSpacing:"-0.01em", color:T.heading, lineHeight:1, margin:0 }}>{isToday ? "Today's Tasks" : `${DAYS_LONG[selDate.getDay()]}'s Tasks`}</h2>
+            <p style={{ fontSize:10, fontWeight:800, color:T.gold, letterSpacing:"0.14em", marginBottom:3 }}>{DAYS_LONG[selDate.getDay()].toUpperCase()} · {selDate.getDate()} {MONTHS[selDate.getMonth()].toUpperCase()} {selDate.getFullYear()}</p>
+            <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:18, letterSpacing:"-0.01em", color:T.heading, lineHeight:1.05, margin:0 }}>{isToday ? "Today's Tasks" : `${DAYS_LONG[selDate.getDay()]}'s Tasks`}</h2>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <div style={{ position:"relative", display:"flex", alignItems:"center" }}>
@@ -17712,8 +17712,8 @@ function VideoScheduleView({ selDate, videoEvents, setVideoEvents, view, setView
   return (
     <div>
       <div style={{ marginBottom:20 }}>
-        <p style={{ color:T.gold, fontSize:10, letterSpacing:'0.18em', fontWeight:800, marginBottom:4 }}>FILMING & PRODUCTION</p>
-        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:'-0.025em', lineHeight:0.92, color:T.heading, marginBottom:0 }}>VIDEO SCHEDULE</h1>
+        <p style={{ color:T.gold, fontSize:10, letterSpacing:'0.18em', fontWeight:800, marginBottom:6 }}>FILMING & PRODUCTION</p>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:'-0.025em', lineHeight:1.05, color:T.heading, marginBottom:0 }}>VIDEO SCHEDULE</h1>
       </div>
 
       {/* Add new */}
@@ -18813,7 +18813,7 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                   return (
                     <div key={e.id}
                       onMouseDown={ev=>{ if(isResize) return; handleEvtMouseDown(ev,e); }}
-                      onClick={ev=>{ if(!isDrag||dragging?.currentOffsetMin===0){ ev.stopPropagation(); setModal({edit:e,prefill:null}); } }}
+                      onDoubleClick={ev=>{ ev.stopPropagation(); setModal({edit:e,prefill:null}); }}
                       style={{
                         position:'absolute', left:70, right:0, top:pos.topPx, height:pos.heightPx,
                         background:color, borderRadius:6, padding:'4px 40px 12px 10px',
@@ -20651,7 +20651,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:16 }}>
         <div>
           <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:6 }}>INVENTORY</p>
-          <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:"-0.025em", lineHeight:0.95, color:T.heading, marginBottom:6 }}>UNIFORM<br/>& MERCH</h1>
+          <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:40, letterSpacing:"-0.025em", lineHeight:1.1, color:T.heading, marginBottom:6 }}>UNIFORM<br/>& MERCH</h1>
         </div>
         <div style={{ display:"flex", gap:12 }}>
           {[
