@@ -9760,7 +9760,7 @@ function ContentKanbanView({ toPostList, setToPostList, onSetContent, filterType
     // Add to content calendar
     onSetContent(prev => {
       const arr = (prev[scheduleDate] || []).slice();
-      arr.push({ title: item.title, type: item.type, notes: item.notes || "", status: "scheduled" });
+      arr.push({ id: "post_" + Date.now() + "_" + Math.random().toString(36).slice(2,6), title: item.title, type: item.type, notes: item.notes || "", status: "scheduled", updatedAt: Date.now() });
       return { ...prev, [scheduleDate]: arr };
     });
     // Mark as scheduled in toPostList
@@ -9973,7 +9973,7 @@ function ContentCalendar({ selDate, content, onSetContent, toPostList, setToPost
   const addToCalendar = (item, dk) => {
     onSetContent(prev => {
       const arr = (prev[dk]||[]).slice();
-      arr.push({ title: item.title, type: item.type, pillar: item.pillar || null, notes: item.notes || "" });
+      arr.push({ id: "post_" + Date.now() + "_" + Math.random().toString(36).slice(2,6), title: item.title, type: item.type, pillar: item.pillar || null, notes: item.notes || "", updatedAt: Date.now() });
       return {...prev,[dk]:arr};
     });
     safeSetToPostList(prev => prev.filter(p => p.id !== item.id));
@@ -15895,12 +15895,11 @@ function App({ onSwitchWorkspace = () => {} }) {
   }, [tasksByDate]);
   const CONTENT_LS_KEY = 'prontoHQ.content.v1';
   const [content, setContent] = useS(() => {
-    // Primary: main state bundle
-    const stored = saved && saved.content !== undefined ? saved.content : null;
-    if (stored && Object.keys(stored).length > 0) return stored;
-    // Fallback: dedicated content key (survives main-state corruption)
-    try { const fb = JSON.parse(localStorage.getItem(CONTENT_LS_KEY) || 'null'); if (fb && Object.keys(fb).length > 0) return fb; } catch(_) {}
-    return {};
+    // Merge both sources so a failed main-state save doesn't lose newer dedicated-key data
+    const mainC = (saved && saved.content && Object.keys(saved.content).length > 0) ? saved.content : null;
+    const dedC = (() => { try { const fb = JSON.parse(localStorage.getItem(CONTENT_LS_KEY) || 'null'); return (fb && Object.keys(fb).length > 0) ? fb : null; } catch(_) { return null; } })();
+    if (mainC && dedC) return _mergeContent(mainC, dedC);
+    return mainC || dedC || {};
   });
   const [chatAs, setChatAs] = useS("vanja");
   const [todayUser, setTodayUser] = useS(() => {
@@ -16116,6 +16115,15 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (!goals || goals.length === 0) return;
     try { localStorage.setItem(GOALS_LS_KEY, JSON.stringify(goals)); } catch(_) {}
   }, [goals]);
+  // Flush content + full state to localStorage on page close (catches the window between state update and effect)
+  useE(() => {
+    const flush = () => {
+      try { localStorage.setItem(CONTENT_LS_KEY, JSON.stringify(content)); } catch(_) {}
+      try { localStorage.setItem(LS_KEY, JSON.stringify(fullState())); } catch(_) {}
+    };
+    window.addEventListener('beforeunload', flush);
+    return () => window.removeEventListener('beforeunload', flush);
+  }, [content]);
   // Keep deletedTasksRef in sync so async callbacks (onApplyTasks) see fresh tombstones
   useE(() => { deletedTasksRef.current = deletedTasks; }, [deletedTasks]);
   // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
