@@ -16043,6 +16043,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     try { localStorage.setItem('prontoHQ.videoQueue', JSON.stringify(videoQueue)); } catch(_) {}
   }, [videoQueue]);
   // Visible tabs preference — array of tab keys that are shown
+  const ALWAYS_ON_TABS = ['tasks', 'goals']; // always shown, cannot be hidden
   const [visibleTabs, setVisibleTabs] = useS(() => {
     const saved = loadOr("visibleTabs", () => DEFAULT_TABS.filter(t=>t.on).map(t=>t.key));
     // Migration: add any new tabs that are on:true in DEFAULT_TABS but missing from saved
@@ -16050,6 +16051,8 @@ function App({ onSwitchWorkspace = () => {} }) {
     // Migration: remove tabs that have been permanently disabled (analytics)
     const removed = DEFAULT_TABS.filter(t => !t.on).map(t=>t.key);
     const merged = [...saved.filter(k => !removed.includes(k)), ...newOnes];
+    // Always ensure locked tabs are present
+    ALWAYS_ON_TABS.forEach(k => { if (!merged.includes(k)) merged.unshift(k); });
     return merged;
   });
   // Branding modal open
@@ -20225,7 +20228,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
           {allTabs.map(t => {
             const on = visibleTabs.includes(t.key);
-            const locked = t.key === "tasks" || t.key === "settings";
+            const locked = t.key === "tasks" || t.key === "goals" || t.key === "settings";
             return (
               <div key={t.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 0", borderBottom:`1px solid ${T.border}` }}>
                 <p style={{ fontSize:12.5, color:on?T.ink:T.muted, fontWeight:on?700:400 }}>{t.label}</p>
@@ -22685,6 +22688,20 @@ const GOAL_STATUS_CFG = {
   completed:       { label: 'Completed',       color: '#2563EB', bg: '#DBEAFE', dot: '●' },
 };
 const GOAL_OWNER_LABEL = { oloka: 'Oloka', vanja: 'Vanja', both: 'Both' };
+
+const GOAL_TPL_VISUAL = {
+  tpl_promotion:   { grad:'linear-gradient(135deg,#F59E0B 0%,#EF4444 100%)', icon:'🚀' },
+  tpl_newsletter:  { grad:'linear-gradient(135deg,#3B82F6 0%,#06B6D4 100%)', icon:'📧' },
+  tpl_event:       { grad:'linear-gradient(135deg,#8B5CF6 0%,#EC4899 100%)', icon:'📸' },
+  tpl_product:     { grad:'linear-gradient(135deg,#10B981 0%,#3B82F6 100%)', icon:'⚡' },
+  tpl_custom_blank:{ grad:'linear-gradient(135deg,#6B7280 0%,#9CA3AF 100%)', icon:'✨' },
+};
+const goalTplVisual = (templateId, name) => {
+  if (GOAL_TPL_VISUAL[templateId]) return GOAL_TPL_VISUAL[templateId];
+  const hues = [200,280,350,150,30,60];
+  const h = hues[(name||'').charCodeAt(0) % hues.length];
+  return { grad:`linear-gradient(135deg,hsl(${h},70%,55%) 0%,hsl(${(h+40)%360},65%,45%) 100%)`, icon:(name||'G')[0].toUpperCase() };
+};
 const GOAL_OWNER_COLOR = () => ({ oloka: T.oloka, vanja: T.vanja, both: T.navy });
 
 function GoalStatusPill({ status }) {
@@ -22807,18 +22824,6 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
 
       {/* Goals card grid */}
       {activeGoals.length > 0 && (() => {
-        const TPL_VISUAL = {
-          tpl_promotion:   { grad:'linear-gradient(135deg,#F59E0B 0%,#EF4444 100%)', icon:'🚀' },
-          tpl_newsletter:  { grad:'linear-gradient(135deg,#3B82F6 0%,#06B6D4 100%)', icon:'📧' },
-          tpl_event:       { grad:'linear-gradient(135deg,#8B5CF6 0%,#EC4899 100%)', icon:'📸' },
-          tpl_product:     { grad:'linear-gradient(135deg,#10B981 0%,#3B82F6 100%)', icon:'⚡' },
-          tpl_custom_blank:{ grad:'linear-gradient(135deg,#6B7280 0%,#9CA3AF 100%)', icon:'✨' },
-        };
-        const defaultVisual = (name) => {
-          const hues = [200,280,350,150,30,60];
-          const h = hues[(name||'').charCodeAt(0) % hues.length];
-          return { grad:`linear-gradient(135deg,hsl(${h},70%,55%) 0%,hsl(${(h+40)%360},65%,45%) 100%)`, icon:(name||'G')[0].toUpperCase() };
-        };
         return (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
             {activeGoals.map((goal) => {
@@ -22828,7 +22833,7 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
               const prog = goalProgress(goal, tasksByDate);
               const next = nextGoalTask(goal, tasksByDate);
               const tpl = (goalTemplates||[]).find(t => t.id === goal.templateId);
-              const vis = TPL_VISUAL[goal.templateId] || defaultVisual(goal.name);
+              const vis = goalTplVisual(goal.templateId, goal.name);
               return (
                 <div key={goal.id}
                   onClick={() => { setSelectedId(goal.id); setSubView('detail'); }}
@@ -23117,175 +23122,204 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
   };
 
   const inp = { width:'100%', padding:'8px 10px', border:`1px solid ${T.border}`, borderRadius:6, fontSize:12, fontFamily:'inherit', background:T.bg, color:T.text };
+  const vis = goalTplVisual(goal.templateId, goal.name);
 
   return (
-    <div style={{ padding:'24px 28px', maxWidth:860 }}>
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20 }}>
-        <div style={{ flex:1 }}>
-          <button onClick={onBack} style={{ background:'none', border:'none', color:T.muted, fontSize:11, cursor:'pointer', padding:'0 0 8px', fontFamily:'inherit', fontWeight:700, letterSpacing:'0.06em' }}>← ALL GOALS</button>
-          {editingName ? (
-            <input value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>e.key==='Enter'&&e.target.blur()} autoFocus
-              style={{ fontSize:20, fontWeight:800, color:T.heading, border:`1px solid ${T.border}`, borderRadius:6, padding:'4px 8px', fontFamily:'inherit', width:'100%', boxSizing:'border-box' }} />
-          ) : (
-            <h1 onClick={()=>setEditingName(true)} style={{ fontSize:20, fontWeight:800, color:T.heading, cursor:'text', display:'flex', alignItems:'center', gap:8 }}>
-              {goal.name} <span style={{ fontSize:12, color:T.faint, fontWeight:400 }}>✎</span>
-            </h1>
-          )}
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6, flexWrap:'wrap' }}>
-            <GoalStatusPill status={status} />
-            <span style={{ fontSize:12, color:T.muted }}>Go-live: {goal.goLiveDate}</span>
-            <span style={{ fontSize:12, fontWeight:700, color:days<0?T.urgent:days<=7?T.gold:T.muted }}>
-              {days<0?`${Math.abs(days)} days overdue`:days===0?'Today!':days===1?'Tomorrow':`${days} days away`}
-            </span>
+    <div style={{ maxWidth:920 }}>
+      {/* Hero banner */}
+      <div style={{ background:vis.grad, borderRadius:16, padding:'28px 32px', marginBottom:24, position:'relative', overflow:'hidden' }}>
+        {/* Back */}
+        <button onClick={onBack} style={{ background:'rgba(255,255,255,0.2)', border:'none', color:'#fff', fontSize:11, cursor:'pointer', padding:'5px 12px', borderRadius:20, fontFamily:'inherit', fontWeight:700, letterSpacing:'0.06em', marginBottom:16, display:'inline-block' }}>← ALL GOALS</button>
+
+        {/* Big icon watermark */}
+        <div style={{ position:'absolute', right:28, top:'50%', transform:'translateY(-50%)', fontSize:80, opacity:0.18, pointerEvents:'none', userSelect:'none' }}>{vis.icon}</div>
+
+        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            {editingName ? (
+              <input value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>e.key==='Enter'&&e.target.blur()} autoFocus
+                style={{ fontSize:28, fontWeight:900, color:'#fff', background:'rgba(255,255,255,0.15)', border:'2px solid rgba(255,255,255,0.4)', borderRadius:8, padding:'4px 12px', fontFamily:"'ProximaNova Black',sans-serif", width:'100%', boxSizing:'border-box', outline:'none' }} />
+            ) : (
+              <h1 onClick={()=>setEditingName(true)} style={{ fontSize:28, fontWeight:900, color:'#fff', fontFamily:"'ProximaNova Black',sans-serif", letterSpacing:'-0.02em', lineHeight:1.1, cursor:'text', display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                {goal.name} <span style={{ fontSize:14, opacity:0.6, fontWeight:400 }}>✎</span>
+              </h1>
+            )}
+            <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+              {/* Status chip */}
+              <div style={{ background:'rgba(255,255,255,0.2)', borderRadius:20, padding:'4px 12px', display:'flex', alignItems:'center', gap:6 }}>
+                <span style={{ width:7, height:7, borderRadius:'50%', background:'#fff', display:'inline-block' }}/>
+                <span style={{ fontSize:10, fontWeight:800, color:'#fff', letterSpacing:'0.06em' }}>{cfg.label.toUpperCase()}</span>
+              </div>
+              {/* Days chip */}
+              <div style={{ background:'rgba(0,0,0,0.25)', borderRadius:20, padding:'4px 12px' }}>
+                <span style={{ fontSize:10, fontWeight:800, color: days<0?'#FCA5A5':days<=7?'#FDE68A':'#fff', letterSpacing:'0.05em' }}>
+                  {days<0?`${Math.abs(days)} DAYS OVERDUE`:days===0?'TODAY':days===1?'TOMORROW':`${days} DAYS TO GO`}
+                </span>
+              </div>
+              {/* Owner chip */}
+              <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:20, padding:'4px 12px' }}>
+                <span style={{ fontSize:10, fontWeight:700, color:'#fff' }}>{GOAL_OWNER_LABEL[goal.owner]||'—'}</span>
+              </div>
+            </div>
           </div>
-        </div>
-        <div style={{ display:'flex', gap:8, marginLeft:16, flexShrink:0 }}>
-          {!goal.completed && <button onClick={handleMarkComplete} style={{ padding:'8px 12px', background:'#059669', border:'none', borderRadius:6, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>✓ COMPLETE</button>}
-          <button onClick={handleDelete} style={{ padding:'8px 12px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontWeight:700, color:T.urgent, cursor:'pointer', fontFamily:'inherit' }}>DELETE</button>
+
+          {/* Action buttons */}
+          <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+            {!goal.completed && <button onClick={handleMarkComplete} style={{ padding:'10px 18px', background:'rgba(255,255,255,0.95)', border:'none', borderRadius:8, fontSize:11, fontWeight:800, color:'#059669', cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em' }}>✓ COMPLETE</button>}
+            <button onClick={handleDelete} style={{ padding:'10px 14px', background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.8)', cursor:'pointer', fontFamily:'inherit' }}>DELETE</button>
+          </div>
         </div>
       </div>
 
-      {/* Overdue suggestion */}
+      {/* Overdue alert */}
       {overdueTask && (
-        <div style={{ background:'#FEF3C7', border:'1px solid #D97706', borderRadius:8, padding:'10px 16px', marginBottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+        <div style={{ background:'#FEF3C7', border:'1px solid #D97706', borderRadius:10, padding:'12px 18px', marginBottom:20, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
           <span style={{ fontSize:12, color:'#92400E', fontWeight:600 }}>⚠ "{overdueTask.text}" is overdue ({overdueTask.dk})</span>
-          <button onClick={()=>moveToToday(overdueTask)} style={{ padding:'5px 10px', background:'#D97706', border:'none', borderRadius:5, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit', flexShrink:0 }}>Move to today</button>
+          <button onClick={()=>moveToToday(overdueTask)} style={{ padding:'6px 14px', background:'#D97706', border:'none', borderRadius:6, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit', flexShrink:0 }}>Move to today</button>
         </div>
       )}
 
-      {/* Two-col layout */}
-      <div style={{ display:'flex', gap:28, flexWrap:'wrap' }}>
-        {/* Left: Timeline */}
-        <div style={{ flex:'1 1 400px', minWidth:280 }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:T.faint, marginBottom:14 }}>TIMELINE</div>
-          <div style={{ position:'relative', paddingLeft:28 }}>
-            {/* Vertical line */}
-            {linkedTasks.length > 0 && <div style={{ position:'absolute', left:8, top:6, bottom:0, width:1, background:T.border }} />}
-            {linkedTasks.map((t, i) => (
-              <div key={t.id} style={{ display:'flex', gap:10, paddingBottom:14, position:'relative' }}>
-                <div style={{ position:'absolute', left:-20, top:4, width:9, height:9, borderRadius:'50%', background:t.done?'#059669':t.dk<todayStr?'#D97706':T.border, border:`2px solid ${t.done?'#059669':t.dk<todayStr?'#D97706':T.borderStrong}`, flexShrink:0 }} />
-                <div style={{ flex:1 }}>
-                  <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-                    <span style={{ fontSize:11, color:T.faint, minWidth:78, fontVariantNumeric:'tabular-nums' }}>{t.dk}</span>
-                    <span style={{ fontSize:13, color:t.done?T.muted:T.text, textDecoration:t.done?'line-through':'none' }}>{t.text}</span>
-                    {t.done && <span style={{ fontSize:11, color:'#059669' }}>✓</span>}
-                    {!t.done && t.dk<todayStr && <span style={{ fontSize:10, color:'#D97706', fontWeight:700 }}>OVERDUE</span>}
+      {/* Main content: timeline + sidebar */}
+      <div style={{ display:'flex', gap:20, flexWrap:'wrap', padding:'0 4px' }}>
+
+        {/* Timeline */}
+        <div style={{ flex:'1 1 380px', minWidth:260 }}>
+          <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:16 }}>TIMELINE</p>
+          <div style={{ position:'relative', paddingLeft:32 }}>
+            {linkedTasks.length > 0 && <div style={{ position:'absolute', left:9, top:8, bottom:8, width:2, background:T.border, borderRadius:1 }} />}
+            {linkedTasks.map((t) => {
+              const isDone = t.done, isOverdue = !t.done && t.dk < todayStr;
+              const dotColor = isDone ? '#059669' : isOverdue ? '#D97706' : T.border;
+              return (
+                <div key={t.id} style={{ display:'flex', gap:12, paddingBottom:16, position:'relative' }}>
+                  <div style={{ position:'absolute', left:-23, top:5, width:11, height:11, borderRadius:'50%', background:isDone?'#059669':isOverdue?'#FEF3C7':T.cardBg, border:`2px solid ${dotColor}`, flexShrink:0, zIndex:1 }}/>
+                  <div style={{ flex:1, background:isDone?T.surface:isOverdue?'#FFFBEB':T.cardBg, border:`1px solid ${isDone?T.border:isOverdue?'#FDE68A':T.border}`, borderRadius:8, padding:'9px 14px' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap' }}>
+                      <div>
+                        <p style={{ fontSize:13, fontWeight:isDone?400:600, color:isDone?T.muted:T.text, textDecoration:isDone?'line-through':'none', marginBottom:2 }}>{t.text}</p>
+                        <p style={{ fontSize:10.5, color:T.faint, fontVariantNumeric:'tabular-nums' }}>{t.dk}</p>
+                      </div>
+                      {isDone && <span style={{ fontSize:13, color:'#059669' }}>✓</span>}
+                      {isOverdue && <span style={{ fontSize:9, fontWeight:800, color:'#D97706', background:'#FEF3C7', padding:'2px 8px', borderRadius:10, letterSpacing:'0.05em' }}>OVERDUE</span>}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-            {/* Go-live milestone */}
-            <div style={{ display:'flex', gap:10, position:'relative' }}>
-              <div style={{ position:'absolute', left:-20, top:4, width:9, height:9, borderRadius:'50%', background:T.gold, border:`2px solid ${T.gold}` }} />
-              <div>
-                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                  <span style={{ fontSize:11, color:T.faint, minWidth:78 }}>{goal.goLiveDate}</span>
-                  <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>🎯 GO LIVE</span>
-                </div>
+              );
+            })}
+            {/* Go Live marker */}
+            <div style={{ display:'flex', gap:12, position:'relative' }}>
+              <div style={{ position:'absolute', left:-23, top:5, width:11, height:11, borderRadius:'50%', background:T.gold, border:`2px solid ${T.gold}`, zIndex:1 }}/>
+              <div style={{ flex:1, background:T.gold, borderRadius:8, padding:'9px 14px' }}>
+                <p style={{ fontSize:13, fontWeight:800, color:'#fff', letterSpacing:'0.01em' }}>🎯 GO LIVE · {goal.goLiveDate}</p>
               </div>
             </div>
           </div>
-          {linkedTasks.length===0 && <p style={{ fontSize:12, color:T.faint, fontStyle:'italic' }}>No tasks — add tasks to the task list and they'll appear here.</p>}
+          {linkedTasks.length===0 && <p style={{ fontSize:12, color:T.faint, fontStyle:'italic', paddingLeft:32 }}>No tasks linked yet.</p>}
         </div>
 
-        {/* Right: Info panel */}
-        <div style={{ flex:'0 0 210px', minWidth:190 }}>
-          <div style={{ border:`1px solid ${T.border}`, borderRadius:10, padding:18 }}>
-            <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:T.faint, marginBottom:16 }}>GOAL INFO</div>
+        {/* Sidebar */}
+        <div style={{ flex:'0 0 220px', minWidth:200, display:'flex', flexDirection:'column', gap:14 }}>
 
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>PROGRESS</div>
-              <div style={{ fontSize:20, fontWeight:800, color:T.heading }}>{prog.pct}%</div>
-              <div style={{ height:5, background:T.surface2, borderRadius:3, margin:'4px 0' }}>
-                <div style={{ height:'100%', background:cfg.color, width:`${prog.pct}%`, borderRadius:3 }} />
-              </div>
-              <div style={{ fontSize:11, color:T.muted }}>{prog.done}/{prog.total} tasks done</div>
+          {/* Progress card */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:'18px 20px' }}>
+            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:12 }}>PROGRESS</p>
+            <div style={{ display:'flex', alignItems:'baseline', gap:6, marginBottom:10 }}>
+              <span style={{ fontSize:36, fontWeight:900, fontFamily:"'ProximaNova Black',sans-serif", color:cfg.color, lineHeight:1 }}>{prog.pct}%</span>
+              <span style={{ fontSize:12, color:T.muted }}>{prog.done}/{prog.total} done</span>
             </div>
-
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>GO-LIVE DATE</div>
-              {showReschedule ? (
-                <div>
-                  <input type="date" value={newGoLive} onChange={e=>setNewGoLive(e.target.value)} style={{ ...inp, marginBottom:6 }} />
-                  <button onClick={handlePreviewReschedule} disabled={!newGoLive||newGoLive===goal.goLiveDate} style={{ width:'100%', padding:'7px', background:T.navy, border:'none', borderRadius:5, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit', marginBottom:4 }}>PREVIEW →</button>
-                  <button onClick={()=>{setShowReschedule(false);setNewGoLive(goal.goLiveDate);}} style={{ width:'100%', padding:'6px', background:'none', border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>{goal.goLiveDate}</div>
-                  {!goal.completed && <button onClick={()=>setShowReschedule(true)} style={{ fontSize:11, color:T.navy, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit', textDecoration:'underline' }}>Change date</button>}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>OWNER</div>
-              <select value={goal.owner} onChange={e=>setGoals(prev=>prev.map(g=>g.id===goal.id?{...g,owner:e.target.value,updatedAt:Date.now()}:g))}
-                style={{ ...inp, fontWeight:600, color:GOAL_OWNER_COLOR()[goal.owner]||T.text, cursor:'pointer' }}>
-                <option value="oloka">Oloka</option>
-                <option value="vanja">Vanja</option>
-                <option value="both">Both</option>
-              </select>
-            </div>
-
-            <div>
-              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>TEMPLATE</div>
-              <div style={{ fontSize:12, color:T.muted }}>{tpl?tpl.name:'None'}</div>
+            <div style={{ height:8, background:T.surface2||T.border, borderRadius:4, overflow:'hidden' }}>
+              <div style={{ height:'100%', background:vis.grad, width:`${prog.pct}%`, borderRadius:4, transition:'width 0.4s' }} />
             </div>
           </div>
+
+          {/* Date card */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:'18px 20px' }}>
+            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:10 }}>GO-LIVE DATE</p>
+            {showReschedule ? (
+              <div>
+                <input type="date" value={newGoLive} onChange={e=>setNewGoLive(e.target.value)} style={{ ...inp, marginBottom:8 }} />
+                <button onClick={handlePreviewReschedule} disabled={!newGoLive||newGoLive===goal.goLiveDate} style={{ width:'100%', padding:'8px', background:T.navy, border:'none', borderRadius:6, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit', marginBottom:6 }}>PREVIEW →</button>
+                <button onClick={()=>{setShowReschedule(false);setNewGoLive(goal.goLiveDate);}} style={{ width:'100%', padding:'7px', background:'none', border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize:16, fontWeight:800, color:T.heading, fontVariantNumeric:'tabular-nums', marginBottom:6 }}>{goal.goLiveDate}</p>
+                {!goal.completed && <button onClick={()=>setShowReschedule(true)} style={{ fontSize:11, color:T.navy, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit', fontWeight:700, textDecoration:'underline' }}>Change date</button>}
+              </div>
+            )}
+          </div>
+
+          {/* Owner card */}
+          <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:12, padding:'18px 20px' }}>
+            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:10 }}>OWNER</p>
+            <select value={goal.owner} onChange={e=>setGoals(prev=>prev.map(g=>g.id===goal.id?{...g,owner:e.target.value,updatedAt:Date.now()}:g))}
+              style={{ ...inp, fontWeight:700, fontSize:13, color:GOAL_OWNER_COLOR()[goal.owner]||T.text, cursor:'pointer', border:`1px solid ${T.border}` }}>
+              <option value="oloka">Oloka</option>
+              <option value="vanja">Vanja</option>
+              <option value="both">Both</option>
+            </select>
+          </div>
+
+          {/* Template badge */}
+          {tpl && (
+            <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 20px' }}>
+              <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:6 }}>TEMPLATE</p>
+              <p style={{ fontSize:12, fontWeight:600, color:T.muted }}>{tpl.name}</p>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Linked tasks */}
+      {linkedTasks.length>0 && (
+        <div style={{ marginTop:28, padding:'0 4px' }}>
+          <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:14 }}>LINKED TASKS</p>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {linkedTasks.map((t) => {
+              const isDone = t.done, isOverdue = !t.done && t.dk < todayStr;
+              return (
+                <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 100px 80px 90px', gap:12, alignItems:'center', background:T.cardBg, border:`1px solid ${isDone?T.border:isOverdue?'#FDE68A':T.border}`, borderRadius:10, padding:'11px 16px' }}>
+                  <span style={{ fontSize:12.5, fontWeight:600, color:isDone?T.muted:T.text, textDecoration:isDone?'line-through':'none' }}>{t.text}</span>
+                  <span style={{ fontSize:11, color:T.faint, fontVariantNumeric:'tabular-nums' }}>{t.dk}</span>
+                  <span style={{ fontSize:11, fontWeight:700, color:GOAL_OWNER_COLOR()[t.owner]||T.muted }}>{GOAL_OWNER_LABEL[t.owner]||t.owner}</span>
+                  <span style={{ fontSize:10, fontWeight:800, letterSpacing:'0.04em',
+                    color:isDone?'#059669':isOverdue?'#D97706':T.faint,
+                    background:isDone?'#DCFCE7':isOverdue?'#FEF3C7':T.surface,
+                    border:`1px solid ${isDone?'#BBF7D0':isOverdue?'#FDE68A':T.border}`,
+                    borderRadius:20, padding:'3px 10px', textAlign:'center',
+                  }}>{isDone?'Done':isOverdue?'Overdue':'Pending'}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Reschedule preview modal */}
       {reschedulePreview && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={()=>setReschedulePreview(null)}>
-          <div style={{ background:T.bg, borderRadius:12, padding:28, maxWidth:500, width:'100%', maxHeight:'80vh', overflowY:'auto' }} onClick={e=>e.stopPropagation()}>
-            <h3 style={{ fontSize:16, fontWeight:800, color:T.heading, marginBottom:6 }}>Reschedule Preview</h3>
-            <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>
-              Moving {reschedulePreview.deltaDays>0?'+':''}{reschedulePreview.deltaDays} days · {reschedulePreview.items.length} task{reschedulePreview.items.length!==1?'s':''} will move.
-            </p>
+          <div style={{ background:T.bg, borderRadius:14, padding:28, maxWidth:500, width:'100%', maxHeight:'80vh', overflowY:'auto' }} onClick={e=>e.stopPropagation()}>
+            <h3 style={{ fontSize:16, fontWeight:800, color:T.heading, marginBottom:6, fontFamily:"'ProximaNova Black',sans-serif" }}>Reschedule Preview</h3>
+            <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>Moving {reschedulePreview.deltaDays>0?'+':''}{reschedulePreview.deltaDays} days · {reschedulePreview.items.length} task{reschedulePreview.items.length!==1?'s':''} will move.</p>
             {reschedulePreview.items.length>0 ? (
-              <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden', marginBottom:20 }}>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 88px 88px', gap:8, padding:'8px 12px', background:T.surface, fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
-                  <span>TASK</span><span>OLD DATE</span><span>NEW DATE</span>
+              <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden', marginBottom:20 }}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 90px 90px', gap:8, padding:'8px 14px', background:T.surface, fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
+                  <span>TASK</span><span>FROM</span><span>TO</span>
                 </div>
                 {reschedulePreview.items.map((mv,i) => (
-                  <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 88px 88px', gap:8, padding:'10px 12px', borderTop:`1px solid ${T.border}`, fontSize:12 }}>
+                  <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 90px 90px', gap:8, padding:'10px 14px', borderTop:`1px solid ${T.border}`, fontSize:12 }}>
                     <span style={{ color:T.text }}>{mv.task.text}</span>
-                    <span style={{ color:T.faint }}>{mv.oldDk}</span>
-                    <span style={{ color:T.text, fontWeight:600 }}>{mv.newDk}</span>
+                    <span style={{ color:T.faint, fontVariantNumeric:'tabular-nums' }}>{mv.oldDk}</span>
+                    <span style={{ color:T.navy, fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{mv.newDk}</span>
                   </div>
                 ))}
               </div>
             ) : <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>No incomplete tasks to move.</p>}
             <p style={{ fontSize:11, color:T.urgent, marginBottom:16 }}>⚠ This cannot be undone.</p>
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={()=>setReschedulePreview(null)} style={{ flex:1, padding:'10px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
-              <button onClick={handleConfirmReschedule} style={{ flex:2, padding:'10px', background:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>MOVE TASKS</button>
+              <button onClick={()=>setReschedulePreview(null)} style={{ flex:1, padding:'10px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+              <button onClick={handleConfirmReschedule} style={{ flex:2, padding:'10px', background:T.navy, border:'none', borderRadius:8, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>MOVE TASKS</button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Task table */}
-      {linkedTasks.length>0 && (
-        <div style={{ marginTop:32 }}>
-          <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:T.faint, marginBottom:10 }}>LINKED TASKS</div>
-          <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 96px 76px 80px', gap:8, padding:'8px 16px', background:T.surface, fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
-              <span>TASK</span><span>DATE</span><span>OWNER</span><span>STATUS</span>
-            </div>
-            {linkedTasks.map((t,i) => (
-              <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 96px 76px 80px', gap:8, padding:'10px 16px', borderTop:`1px solid ${T.border}`, fontSize:12 }}>
-                <span style={{ color:t.done?T.muted:T.text, textDecoration:t.done?'line-through':'none' }}>{t.text}</span>
-                <span style={{ color:T.faint, fontVariantNumeric:'tabular-nums' }}>{t.dk}</span>
-                <span style={{ color:GOAL_OWNER_COLOR()[t.owner]||T.muted, fontWeight:600 }}>{GOAL_OWNER_LABEL[t.owner]||t.owner}</span>
-                <span style={{ fontWeight:600, fontSize:11, color:t.done?'#059669':t.dk<todayStr?'#D97706':T.faint }}>
-                  {t.done?'Done':t.dk<todayStr?'Overdue':'Pending'}
-                </span>
-              </div>
-            ))}
           </div>
         </div>
       )}
