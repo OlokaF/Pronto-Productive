@@ -17056,7 +17056,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           onAddToTasks={onAdd}
         />}
         {tab === "gcalendar" && <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={chatAs} />}
-        {tab === "goals" && <GoalsTab goals={goals} setGoals={setGoals} goalTemplates={goalTemplates} setGoalTemplates={setGoalTemplates} tasksByDate={tasksByDate} setTasksByDate={setTasksByDate} />}
+        {tab === "goals" && <GoalsTab goals={goals} setGoals={setGoals} goalTemplates={goalTemplates} setGoalTemplates={setGoalTemplates} tasksByDate={tasksByDate} setTasksByDate={setTasksByDate} onJumpToTask={dk=>{ setSelDate(new Date(dk+'T12:00:00')); setTab('tasks'); }} />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
         {tab === "emails" && <EmailPipelineView
@@ -18498,24 +18498,17 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
 
   // Task backlog helpers
   const allTasks = React.useMemo(() => {
-    const out = [];
-    Object.entries(tasksByDate||{}).forEach(([dk,tasks]) => {
-      (tasks||[]).forEach(t => { if (!t._deleted) out.push({...t, dateKey:dk}); });
-    });
-    return out;
-  }, [tasksByDate]);
+    return ((tasksByDate||{})[selDk]||[]).filter(t => !t._deleted);
+  }, [tasksByDate, selDk]);
 
   const filteredTasks = React.useMemo(() => {
-    let list = allTasks;
-    if (taskSearch) list = list.filter(t => (t.text||'').toLowerCase().includes(taskSearch.toLowerCase()));
-    if (taskFilter === 'done')        list = list.filter(t => t.done);
-    else if (taskFilter === 'scheduled') list = list.filter(t => !t.done);
-    else if (taskFilter === 'unscheduled') list = list.filter(t => !t.done && t.dateKey < todayDk);
-    const overdue  = list.filter(t => !t.done && t.dateKey < todayDk).sort((a,b)=>a.dateKey<b.dateKey?-1:1);
-    const upcoming = list.filter(t => !t.done && t.dateKey >= todayDk).sort((a,b)=>a.dateKey<b.dateKey?-1:1);
-    const done     = list.filter(t => t.done);
-    return { overdue, upcoming, done };
-  }, [allTasks, taskSearch, taskFilter, todayDk]);
+    const q = taskSearch.toLowerCase();
+    const matches = (t) => !q || (t.text||'').toLowerCase().includes(q) || (t.subtasks||[]).some(s => (s.text||'').toLowerCase().includes(q));
+    const list = allTasks.filter(matches);
+    if (taskFilter === 'unscheduled') return { unscheduled: list.filter(t => !t.done), done: [] };
+    if (taskFilter === 'done')        return { unscheduled: [], done: list.filter(t => t.done) };
+    return { unscheduled: list.filter(t => !t.done), done: list.filter(t => t.done) };
+  }, [allTasks, taskSearch, taskFilter]);
 
   // Mini calendar helpers
   const miniDays = () => {
@@ -18641,44 +18634,101 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
         <div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
             <span style={{fontSize:10,fontWeight:800,color:T.ink,letterSpacing:'0.08em'}}>TASK BACKLOG</span>
-            <span style={{fontSize:10,color:T.muted}}>{filteredTasks.upcoming.length} upcoming</span>
+            <span style={{fontSize:10,color:T.muted}}>{filteredTasks.unscheduled.length} to do</span>
           </div>
+
+          {/* Break / Lunch quick-chips */}
+          <div style={{display:'flex',gap:5,marginBottom:10,flexWrap:'wrap'}}>
+            {[
+              {emoji:'🍽',name:'Lunch',sub:'30 min',durationMs:1800000,color:'#f59e0b'},
+              {emoji:'☕',name:'Break',sub:'15 min',durationMs:900000,color:'#6366f1'},
+              {emoji:'⚡',name:'Break',sub:'10 min',durationMs:600000,color:'#10b981'},
+            ].map((chip,i)=>(
+              <div key={i}
+                draggable
+                onDragStart={ev=>{ ev.dataTransfer.effectAllowed='copy'; ev.dataTransfer.setData('application/x-pronto-backlog-task', JSON.stringify({text:chip.emoji+' '+chip.name+' ('+chip.sub+')',dateKey:selDk,category:'',notes:'',colorId:'',durationMs:chip.durationMs})); }}
+                style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'5px 8px',borderRadius:8,border:`1.5px dashed ${chip.color}66`,background:chip.color+'12',cursor:'grab',userSelect:'none',minWidth:62}}>
+                <span style={{fontSize:14,lineHeight:1}}>{chip.emoji}</span>
+                <span style={{fontSize:9,fontWeight:800,color:chip.color,lineHeight:1.3,marginTop:2,whiteSpace:'nowrap'}}>{chip.name}</span>
+                <span style={{fontSize:8,color:chip.color+'bb',fontWeight:600}}>{chip.sub}</span>
+              </div>
+            ))}
+          </div>
+
           <div style={{position:'relative',marginBottom:8}}>
             <input value={taskSearch} onChange={e=>setTaskSearch(e.target.value)} placeholder="Search tasks..."
               style={{width:'100%',padding:'7px 10px 7px 28px',border:`1px solid ${T.border}`,borderRadius:8,fontSize:11,fontFamily:'inherit',background:T.surface,color:T.ink,boxSizing:'border-box',outline:'none'}}/>
             <span style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',fontSize:11,color:T.faint,pointerEvents:'none'}}>🔍</span>
           </div>
+
           <div style={{display:'flex',gap:4,marginBottom:10}}>
-            {['all','unscheduled','scheduled','done'].map(f=>(
+            {['all','unscheduled','done'].map(f=>(
               <button key={f} onClick={()=>setTaskFilter(f)}
                 style={{padding:'4px 8px',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,
                   background:taskFilter===f?T.accent:'transparent',color:taskFilter===f?'#fff':T.muted}}>
-                {f.charAt(0).toUpperCase()+f.slice(1)}
+                {f==='all'?'All':f==='unscheduled'?'Unscheduled':'Done'}
               </button>
             ))}
           </div>
-          {filteredTasks.upcoming.length>0 && (
-            <div>
-              <div style={{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:'0.1em',marginBottom:6}}>UPCOMING — drag to timeline or click to add</div>
-              {filteredTasks.upcoming.slice(0,10).map(t=>{
-                const daysAway=Math.round((new Date(t.dateKey)-new Date(todayDk))/(24*3600*1000));
-                const dLabel=daysAway===0?'Today':daysAway===1?'Tomorrow':new Date(t.dateKey+'T12:00:00').toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short'});
-                return (
-                  <div key={t.id}
+
+          {/* Unscheduled tasks */}
+          {filteredTasks.unscheduled.length>0 && (
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:'0.1em',marginBottom:6}}>UNSCHEDULED — drag to timeline</div>
+              {filteredTasks.unscheduled.map(t=>(
+                <div key={t.id}>
+                  <div
                     draggable
-                    onDragStart={ev=>{ ev.dataTransfer.effectAllowed='copy'; ev.dataTransfer.setData('application/x-pronto-backlog-task', JSON.stringify({text:t.text,dateKey:t.dateKey,category:t.category,notes:t.notes||'',colorId:CAT_COLOR_ID[t.category]||''})); }}
-                    style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,padding:'5px 8px',borderRadius:7,background:T.surface,border:`1px solid ${T.border}`,cursor:'grab'}}
-                    onClick={()=>setModal({edit:null,prefill:{title:t.text,date:t.dateKey,colorId:CAT_COLOR_ID[t.category]||'',description:t.notes||''}})}>
+                    onDragStart={ev=>{ ev.dataTransfer.effectAllowed='copy'; ev.dataTransfer.setData('application/x-pronto-backlog-task', JSON.stringify({text:t.text,dateKey:selDk,category:t.category,notes:t.notes||'',colorId:CAT_COLOR_ID[t.category]||''})); }}
+                    style={{display:'flex',alignItems:'center',gap:6,marginBottom:4,padding:'5px 8px',borderRadius:7,background:T.surface,border:`1px solid ${T.border}`,cursor:'grab'}}
+                    onClick={()=>setModal({edit:null,prefill:{title:t.text,date:selDk,colorId:CAT_COLOR_ID[t.category]||'',description:t.notes||''}})}>
                     <span style={{fontSize:10,color:T.faint,flexShrink:0}}>⠿</span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:11,fontWeight:600,color:T.ink,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{t.text}</div>
-                      <div style={{fontSize:9,color:T.faint}}>{t.category}</div>
+                      {t.category && <div style={{fontSize:9,color:T.faint}}>{t.category}</div>}
                     </div>
-                    <span style={{fontSize:9,color:T.muted,whiteSpace:'nowrap'}}>{dLabel}</span>
                   </div>
-                );
-              })}
+                  {(t.subtasks||[]).filter(s=>!s.done).map(s=>(
+                    <div key={s.id}
+                      draggable
+                      onDragStart={ev=>{ ev.dataTransfer.effectAllowed='copy'; ev.dataTransfer.setData('application/x-pronto-backlog-task', JSON.stringify({text:t.text+' › '+s.text,dateKey:selDk,category:t.category,notes:'',colorId:CAT_COLOR_ID[t.category]||''})); }}
+                      style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,marginLeft:16,padding:'4px 8px',borderRadius:6,background:T.surface,border:`1px solid ${T.border}44`,cursor:'grab'}}
+                      onClick={()=>setModal({edit:null,prefill:{title:t.text+' › '+s.text,date:selDk,colorId:CAT_COLOR_ID[t.category]||'',description:''}})}>
+                      <span style={{fontSize:8,color:T.faint,flexShrink:0}}>↳</span>
+                      <div style={{flex:1,minWidth:0,fontSize:10,fontWeight:500,color:T.muted,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{s.text}</div>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
+          )}
+
+          {/* Done/Scheduled tasks */}
+          {filteredTasks.done.length>0 && (
+            <div>
+              <div style={{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:'0.1em',marginBottom:6}}>SCHEDULED & DONE</div>
+              {filteredTasks.done.map(t=>(
+                <div key={t.id}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4,padding:'5px 8px',borderRadius:7,background:T.surface+'88',border:`1px solid ${T.border}`,opacity:0.65}}>
+                    <span style={{fontSize:10,color:T.faint,flexShrink:0}}>✓</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,fontWeight:600,color:T.muted,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',textDecoration:'line-through'}}>{t.text}</div>
+                    </div>
+                  </div>
+                  {(t.subtasks||[]).filter(s=>s.done).map(s=>(
+                    <div key={s.id}
+                      style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,marginLeft:16,padding:'4px 8px',borderRadius:6,opacity:0.55}}>
+                      <span style={{fontSize:8,color:T.faint,flexShrink:0}}>↳</span>
+                      <div style={{flex:1,minWidth:0,fontSize:10,fontWeight:500,color:T.faint,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',textDecoration:'line-through'}}>{s.text}</div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {filteredTasks.unscheduled.length===0 && filteredTasks.done.length===0 && (
+            <div style={{fontSize:11,color:T.faint,textAlign:'center',padding:'16px 0'}}>No tasks for this day</div>
           )}
         </div>
       </div>
@@ -18785,7 +18835,7 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                   const mins = snappedMins % 60;
                   // Build ISO with local offset so the date is correct in GCal (avoids UTC day-shift)
                   const startD = new Date(`${selDk}T${String(Math.min(hour,23)).padStart(2,'0')}:${String(Math.min(mins,59)).padStart(2,'0')}:00`);
-                  const endD   = new Date(startD.getTime() + 1800000);
+                  const endD   = new Date(startD.getTime() + (data.durationMs || 1800000));
                   const offsetMin = -startD.getTimezoneOffset();
                   const sign = offsetMin>=0?'+':'-';
                   const oh = String(Math.floor(Math.abs(offsetMin)/60)).padStart(2,'0');
@@ -18834,7 +18884,7 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                       onDoubleClick={ev=>{ ev.stopPropagation(); setModal({edit:e,prefill:null}); }}
                       style={{
                         position:'absolute', left:70, right:0, top:pos.topPx, height:pos.heightPx,
-                        background:color, borderRadius:6, padding:'4px 40px 12px 10px',
+                        background:color, borderRadius:6, padding:pos.heightPx<=36?'3px 36px 3px 10px':'4px 40px 12px 10px',
                         cursor:isDrag?'grabbing':isResize?'ns-resize':'grab', overflow:'hidden', zIndex:(isDrag||isResize)?10:2,
                         boxShadow:(isDrag||isResize)?'0 4px 16px rgba(0,0,0,0.22)':'0 1px 3px rgba(0,0,0,0.1)',
                         transition:(isDrag||isResize)?'none':'box-shadow 0.1s',
@@ -18842,13 +18892,19 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
                       }}>
                       <div style={{display:'flex',alignItems:'flex-start',gap:8,height:'100%'}}>
                         <div style={{minWidth:0,flex:1}}>
-                          <div style={{fontSize:11,fontWeight:800,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                            {isDrag&&pos.newStartLabel ? `⟨ ${pos.newStartLabel} ⟩` : timeRange}
-                          </div>
-                          {pos.heightPx>36 && (
-                            <div style={{fontSize:12,fontWeight:700,color:'rgba(255,255,255,0.95)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                              {catIcon(e.extendedProperties?.private?.category)} {e.summary||'(no title)'}
+                          {pos.heightPx<=36 ? (
+                            <div style={{fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                              {isDrag&&pos.newStartLabel ? `⟨ ${pos.newStartLabel} ⟩` : `${timeRange} · ${e.summary||'(no title)'}`}
                             </div>
+                          ) : (
+                            <>
+                              <div style={{fontSize:11,fontWeight:800,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                                {isDrag&&pos.newStartLabel ? `⟨ ${pos.newStartLabel} ⟩` : timeRange}
+                              </div>
+                              <div style={{fontSize:12,fontWeight:700,color:'rgba(255,255,255,0.95)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                                {catIcon(e.extendedProperties?.private?.category)} {e.summary||'(no title)'}
+                              </div>
+                            </>
                           )}
                         </div>
                         <button onClick={ev=>{ev.stopPropagation();setModal({edit:e,prefill:null});}}
@@ -22763,10 +22819,11 @@ function GoalStatusPill({ status }) {
 }
 
 // ── Main GoalsTab ─────────────────────────────────────────────────────────────
-function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDate, setTasksByDate }) {
+function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDate, setTasksByDate, onJumpToTask }) {
   const [subView, setSubView] = useState('list');
   const [selectedId, setSelectedId] = useState(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [templateInitialOpen, setTemplateInitialOpen] = useState(null);
 
   const selectedGoal = (goals || []).find(g => g.id === selectedId);
 
@@ -22800,6 +22857,8 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
       setGoals={setGoals}
       goalTemplates={goalTemplates || DEFAULT_GOAL_TEMPLATES}
       onBack={() => { setSubView('list'); setSelectedId(null); }}
+      onJumpToTask={onJumpToTask}
+      onViewTemplate={tplId => { setTemplateInitialOpen(tplId); setSubView('templates'); }}
     />;
   }
 
@@ -22807,7 +22866,8 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
     return <GoalTemplatesView
       goalTemplates={goalTemplates || DEFAULT_GOAL_TEMPLATES}
       setGoalTemplates={setGoalTemplates}
-      onBack={() => setSubView('list')}
+      onBack={() => { setSubView('list'); setTemplateInitialOpen(null); }}
+      initialOpenId={templateInitialOpen}
     />;
   }
 
@@ -22976,11 +23036,14 @@ function GoalCreateView({ goalTemplates, onCancel, onCreated }) {
   const [preview, setPreview] = useState([]);
 
   const todayStr = isoDate(new Date());
-  const inp = { width:'100%', padding:'10px 12px', border:`1px solid ${T.border}`, borderRadius:7, fontSize:13, fontFamily:'inherit', background:T.bg, color:T.text, boxSizing:'border-box' };
-  const lbl = { fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', display:'block', marginBottom:5 };
+  const selVis = goalTplVisual(templateId, (goalTemplates||[]).find(t=>t.id===templateId)?.name||'');
+  const canGenerate = name.trim() && goLiveDate;
+
+  const inp = { width:'100%', padding:'11px 14px', border:`1.5px solid ${T.border}`, borderRadius:9, fontSize:13, fontFamily:'inherit', background:T.cardBg, color:T.text, boxSizing:'border-box', outline:'none', transition:'border-color 0.15s' };
+  const lbl = { fontSize:10, fontWeight:800, color:T.faint, letterSpacing:'0.1em', display:'block', marginBottom:7 };
 
   const handleGenerate = () => {
-    if (!name.trim() || !goLiveDate) return;
+    if (!canGenerate) return;
     const tpl = (goalTemplates||[]).find(t => t.id === templateId);
     const steps = tpl ? [...tpl.steps].sort((a,b) => b.daysBefore - a.daysBefore) : [];
     setPreview(steps.map(s => ({ ...s, date: calcGoalTaskDate(goLiveDate, s.daysBefore) })));
@@ -23001,74 +23064,137 @@ function GoalCreateView({ goalTemplates, onCancel, onCreated }) {
 
   if (step === 'preview') {
     const tpl = (goalTemplates||[]).find(t => t.id === templateId);
+    const vis = goalTplVisual(templateId, tpl?.name||'');
     const hasToday = preview.some(s => s.date === todayStr);
     return (
-      <div style={{ padding:'24px 28px', maxWidth:640 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
-          <button onClick={()=>setStep('form')} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
-          <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>Plan Preview</h2>
+      <div style={{ maxWidth:660 }}>
+        {/* Preview header banner */}
+        <div style={{ background:vis.grad, borderRadius:14, padding:'22px 26px', marginBottom:20, position:'relative', overflow:'hidden' }}>
+          <div style={{ position:'absolute', right:20, top:'50%', transform:'translateY(-50%)', fontSize:64, opacity:0.18, pointerEvents:'none' }}>{vis.icon}</div>
+          <button onClick={()=>setStep('form')} style={{ background:'rgba(255,255,255,0.2)', border:'none', color:'#fff', fontSize:11, cursor:'pointer', padding:'4px 12px', borderRadius:20, fontFamily:'inherit', fontWeight:700, letterSpacing:'0.06em', marginBottom:12, display:'inline-block' }}>← BACK</button>
+          <h2 style={{ fontSize:22, fontWeight:900, color:'#fff', fontFamily:"'210 Supersize Black',sans-serif", letterSpacing:'-0.02em', marginBottom:4 }}>{name}</h2>
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+            <span style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,0.8)', background:'rgba(0,0,0,0.2)', borderRadius:20, padding:'3px 10px' }}>🎯 {goLiveDate}</span>
+            <span style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,0.8)', background:'rgba(0,0,0,0.2)', borderRadius:20, padding:'3px 10px' }}>{GOAL_OWNER_LABEL[owner]}</span>
+            {tpl && <span style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,0.8)', background:'rgba(0,0,0,0.2)', borderRadius:20, padding:'3px 10px' }}>{tpl.name}</span>}
+          </div>
         </div>
-        <div style={{ background:T.surface, borderRadius:8, padding:'14px 18px', marginBottom:16 }}>
-          <div style={{ fontSize:15, fontWeight:800, color:T.heading }}>{name}</div>
-          <div style={{ fontSize:12, color:T.muted, marginTop:3 }}>Go-live: {goLiveDate} · {GOAL_OWNER_LABEL[owner]} · {tpl?.name||'No template'}</div>
-        </div>
+
         {preview.length === 0 ? (
-          <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>No template steps — goal will be a milestone. Add tasks manually after creating.</p>
+          <p style={{ fontSize:12, color:T.muted, marginBottom:16, padding:'0 4px' }}>No template steps — goal will be a milestone. Add tasks manually after creating.</p>
         ) : (
-          <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden', marginBottom:16 }}>
+          <div style={{ borderRadius:12, overflow:'hidden', border:`1px solid ${T.border}`, marginBottom:16 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'90px 1fr 70px', gap:0, padding:'9px 16px', background:T.surface, fontSize:9, fontWeight:800, color:T.faint, letterSpacing:'0.1em' }}>
+              <span>DATE</span><span>TASK</span><span>OWNER</span>
+            </div>
             {preview.map((s, i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderTop:i>0?`1px solid ${T.border}`:'none' }}>
-                <span style={{ fontSize:11, color:T.faint, minWidth:86, fontVariantNumeric:'tabular-nums' }}>{s.date}</span>
-                <span style={{ flex:1, fontSize:13, color:T.text }}>{s.name}</span>
-                <span style={{ fontSize:11, color:GOAL_OWNER_COLOR()[s.owner]||T.muted, fontWeight:600 }}>{GOAL_OWNER_LABEL[s.owner]||''}</span>
+              <div key={i} style={{ display:'grid', gridTemplateColumns:'90px 1fr 70px', gap:0, padding:'11px 16px', borderTop:`1px solid ${T.border}`, background:T.cardBg }}>
+                <span style={{ fontSize:11, color:T.faint, fontVariantNumeric:'tabular-nums', paddingRight:8 }}>{s.date}</span>
+                <span style={{ fontSize:12.5, fontWeight:500, color:T.text }}>{s.name}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:GOAL_OWNER_COLOR()[s.owner]||T.muted }}>{GOAL_OWNER_LABEL[s.owner]||''}</span>
               </div>
             ))}
-            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderTop:`1px solid ${T.border}`, background:T.surface }}>
-              <span style={{ fontSize:11, color:T.faint, minWidth:86 }}>{goLiveDate}</span>
-              <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>🎯 {name} — GO LIVE</span>
+            <div style={{ display:'grid', gridTemplateColumns:'90px 1fr', gap:0, padding:'11px 16px', borderTop:`2px solid ${T.gold}`, background:T.gold+'15' }}>
+              <span style={{ fontSize:11, color:T.gold, fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{goLiveDate}</span>
+              <span style={{ fontSize:12.5, fontWeight:800, color:T.gold }}>🎯 GO LIVE</span>
             </div>
           </div>
         )}
         {hasToday && (
-          <div style={{ background:T.highSoft, border:`1px solid ${T.gold}`, borderRadius:7, padding:'10px 14px', fontSize:12, color:T.gold, marginBottom:14, fontWeight:600 }}>
-            ⚠ Some tasks were compressed to today (past dates or weekend).
+          <div style={{ background:'#FFFBEB', border:`1px solid ${T.gold}`, borderRadius:9, padding:'10px 16px', fontSize:11, color:'#92400E', marginBottom:16, fontWeight:600 }}>
+            ⚠ Some tasks were compressed to today (past dates or weekends skipped).
           </div>
         )}
         <div style={{ display:'flex', gap:10 }}>
-          <button onClick={onCancel} style={{ flex:1, padding:'11px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
-          <button onClick={handleConfirm} style={{ flex:2, padding:'11px', background:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>CREATE GOAL + ADD TASKS</button>
+          <button onClick={onCancel} style={{ flex:1, padding:'12px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:9, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+          <button onClick={handleConfirm} style={{ flex:2, padding:'12px', background:T.navy, border:'none', borderRadius:9, fontSize:12, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.03em' }}>CREATE GOAL + ADD TASKS →</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ padding:'24px 28px', maxWidth:500 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:24 }}>
-        <button onClick={onCancel} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
-        <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>New Goal</h2>
+    <div style={{ maxWidth:580 }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:28 }}>
+        <button onClick={onCancel} style={{ display:'flex', alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:'50%', background:T.surface, border:`1px solid ${T.border}`, color:T.muted, fontSize:16, cursor:'pointer', padding:0, flexShrink:0 }}>←</button>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif", letterSpacing:'-0.02em', lineHeight:1.1 }}>New Goal</h2>
+          <p style={{ fontSize:11, color:T.muted, marginTop:2 }}>Pick a template, set your go-live date, and we'll build the plan.</p>
+        </div>
       </div>
-      <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-        <div><label style={lbl}>GOAL NAME *</label><input value={name} onChange={e=>setName(e.target.value)} style={inp} placeholder="e.g. October Customer Promotion" /></div>
-        <div><label style={lbl}>GO-LIVE DATE *</label><input type="date" value={goLiveDate} onChange={e=>setGoLiveDate(e.target.value)} style={inp} min={todayStr} /></div>
+
+      <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+        {/* Goal name */}
+        <div>
+          <label style={lbl}>GOAL NAME *</label>
+          <input value={name} onChange={e=>setName(e.target.value)} style={inp} placeholder="e.g. October Customer Promotion"
+            onFocus={e=>e.target.style.borderColor=T.navy} onBlur={e=>e.target.style.borderColor=T.border} />
+        </div>
+
+        {/* Go-live date */}
+        <div>
+          <label style={lbl}>GO-LIVE DATE *</label>
+          <input type="date" value={goLiveDate} onChange={e=>setGoLiveDate(e.target.value)} style={inp} min={todayStr}
+            onFocus={e=>e.target.style.borderColor=T.navy} onBlur={e=>e.target.style.borderColor=T.border} />
+        </div>
+
+        {/* Template picker */}
         <div>
           <label style={lbl}>TEMPLATE</label>
-          <select value={templateId} onChange={e=>setTemplateId(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
-            <option value="">No template (milestone only)</option>
-            {(goalTemplates||[]).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(110px, 1fr))', gap:8 }}>
+            {(goalTemplates||[]).map(t => {
+              const vis = goalTplVisual(t.id, t.name);
+              const isSel = templateId === t.id;
+              return (
+                <div key={t.id} onClick={()=>setTemplateId(t.id)}
+                  style={{ borderRadius:10, overflow:'hidden', border:`2px solid ${isSel?T.navy:T.border}`, cursor:'pointer', background:T.cardBg, position:'relative', transition:'border-color 0.12s' }}
+                  onMouseEnter={e=>{ if(!isSel) e.currentTarget.style.borderColor=T.muted; }}
+                  onMouseLeave={e=>{ if(!isSel) e.currentTarget.style.borderColor=T.border; }}>
+                  <div style={{ height:38, background:vis.grad, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>{vis.icon}</div>
+                  <div style={{ padding:'7px 8px 9px' }}>
+                    <div style={{ fontSize:10, fontWeight:800, color:isSel?T.navy:T.text, lineHeight:1.3 }}>{t.name}</div>
+                    <div style={{ fontSize:9, color:T.faint, marginTop:2 }}>{t.steps.length} step{t.steps.length!==1?'s':''}</div>
+                  </div>
+                  {isSel && <div style={{ position:'absolute', top:6, right:6, width:16, height:16, borderRadius:'50%', background:T.navy, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span style={{ fontSize:8, color:'#fff', fontWeight:900, lineHeight:1 }}>✓</span>
+                  </div>}
+                </div>
+              );
+            })}
+            <div onClick={()=>setTemplateId('')}
+              style={{ borderRadius:10, overflow:'hidden', border:`2px solid ${templateId===''?T.navy:T.border}`, cursor:'pointer', background:T.cardBg, position:'relative' }}
+              onMouseEnter={e=>{ if(templateId!=='') e.currentTarget.style.borderColor=T.muted; }}
+              onMouseLeave={e=>{ if(templateId!=='') e.currentTarget.style.borderColor=T.border; }}>
+              <div style={{ height:38, background:'linear-gradient(135deg,#E5E7EB,#D1D5DB)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>🎯</div>
+              <div style={{ padding:'7px 8px 9px' }}>
+                <div style={{ fontSize:10, fontWeight:800, color:templateId===''?T.navy:T.text, lineHeight:1.3 }}>None</div>
+                <div style={{ fontSize:9, color:T.faint, marginTop:2 }}>Milestone only</div>
+              </div>
+              {templateId==='' && <div style={{ position:'absolute', top:6, right:6, width:16, height:16, borderRadius:'50%', background:T.navy, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <span style={{ fontSize:8, color:'#fff', fontWeight:900, lineHeight:1 }}>✓</span>
+              </div>}
+            </div>
+          </div>
         </div>
+
+        {/* Goal owner */}
         <div>
           <label style={lbl}>GOAL OWNER</label>
-          <select value={owner} onChange={e=>setOwner(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
-            <option value="oloka">Oloka</option>
-            <option value="vanja">Vanja</option>
-            <option value="both">Both</option>
-          </select>
+          <div style={{ display:'flex', gap:8 }}>
+            {[['oloka','Oloka',T.oloka],['vanja','Vanja',T.vanja],['both','Both',T.navy]].map(([val,label,color])=>(
+              <div key={val} onClick={()=>setOwner(val)}
+                style={{ flex:1, padding:'10px 12px', borderRadius:9, border:`2px solid ${owner===val?color:T.border}`, background:owner===val?color+'12':T.cardBg, cursor:'pointer', textAlign:'center', transition:'border-color 0.12s' }}>
+                <div style={{ fontSize:12, fontWeight:800, color:owner===val?color:T.muted }}>{label}</div>
+              </div>
+            ))}
+          </div>
         </div>
-        <button onClick={handleGenerate} disabled={!name.trim()||!goLiveDate}
-          style={{ padding:'12px', background:(!name.trim()||!goLiveDate)?T.border:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:(!name.trim()||!goLiveDate)?T.muted:'#fff', cursor:(!name.trim()||!goLiveDate)?'default':'pointer', fontFamily:'inherit' }}>
-          GENERATE PLAN →
+
+        {/* CTA */}
+        <button onClick={handleGenerate} disabled={!canGenerate}
+          style={{ padding:'14px', background:canGenerate?T.navy:T.border, border:'none', borderRadius:10, fontSize:13, fontWeight:800, color:canGenerate?'#fff':T.muted, cursor:canGenerate?'pointer':'default', fontFamily:'inherit', letterSpacing:'0.04em', marginTop:4 }}>
+          {canGenerate ? `GENERATE PLAN → ${selVis.icon}` : 'GENERATE PLAN →'}
         </button>
       </div>
     </div>
@@ -23076,12 +23202,14 @@ function GoalCreateView({ goalTemplates, onCancel, onCreated }) {
 }
 
 // ── Goal Detail View ──────────────────────────────────────────────────────────
-function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTemplates, onBack }) {
+function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTemplates, onBack, onJumpToTask, onViewTemplate }) {
   const [editingName, setEditingName] = useState(false);
   const [nameVal, setNameVal] = useState(goal.name);
   const [showReschedule, setShowReschedule] = useState(false);
   const [newGoLive, setNewGoLive] = useState(goal.goLiveDate);
   const [reschedulePreview, setReschedulePreview] = useState(null);
+  const [editingTasks, setEditingTasks] = useState(false);
+  const [taskEdits, setTaskEdits] = useState({});
 
   const status = goalStatus(goal, tasksByDate);
   const cfg = GOAL_STATUS_CFG[status];
@@ -23170,6 +23298,44 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
     setGoals(prev => prev.map(g => g.id!==goal.id?g : {...g, taskRefs:(g.taskRefs||[]).map(r=>r.id===t.id?{...r,dk:todayStr}:r), updatedAt:Date.now()}));
   };
 
+  const startEditingTasks = () => {
+    const edits = {};
+    for (const t of linkedTasks) edits[t.id] = { text: t.text, dk: t.dk };
+    setTaskEdits(edits);
+    setEditingTasks(true);
+  };
+
+  const handleSaveTaskEdits = () => {
+    setTasksByDate(prev => {
+      const next = { ...prev };
+      for (const t of linkedTasks) {
+        const edit = taskEdits[t.id];
+        if (!edit) continue;
+        const textChanged = edit.text !== t.text;
+        const dateChanged = edit.dk !== t.dk;
+        if (!textChanged && !dateChanged) continue;
+        if (dateChanged) {
+          next[t.dk] = (next[t.dk] || []).filter(x => x.id !== t.id);
+          if (!next[t.dk].length) delete next[t.dk];
+          next[edit.dk] = [...(next[edit.dk] || []), { ...t, text: edit.text }];
+        } else {
+          next[t.dk] = (next[t.dk] || []).map(x => x.id === t.id ? { ...x, text: edit.text } : x);
+        }
+      }
+      return next;
+    });
+    setGoals(prev => prev.map(g => {
+      if (g.id !== goal.id) return g;
+      const newRefs = (g.taskRefs || []).map(ref => {
+        const edit = taskEdits[ref.id];
+        return edit ? { ...ref, dk: edit.dk } : ref;
+      });
+      return { ...g, taskRefs: newRefs, updatedAt: Date.now() };
+    }));
+    setEditingTasks(false);
+    setTaskEdits({});
+  };
+
   const inp = { width:'100%', padding:'8px 10px', border:`1px solid ${T.border}`, borderRadius:6, fontSize:12, fontFamily:'inherit', background:T.bg, color:T.text };
   const vis = goalTplVisual(goal.templateId, goal.name);
 
@@ -23213,7 +23379,8 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
           </div>
 
           {/* Action buttons */}
-          <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+          <div style={{ display:'flex', gap:8, flexShrink:0, flexWrap:'wrap' }}>
+            {!goal.completed && <button onClick={startEditingTasks} style={{ padding:'10px 18px', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.4)', borderRadius:8, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em' }}>✎ EDIT TASKS</button>}
             {!goal.completed && <button onClick={handleMarkComplete} style={{ padding:'10px 18px', background:'rgba(255,255,255,0.95)', border:'none', borderRadius:8, fontSize:11, fontWeight:800, color:'#059669', cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em' }}>✓ COMPLETE</button>}
             <button onClick={handleDelete} style={{ padding:'10px 14px', background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.8)', cursor:'pointer', fontFamily:'inherit' }}>DELETE</button>
           </div>
@@ -23233,24 +23400,42 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
 
         {/* Timeline */}
         <div style={{ flex:'1 1 380px', minWidth:260 }}>
-          <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:16 }}>TIMELINE</p>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+            <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint }}>TIMELINE</p>
+            {editingTasks && (
+              <div style={{ display:'flex', gap:6 }}>
+                <button onClick={()=>{ setEditingTasks(false); setTaskEdits({}); }} style={{ padding:'4px 12px', background:'none', border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
+                <button onClick={handleSaveTaskEdits} style={{ padding:'4px 12px', background:T.navy, border:'none', borderRadius:6, fontSize:11, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>Save</button>
+              </div>
+            )}
+          </div>
           <div style={{ position:'relative', paddingLeft:32 }}>
             {linkedTasks.length > 0 && <div style={{ position:'absolute', left:9, top:8, bottom:8, width:2, background:T.border, borderRadius:1 }} />}
             {linkedTasks.map((t) => {
               const isDone = t.done, isOverdue = !t.done && t.dk < todayStr;
               const dotColor = isDone ? '#059669' : isOverdue ? '#D97706' : T.border;
+              const edit = taskEdits[t.id] || { text: t.text, dk: t.dk };
               return (
                 <div key={t.id} style={{ display:'flex', gap:12, paddingBottom:16, position:'relative' }}>
                   <div style={{ position:'absolute', left:-23, top:5, width:11, height:11, borderRadius:'50%', background:isDone?'#059669':isOverdue?'#FEF3C7':T.cardBg, border:`2px solid ${dotColor}`, flexShrink:0, zIndex:1 }}/>
                   <div style={{ flex:1, background:isDone?T.surface:isOverdue?'#FFFBEB':T.cardBg, border:`1px solid ${isDone?T.border:isOverdue?'#FDE68A':T.border}`, borderRadius:8, padding:'9px 14px' }}>
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap' }}>
-                      <div>
-                        <p style={{ fontSize:13, fontWeight:isDone?400:600, color:isDone?T.muted:T.text, textDecoration:isDone?'line-through':'none', marginBottom:2 }}>{t.text}</p>
-                        <p style={{ fontSize:10.5, color:T.faint, fontVariantNumeric:'tabular-nums' }}>{t.dk}</p>
+                    {editingTasks && !t.done ? (
+                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                        <input value={edit.text} onChange={e=>setTaskEdits(prev=>({...prev,[t.id]:{...prev[t.id],text:e.target.value}}))}
+                          style={{ fontSize:13, fontWeight:600, color:T.text, background:'transparent', border:`1px solid ${T.border}`, borderRadius:6, padding:'4px 8px', fontFamily:'inherit', outline:'none', width:'100%', boxSizing:'border-box' }} />
+                        <input type="date" value={edit.dk} onChange={e=>setTaskEdits(prev=>({...prev,[t.id]:{...prev[t.id],dk:e.target.value}}))}
+                          style={{ fontSize:11, color:T.muted, background:'transparent', border:`1px solid ${T.border}`, borderRadius:6, padding:'4px 8px', fontFamily:'inherit', outline:'none', width:'100%', boxSizing:'border-box' }} />
                       </div>
-                      {isDone && <span style={{ fontSize:13, color:'#059669' }}>✓</span>}
-                      {isOverdue && <span style={{ fontSize:9, fontWeight:800, color:'#D97706', background:'#FEF3C7', padding:'2px 8px', borderRadius:10, letterSpacing:'0.05em' }}>OVERDUE</span>}
-                    </div>
+                    ) : (
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap' }}>
+                        <div>
+                          <p style={{ fontSize:13, fontWeight:isDone?400:600, color:isDone?T.muted:T.text, textDecoration:isDone?'line-through':'none', marginBottom:2 }}>{t.text}</p>
+                          <p style={{ fontSize:10.5, color:T.faint, fontVariantNumeric:'tabular-nums' }}>{t.dk}</p>
+                        </div>
+                        {isDone && <span style={{ fontSize:13, color:'#059669' }}>✓</span>}
+                        {isOverdue && <span style={{ fontSize:9, fontWeight:800, color:'#D97706', background:'#FEF3C7', padding:'2px 8px', borderRadius:10, letterSpacing:'0.05em' }}>OVERDUE</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -23311,9 +23496,13 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
 
           {/* Template badge */}
           {tpl && (
-            <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 20px' }}>
+            <div onClick={()=>onViewTemplate&&onViewTemplate(tpl.id)}
+              style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 20px', cursor:onViewTemplate?'pointer':'default', transition:'border-color 0.15s' }}
+              onMouseEnter={e=>{ if(onViewTemplate) e.currentTarget.style.borderColor=T.navy; }}
+              onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; }}>
               <p style={{ fontSize:10, fontWeight:800, letterSpacing:'0.1em', color:T.faint, marginBottom:6 }}>TEMPLATE</p>
-              <p style={{ fontSize:12, fontWeight:600, color:T.muted }}>{tpl.name}</p>
+              <p style={{ fontSize:12, fontWeight:700, color:T.navy }}>{tpl.name}</p>
+              {onViewTemplate && <p style={{ fontSize:10, color:T.faint, marginTop:4 }}>View template →</p>}
             </div>
           )}
         </div>
@@ -23327,7 +23516,12 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
             {linkedTasks.map((t) => {
               const isDone = t.done, isOverdue = !t.done && t.dk < todayStr;
               return (
-                <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 100px 80px 90px', gap:12, alignItems:'center', background:T.cardBg, border:`1px solid ${isDone?T.border:isOverdue?'#FDE68A':T.border}`, borderRadius:10, padding:'11px 16px' }}>
+                <div key={t.id}
+                  onClick={()=>onJumpToTask&&onJumpToTask(t.dk)}
+                  title={onJumpToTask?`Go to ${t.dk} in task list`:''}
+                  style={{ display:'grid', gridTemplateColumns:'1fr 100px 80px 90px', gap:12, alignItems:'center', background:T.cardBg, border:`1px solid ${isDone?T.border:isOverdue?'#FDE68A':T.border}`, borderRadius:10, padding:'11px 16px', cursor:onJumpToTask?'pointer':'default' }}
+                  onMouseEnter={e=>{ if(onJumpToTask) e.currentTarget.style.background=T.surface; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.background=T.cardBg; }}>
                   <span style={{ fontSize:12.5, fontWeight:600, color:isDone?T.muted:T.text, textDecoration:isDone?'line-through':'none' }}>{t.text}</span>
                   <span style={{ fontSize:11, color:T.faint, fontVariantNumeric:'tabular-nums' }}>{t.dk}</span>
                   <span style={{ fontSize:11, fontWeight:700, color:GOAL_OWNER_COLOR()[t.owner]||T.muted }}>{GOAL_OWNER_LABEL[t.owner]||t.owner}</span>
@@ -23377,12 +23571,19 @@ function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTempl
 }
 
 // ── Templates View ────────────────────────────────────────────────────────────
-function GoalTemplatesView({ goalTemplates, setGoalTemplates, onBack }) {
+function GoalTemplatesView({ goalTemplates, setGoalTemplates, onBack, initialOpenId }) {
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState('');
   const [editSteps, setEditSteps] = useState([]);
 
   const openEdit = (tpl) => { setEditId(tpl.id); setEditName(tpl.name); setEditSteps(tpl.steps.map((s,i)=>({...s,_k:i}))); };
+
+  React.useEffect(() => {
+    if (initialOpenId) {
+      const tpl = (goalTemplates||[]).find(t => t.id === initialOpenId);
+      if (tpl) openEdit(tpl);
+    }
+  }, []);
 
   const saveEdit = () => {
     setGoalTemplates(prev => prev.map(t => t.id===editId ? {...t, name:editName.trim()||t.name, steps:editSteps.map(({_k,...s})=>s)} : t));
@@ -23399,69 +23600,117 @@ function GoalTemplatesView({ goalTemplates, setGoalTemplates, onBack }) {
   const inp = { padding:'7px 10px', border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, fontFamily:'inherit', background:T.bg, color:T.text };
 
   if (editId) {
+    const tplVis = goalTplVisual(editId, editName);
     const upd = (i, f, v) => setEditSteps(prev => prev.map((s,j) => j===i?{...s,[f]:v}:s));
+    const si = { padding:'6px 9px', border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontFamily:'inherit', background:T.cardBg, color:T.text, outline:'none' };
     return (
-      <div style={{ padding:'24px 28px', maxWidth:680 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:24 }}>
-          <button onClick={()=>setEditId(null)} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
-          <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>Edit Template</h2>
-        </div>
-        <div style={{ marginBottom:16 }}>
-          <label style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', display:'block', marginBottom:5 }}>TEMPLATE NAME</label>
-          <input value={editName} onChange={e=>setEditName(e.target.value)} style={{ width:'100%', ...inp, fontSize:13, padding:'10px 12px' }} />
-        </div>
-        <div style={{ marginBottom:16 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 72px 76px 72px 28px', gap:6, padding:'7px 12px', background:T.surface, borderRadius:'6px 6px 0 0', fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
-            <span>TASK NAME</span><span style={{ textAlign:'center' }}>DAYS BEFORE</span><span>OWNER</span><span>CATEGORY</span><span></span>
+      <div style={{ maxWidth:700 }}>
+        {/* Header with gradient */}
+        <div style={{ background:tplVis.grad, borderRadius:14, padding:'18px 22px', marginBottom:20, position:'relative', overflow:'hidden' }}>
+          <div style={{ position:'absolute', right:16, top:'50%', transform:'translateY(-50%)', fontSize:56, opacity:0.2, pointerEvents:'none' }}>{tplVis.icon}</div>
+          <button onClick={()=>setEditId(null)} style={{ background:'rgba(255,255,255,0.2)', border:'none', color:'#fff', fontSize:11, cursor:'pointer', padding:'4px 12px', borderRadius:20, fontFamily:'inherit', fontWeight:700, letterSpacing:'0.06em', marginBottom:10, display:'inline-block' }}>← TEMPLATES</button>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <input value={editName} onChange={e=>setEditName(e.target.value)}
+              style={{ flex:1, fontSize:18, fontWeight:900, color:'#fff', background:'rgba(255,255,255,0.15)', border:'2px solid rgba(255,255,255,0.35)', borderRadius:8, padding:'6px 14px', fontFamily:"'210 Supersize Black',sans-serif", outline:'none', boxSizing:'border-box' }} />
           </div>
-          {editSteps.map((s,i) => (
-            <div key={s._k||i} style={{ display:'grid', gridTemplateColumns:'1fr 72px 76px 72px 28px', gap:6, padding:'8px 12px', background:T.bg, border:`1px solid ${T.border}`, borderTop:'none' }}>
-              <input value={s.name} onChange={e=>upd(i,'name',e.target.value)} placeholder="Task name" style={{ ...inp }} />
-              <input type="number" value={s.daysBefore} onChange={e=>upd(i,'daysBefore',Math.max(0,parseInt(e.target.value)||0))} min="0" max="365" style={{ ...inp, textAlign:'center' }} />
-              <select value={s.owner||'oloka'} onChange={e=>upd(i,'owner',e.target.value)} style={{ ...inp, cursor:'pointer' }}>
-                <option value="oloka">Oloka</option><option value="vanja">Vanja</option><option value="both">Both</option>
-              </select>
-              <select value={s.category||'Admin'} onChange={e=>upd(i,'category',e.target.value)} style={{ ...inp, cursor:'pointer' }}>
-                <option>Admin</option><option>Video</option><option>Email</option><option>Social Post</option><option>Event</option>
-              </select>
-              <button onClick={()=>setEditSteps(prev=>prev.filter((_,j)=>j!==i))} style={{ background:'none', border:'none', color:T.urgent, fontSize:18, cursor:'pointer', padding:0, lineHeight:1 }}>×</button>
-            </div>
-          ))}
-          <button onClick={()=>setEditSteps(prev=>[...prev,{name:'',daysBefore:7,owner:'oloka',category:'Admin',notes:'',_k:Date.now()}])}
-            style={{ width:'100%', padding:'9px', background:'none', border:`1px dashed ${T.border}`, borderRadius:'0 0 6px 6px', borderTop:'none', fontSize:11, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>
-            + ADD STEP
-          </button>
         </div>
-        <p style={{ fontSize:11, color:T.faint, marginBottom:16 }}>Changes only affect future goals — existing goals are not changed.</p>
+
+        {/* Steps editor */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+            <span style={{ fontSize:10, fontWeight:800, color:T.faint, letterSpacing:'0.1em' }}>STEPS ({editSteps.length})</span>
+            <span style={{ fontSize:10, color:T.faint }}>Drag order = timeline order</span>
+          </div>
+          <div style={{ borderRadius:10, overflow:'hidden', border:`1px solid ${T.border}` }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 90px 80px 90px 32px', gap:6, padding:'8px 12px', background:T.surface, fontSize:9, fontWeight:800, color:T.faint, letterSpacing:'0.1em' }}>
+              <span>TASK NAME</span><span style={{ textAlign:'center' }}>DAYS BEFORE</span><span>OWNER</span><span>CATEGORY</span><span></span>
+            </div>
+            {editSteps.map((s,i) => (
+              <div key={s._k||i} style={{ display:'grid', gridTemplateColumns:'1fr 90px 80px 90px 32px', gap:6, padding:'8px 12px', background:T.cardBg, borderTop:`1px solid ${T.border}` }}>
+                <input value={s.name} onChange={e=>upd(i,'name',e.target.value)} placeholder="Task name" style={{ ...si, width:'100%', boxSizing:'border-box' }} />
+                <input type="number" value={s.daysBefore} onChange={e=>upd(i,'daysBefore',Math.max(0,parseInt(e.target.value)||0))} min="0" max="365" style={{ ...si, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                <select value={s.owner||'oloka'} onChange={e=>upd(i,'owner',e.target.value)} style={{ ...si, cursor:'pointer', width:'100%', boxSizing:'border-box' }}>
+                  <option value="oloka">Oloka</option><option value="vanja">Vanja</option><option value="both">Both</option>
+                </select>
+                <select value={s.category||'Admin'} onChange={e=>upd(i,'category',e.target.value)} style={{ ...si, cursor:'pointer', width:'100%', boxSizing:'border-box' }}>
+                  <option>Admin</option><option>Video</option><option>Email</option><option>Social Post</option><option>Event</option>
+                </select>
+                <button onClick={()=>setEditSteps(prev=>prev.filter((_,j)=>j!==i))}
+                  style={{ background:'none', border:'none', color:T.urgent, fontSize:18, cursor:'pointer', padding:0, lineHeight:1, opacity:0.7 }}>×</button>
+              </div>
+            ))}
+            <button onClick={()=>setEditSteps(prev=>[...prev,{name:'',daysBefore:7,owner:'oloka',category:'Admin',notes:'',_k:Date.now()}])}
+              style={{ width:'100%', padding:'10px', background:'none', border:'none', borderTop:`1px dashed ${T.border}`, fontSize:11, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit', background:T.cardBg }}>
+              + ADD STEP
+            </button>
+          </div>
+        </div>
+        <p style={{ fontSize:10, color:T.faint, marginBottom:16 }}>⚠ Changes only affect future goals — existing goals are unaffected.</p>
         <div style={{ display:'flex', gap:10 }}>
-          <button onClick={()=>setEditId(null)} style={{ flex:1, padding:'10px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
-          <button onClick={saveEdit} style={{ flex:2, padding:'10px', background:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>SAVE TEMPLATE</button>
+          <button onClick={()=>setEditId(null)} style={{ flex:1, padding:'11px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:9, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+          <button onClick={saveEdit} style={{ flex:2, padding:'11px', background:T.navy, border:'none', borderRadius:9, fontSize:12, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>SAVE TEMPLATE</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ padding:'24px 28px', maxWidth:640 }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={onBack} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
-          <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>Templates</h2>
+    <div style={{ maxWidth:660 }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <button onClick={onBack} style={{ display:'flex', alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:'50%', background:T.surface, border:`1px solid ${T.border}`, color:T.muted, fontSize:16, cursor:'pointer', padding:0, flexShrink:0 }}>←</button>
+          <div>
+            <h2 style={{ fontSize:22, fontWeight:900, color:T.heading, fontFamily:"'210 Supersize Black',sans-serif", letterSpacing:'-0.02em', lineHeight:1 }}>Templates</h2>
+            <p style={{ fontSize:11, color:T.muted, marginTop:3 }}>Reusable blueprints for your goals</p>
+          </div>
         </div>
-        <button onClick={addNew} style={{ padding:'8px 14px', background:T.navy, border:'none', borderRadius:7, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>+ NEW TEMPLATE</button>
+        <button onClick={addNew} style={{ display:'flex', alignItems:'center', gap:7, padding:'9px 16px', background:T.navy, border:'none', borderRadius:9, fontSize:11, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em', flexShrink:0 }}>
+          + NEW
+        </button>
       </div>
+
+      {/* Template cards */}
       <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-        {(goalTemplates||[]).map(tpl => (
-          <div key={tpl.id} style={{ border:`1px solid ${T.border}`, borderRadius:10, padding:'14px 20px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <div>
-              <div style={{ fontSize:14, fontWeight:700, color:T.text }}>{tpl.name}</div>
-              <div style={{ fontSize:11, color:T.faint, marginTop:2 }}>
-                {tpl.steps.length} steps{tpl.steps.length>0?' · '+Math.max(...tpl.steps.map(s=>s.daysBefore))+' day lead':''}
+        {(goalTemplates||[]).map(tpl => {
+          const vis = goalTplVisual(tpl.id, tpl.name);
+          const leadDays = tpl.steps.length > 0 ? Math.max(...tpl.steps.map(s => s.daysBefore)) : 0;
+          return (
+            <div key={tpl.id} style={{ borderRadius:12, border:`1px solid ${T.border}`, display:'flex', overflow:'hidden', background:T.cardBg }}
+              onMouseEnter={e=>{ e.currentTarget.style.boxShadow='0 4px 18px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor=T.muted; }}
+              onMouseLeave={e=>{ e.currentTarget.style.boxShadow='none'; e.currentTarget.style.borderColor=T.border; }}>
+              {/* Gradient accent */}
+              <div style={{ width:5, background:vis.grad, flexShrink:0 }} />
+              {/* Icon circle */}
+              <div style={{ width:58, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <div style={{ width:38, height:38, borderRadius:'50%', background:vis.grad, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{vis.icon}</div>
+              </div>
+              {/* Content */}
+              <div style={{ flex:1, padding:'13px 14px 13px 4px', minWidth:0 }}>
+                <div style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:4 }}>{tpl.name}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:tpl.steps.length>0?7:0 }}>
+                  <span style={{ fontSize:10, fontWeight:700, color:T.faint, background:T.surface, border:`1px solid ${T.border}`, borderRadius:20, padding:'1px 8px' }}>{tpl.steps.length} step{tpl.steps.length!==1?'s':''}</span>
+                  {leadDays > 0 && <span style={{ fontSize:10, fontWeight:700, color:T.faint, background:T.surface, border:`1px solid ${T.border}`, borderRadius:20, padding:'1px 8px' }}>{leadDays} day lead</span>}
+                </div>
+                {tpl.steps.length > 0 && (
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                    {tpl.steps.slice(0,3).map((s,i) => (
+                      <span key={i} style={{ fontSize:9, color:T.muted, background:T.surface, borderRadius:4, padding:'2px 6px', whiteSpace:'nowrap', overflow:'hidden', maxWidth:120, textOverflow:'ellipsis' }}>{s.name}</span>
+                    ))}
+                    {tpl.steps.length > 3 && <span style={{ fontSize:9, color:T.faint, background:T.surface, borderRadius:4, padding:'2px 6px' }}>+{tpl.steps.length-3} more</span>}
+                  </div>
+                )}
+              </div>
+              {/* Edit button */}
+              <div style={{ display:'flex', alignItems:'center', paddingRight:16 }}>
+                <button onClick={()=>openEdit(tpl)}
+                  style={{ padding:'7px 14px', background:'transparent', border:`1px solid ${T.border}`, borderRadius:7, fontSize:11, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                  ✎ Edit
+                </button>
               </div>
             </div>
-            <button onClick={()=>openEdit(tpl)} style={{ padding:'7px 14px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>EDIT</button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
