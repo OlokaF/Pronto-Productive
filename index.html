@@ -15958,7 +15958,16 @@ function App({ onSwitchWorkspace = () => {} }) {
 
   // Team
   const [staff, setStaff] = useS(() => loadOr("staff", () => JSON.parse(JSON.stringify(STAFF))));
-  const [lunches, setLunches] = useS(() => loadOr("lunches", () => JSON.parse(JSON.stringify(LUNCHES))));
+  const [lunches, setLunches] = useS(() => {
+    const LUNCHES_LS_KEY = 'prontoHQ.lunches.v1';
+    const mainL = loadOr("lunches", () => null);
+    const dedL = (() => { try { const d = JSON.parse(localStorage.getItem(LUNCHES_LS_KEY)||'null'); return Array.isArray(d) && d.length > 0 ? d : null; } catch(_) { return null; } })();
+    const sessL = (() => { try { const d = JSON.parse(sessionStorage.getItem(LUNCHES_LS_KEY)||'null'); return Array.isArray(d) && d.length > 0 ? d : null; } catch(_) { return null; } })();
+    const sources = [mainL, dedL, sessL].filter(Boolean);
+    if (sources.length === 0) return JSON.parse(JSON.stringify(LUNCHES));
+    const ensureId = l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) };
+    return sources.reduce((a, b) => _mergeById(a.map(ensureId), b.map(ensureId)));
+  });
   // Schedule planner — date → { vanja: [{taskId,startMin,durationMin}], oloka: [...] }
   const [schedule, setSchedule] = useS(() => loadOr("schedule", () => ({})));
   const GCAL_CACHE_KEY = 'prontoHQ.gcalEventsCache';
@@ -16120,17 +16129,26 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (!goals || goals.length === 0) return;
     try { localStorage.setItem(GOALS_LS_KEY, JSON.stringify(goals)); } catch(_) {}
   }, [goals]);
+  const LUNCHES_LS_KEY = 'prontoHQ.lunches.v1';
+  useE(() => {
+    const j = JSON.stringify(lunches || []);
+    try { localStorage.setItem(LUNCHES_LS_KEY, j); } catch(_) {}
+    try { sessionStorage.setItem(LUNCHES_LS_KEY, j); } catch(_) {}
+  }, [lunches]);
   // Flush content + full state to localStorage on page close (catches the window between state update and effect)
   useE(() => {
     const flush = () => {
       const j = JSON.stringify(content);
       try { localStorage.setItem(CONTENT_LS_KEY, j); } catch(_) {}
       try { sessionStorage.setItem(CONTENT_LS_KEY, j); } catch(_) {}
+      const lj = JSON.stringify(lunches || []);
+      try { localStorage.setItem(LUNCHES_LS_KEY, lj); } catch(_) {}
+      try { sessionStorage.setItem(LUNCHES_LS_KEY, lj); } catch(_) {}
       try { localStorage.setItem(LS_KEY, JSON.stringify(fullState())); } catch(_) {}
     };
     window.addEventListener('beforeunload', flush);
     return () => window.removeEventListener('beforeunload', flush);
-  }, [content]);
+  }, [content, lunches]);
   // Keep deletedTasksRef in sync so async callbacks (onApplyTasks) see fresh tombstones
   useE(() => { deletedTasksRef.current = deletedTasks; }, [deletedTasks]);
   // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
