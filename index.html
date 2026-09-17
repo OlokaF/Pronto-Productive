@@ -16100,7 +16100,10 @@ function App({ onSwitchWorkspace = () => {} }) {
 
 
   // Autosave on any change — also schedules a KV write via syncRef (debounced 1.5 s)
+  // Skip the very first render so we don't overwrite Firebase before the initial sync arrives
+  const _autosaveSkipFirst = useR(true);
   useE(() => {
+    if (_autosaveSkipFirst.current) { _autosaveSkipFirst.current = false; return; }
     const state = fullState();
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
@@ -16140,15 +16143,16 @@ function App({ onSwitchWorkspace = () => {} }) {
   };
 
   // Save on load + at midnight each day
+  // Delay the on-load backup by 6s so Firebase sync has time to arrive first
   useE(() => {
-    saveAutoBackup.current();
+    const initTimer = setTimeout(() => saveAutoBackup.current(), 6000);
     const msUntilMidnight = () => { const n = new Date(); return (new Date(n.getFullYear(), n.getMonth(), n.getDate()+1) - n); };
     const scheduleMidnight = () => {
       const t = setTimeout(() => { saveAutoBackup.current(); scheduleMidnight(); }, msUntilMidnight());
       return t;
     };
     const t = scheduleMidnight();
-    return () => clearTimeout(t);
+    return () => { clearTimeout(initTimer); clearTimeout(t); };
   }, []);
 
   const getAutoBackups = () => { try { return (JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'{}').backups)||[]; } catch(_) { return []; } };
@@ -17027,6 +17031,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           todayUser={todayUser}
           contentLabels={contentLabels} setContentLabels={setContentLabels}
           videoLabels={videoLabels} setVideoLabels={setVideoLabels}
+          setContent={setContent}
         />}
         {brandingModal && <BrandingModal branding={branding} setBranding={setBranding} onClose={() => setBrandingModal(false)}/>}
         {/* Settings drawer */}
@@ -20019,7 +20024,7 @@ function GTasksSettingsPanel() {
 }
 
 // ── Auto Backup Card ──
-function AutoBackupCard() {
+function AutoBackupCard({ setContent }) {
   const AUTO_BACKUP_KEY = 'prontoHQ.autoBackup';
   const [backups, setBackups] = useS(() => {
     try { return (JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'{}').backups)||[]; } catch(_) { return []; }
@@ -20028,6 +20033,14 @@ function AutoBackupCard() {
 
   const refresh = () => {
     try { setBackups((JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'{}').backups)||[]); } catch(_) { setBackups([]); }
+  };
+
+  const contentPostCount = (b) => {
+    try {
+      const c = b.snapshot && b.snapshot.content;
+      if (!c) return 0;
+      return Object.values(c).reduce((sum, posts) => sum + (Array.isArray(posts) ? posts.length : 0), 0);
+    } catch(_) { return 0; }
   };
 
   const downloadBackup = (b) => {
@@ -20040,11 +20053,21 @@ function AutoBackupCard() {
     URL.revokeObjectURL(url);
   };
 
+  const restoreContentOnly = (b) => {
+    if (!b.snapshot || !b.snapshot.content) { setRestoreMsg('No content data in this backup.'); setTimeout(() => setRestoreMsg(''), 3000); return; }
+    const count = contentPostCount(b);
+    if (!count) { setRestoreMsg('This backup has no content posts.'); setTimeout(() => setRestoreMsg(''), 3000); return; }
+    if (!confirm(`Restore ${count} content posts from ${b.date}? Only the Content Calendar will be changed.`)) return;
+    setContent(b.snapshot.content);
+    setRestoreMsg(`Content restored from ${b.date} (${count} posts).`);
+    setTimeout(() => setRestoreMsg(''), 5000);
+  };
+
   const restoreBackup = (b) => {
-    if (!confirm(`Restore backup from ${b.date}? This will overwrite all current data.`)) return;
+    if (!confirm(`Restore backup from ${b.date}? This will overwrite ALL current data.`)) return;
     if (!window._prontoAutoBackup) { setRestoreMsg('Restore not available — reload page and try again.'); return; }
     const ok = window._prontoAutoBackup.restore(b.snapshot);
-    setRestoreMsg(ok ? `Restored from ${b.date}` : 'Restore failed — invalid backup data.');
+    setRestoreMsg(ok ? `Full restore from ${b.date} complete.` : 'Restore failed — invalid backup data.');
     setTimeout(() => setRestoreMsg(''), 4000);
   };
 
@@ -20053,40 +20076,51 @@ function AutoBackupCard() {
   return (
     <div>
       <p style={{ fontSize:12, color:T.muted, marginBottom:14, lineHeight:1.5 }}>
-        Daily snapshots of all your data are saved automatically. Up to 7 days are kept. Use Download to save a file, or Restore to roll back to that day's state.
+        Daily snapshots of all your data are saved automatically (6 seconds after app load, after sync). Up to 7 days are kept.
       </p>
       {lastBackup ? (
         <p style={{ fontSize:11, color:T.muted, marginBottom:12 }}>
           Last backup: <span style={{ color:T.ink, fontWeight:700 }}>{lastBackup.savedAt ? new Date(lastBackup.savedAt).toLocaleString() : lastBackup.date}</span>
         </p>
       ) : (
-        <p style={{ fontSize:11, color:'#EF4444', marginBottom:12, fontWeight:700 }}>No backups yet — one will be saved when you next load the app.</p>
+        <p style={{ fontSize:11, color:'#EF4444', marginBottom:12, fontWeight:700 }}>No backups yet — one will save 6s after next app load.</p>
       )}
       {backups.length > 0 && (
-        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-          {backups.map((b, i) => (
-            <div key={b.date} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, padding:'8px 12px' }}>
-              <div>
-                <span style={{ fontSize:12, fontWeight:700, color:T.ink }}>{b.date}</span>
-                {i === 0 && <span style={{ fontSize:10, color:T.oloka, fontWeight:800, marginLeft:7 }}>LATEST</span>}
-                {b.savedAt && <span style={{ fontSize:10, color:T.muted, marginLeft:7 }}>{new Date(b.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>}
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {backups.map((b, i) => {
+            const posts = contentPostCount(b);
+            return (
+              <div key={b.date} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:'10px 14px' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:12.5, fontWeight:800, color:T.ink }}>{b.date}</span>
+                    {i === 0 && <span style={{ fontSize:9, color:T.oloka, fontWeight:800, background:T.olokaSoft||'#e0f0ff', borderRadius:4, padding:'2px 6px' }}>LATEST</span>}
+                    {b.savedAt && <span style={{ fontSize:10, color:T.muted }}>{new Date(b.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>}
+                  </div>
+                  <span style={{ fontSize:10.5, fontWeight:700, color: posts > 0 ? '#16a34a' : T.faint }}>
+                    {posts > 0 ? `${posts} content post${posts===1?'':'s'}` : 'no content posts'}
+                  </span>
+                </div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  <button onClick={() => downloadBackup(b)} style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, padding:'5px 11px', fontSize:10, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>DOWNLOAD</button>
+                  {posts > 0 && (
+                    <button onClick={() => restoreContentOnly(b)} style={{ background:'#16a34a', border:'none', borderRadius:5, color:'#fff', padding:'5px 11px', fontSize:10, fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>RESTORE CONTENT ONLY</button>
+                  )}
+                  <button onClick={() => restoreBackup(b)} style={{ background:T.gold, border:'none', borderRadius:5, color:'#fff', padding:'5px 11px', fontSize:10, fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>RESTORE ALL</button>
+                </div>
               </div>
-              <div style={{ display:'flex', gap:6 }}>
-                <button onClick={() => downloadBackup(b)} style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, color:T.ink, padding:'4px 10px', fontSize:10, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>DOWNLOAD</button>
-                <button onClick={() => restoreBackup(b)} style={{ background:T.gold, border:'none', borderRadius:5, color:'#fff', padding:'4px 10px', fontSize:10, fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>RESTORE</button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-      {restoreMsg && <p style={{ fontSize:11.5, fontWeight:700, color:restoreMsg.includes('Restored') ? '#16a34a' : '#EF4444', marginTop:10 }}>{restoreMsg}</p>}
-      <button onClick={refresh} style={{ marginTop:12, background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, padding:'5px 12px', fontSize:10, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>REFRESH</button>
+      {restoreMsg && <p style={{ fontSize:11.5, fontWeight:700, color:restoreMsg.includes('failed')||restoreMsg.includes('No') ? '#EF4444' : '#16a34a', marginTop:12 }}>{restoreMsg}</p>}
+      <button onClick={refresh} style={{ marginTop:12, background:'transparent', border:`1px solid ${T.border}`, borderRadius:5, color:T.muted, padding:'5px 12px', fontSize:10, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>REFRESH LIST</button>
     </div>
   );
 }
 
 // ── Settings View ──
-function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels }) {
+function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels, setContent }) {
   const [newCat, setNewCat] = useS("");
   const [pwSection, setPwSection] = useS(false);
   const [pwCurrent, setPwCurrent] = useS("");
@@ -20290,7 +20324,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
       {/* Auto Backup */}
       <Card>
         <SectionTitle>AUTO BACKUP</SectionTitle>
-        <AutoBackupCard />
+        <AutoBackupCard setContent={setContent} />
       </Card>
 
       {/* Password */}
@@ -22724,7 +22758,7 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
   const statusCounts = activeGoals.reduce((acc, g) => { const s = goalStatus(g, tasksByDate); acc[s]=(acc[s]||0)+1; return acc; }, {});
 
   return (
-    <div style={{ padding:'24px 28px', maxWidth:920 }}>
+    <div style={{ padding:'24px 28px', maxWidth:1100 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
           <h2 style={{ fontSize:20, fontWeight:800, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:'0.04em' }}>GOALS</h2>
@@ -22757,53 +22791,90 @@ function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDat
         </div>
       )}
 
-      {/* Goals table */}
-      {activeGoals.length > 0 && (
-        <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden', marginBottom:20 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 120px 70px 110px 1fr 90px', gap:8, padding:'8px 16px', background:T.surface, borderBottom:`1px solid ${T.border}`, fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
-            <span></span><span>GOAL</span><span>GO-LIVE</span><span>OWNER</span><span>TEMPLATE</span><span>NEXT TASK</span><span>PROGRESS</span>
+      {/* Goals card grid */}
+      {activeGoals.length > 0 && (() => {
+        const TPL_VISUAL = {
+          tpl_promotion:   { grad:'linear-gradient(135deg,#F59E0B 0%,#EF4444 100%)', icon:'🚀' },
+          tpl_newsletter:  { grad:'linear-gradient(135deg,#3B82F6 0%,#06B6D4 100%)', icon:'📧' },
+          tpl_event:       { grad:'linear-gradient(135deg,#8B5CF6 0%,#EC4899 100%)', icon:'📸' },
+          tpl_product:     { grad:'linear-gradient(135deg,#10B981 0%,#3B82F6 100%)', icon:'⚡' },
+          tpl_custom_blank:{ grad:'linear-gradient(135deg,#6B7280 0%,#9CA3AF 100%)', icon:'✨' },
+        };
+        const defaultVisual = (name) => {
+          const hues = [200,280,350,150,30,60];
+          const h = hues[(name||'').charCodeAt(0) % hues.length];
+          return { grad:`linear-gradient(135deg,hsl(${h},70%,55%) 0%,hsl(${(h+40)%360},65%,45%) 100%)`, icon:(name||'G')[0].toUpperCase() };
+        };
+        return (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
+            {activeGoals.map((goal) => {
+              const st = goalStatus(goal, tasksByDate);
+              const cfg = GOAL_STATUS_CFG[st];
+              const days = daysUntilGoal(goal.goLiveDate);
+              const prog = goalProgress(goal, tasksByDate);
+              const next = nextGoalTask(goal, tasksByDate);
+              const tpl = (goalTemplates||[]).find(t => t.id === goal.templateId);
+              const vis = TPL_VISUAL[goal.templateId] || defaultVisual(goal.name);
+              return (
+                <div key={goal.id}
+                  onClick={() => { setSelectedId(goal.id); setSubView('detail'); }}
+                  style={{ border:`1px solid ${T.border}`, borderRadius:12, overflow:'hidden', cursor:'pointer', background:T.cardBg, transition:'box-shadow 0.15s,transform 0.15s' }}
+                  onMouseEnter={e=>{ e.currentTarget.style.boxShadow=`0 4px 20px rgba(0,0,0,0.12)`; e.currentTarget.style.transform='translateY(-2px)'; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.boxShadow='none'; e.currentTarget.style.transform='none'; }}
+                >
+                  {/* Image area */}
+                  <div style={{ height:130, background:vis.grad, position:'relative', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span style={{ fontSize:44, filter:'drop-shadow(0 2px 8px rgba(0,0,0,0.25))' }}>{typeof vis.icon === 'string' && vis.icon.length <= 2 ? vis.icon : vis.icon}</span>
+                    {/* Status badge top-right */}
+                    <div style={{ position:'absolute', top:10, right:10, background:'rgba(0,0,0,0.45)', borderRadius:20, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:cfg.color, display:'inline-block', flexShrink:0 }}/>
+                      <span style={{ fontSize:9, fontWeight:800, color:'#fff', letterSpacing:'0.06em' }}>{cfg.label.toUpperCase()}</span>
+                    </div>
+                    {/* Days badge top-left */}
+                    <div style={{ position:'absolute', top:10, left:10, background:'rgba(0,0,0,0.45)', borderRadius:20, padding:'3px 10px' }}>
+                      <span style={{ fontSize:9, fontWeight:800, color: days<0?'#FCA5A5':days<=7?'#FDE68A':'#fff', letterSpacing:'0.05em' }}>
+                        {days<0?`${Math.abs(days)}D LATE`:days===0?'TODAY':days===1?'TOMORROW':`${days}D TO GO`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Card body */}
+                  <div style={{ padding:'14px 16px' }}>
+                    <p style={{ fontWeight:800, fontSize:13.5, color:T.heading, fontFamily:"'ProximaNova Black',sans-serif", marginBottom:4, lineHeight:1.3, letterSpacing:'0.01em' }}>{goal.name}</p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                      <span style={{ fontSize:11, color:GOAL_OWNER_COLOR()[goal.owner]||T.muted, fontWeight:700 }}>{GOAL_OWNER_LABEL[goal.owner]||'—'}</span>
+                      <span style={{ color:T.faint, fontSize:10 }}>·</span>
+                      <span style={{ fontSize:10, color:T.faint }}>{goal.goLiveDate}</span>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div style={{ marginBottom:10 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:T.muted, marginBottom:4 }}>
+                        <span style={{ fontWeight:600 }}>{prog.done}/{prog.total} tasks</span>
+                        <span style={{ fontWeight:700, color:cfg.color }}>{prog.pct}%</span>
+                      </div>
+                      <div style={{ height:5, background:T.surface2||T.border, borderRadius:3, overflow:'hidden' }}>
+                        <div style={{ height:'100%', background:cfg.color, width:`${prog.pct}%`, borderRadius:3, transition:'width 0.3s' }} />
+                      </div>
+                    </div>
+
+                    {/* Next task */}
+                    {next ? (
+                      <div style={{ background:T.surface, borderRadius:6, padding:'6px 10px', fontSize:10.5, color:T.text }}>
+                        <span style={{ color:T.faint, fontWeight:600, fontSize:9, letterSpacing:'0.07em' }}>NEXT · </span>
+                        <span style={{ fontWeight:600 }}>{next.text}</span>
+                        <span style={{ color:T.faint }}> · {next.dk}</span>
+                      </div>
+                    ) : (
+                      <div style={{ background:T.surface, borderRadius:6, padding:'6px 10px', fontSize:10, color:T.faint, fontWeight:600 }}>All tasks complete</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          {activeGoals.map((goal, i) => {
-            const st = goalStatus(goal, tasksByDate);
-            const cfg = GOAL_STATUS_CFG[st];
-            const days = daysUntilGoal(goal.goLiveDate);
-            const prog = goalProgress(goal, tasksByDate);
-            const next = nextGoalTask(goal, tasksByDate);
-            const tpl = (goalTemplates||[]).find(t => t.id === goal.templateId);
-            return (
-              <div key={goal.id}
-                onClick={() => { setSelectedId(goal.id); setSubView('detail'); }}
-                style={{ display:'grid', gridTemplateColumns:'24px 1fr 120px 70px 110px 1fr 90px', gap:8, padding:'12px 16px', borderTop:`1px solid ${T.border}`, cursor:'pointer', transition:'background 0.12s' }}
-                onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-              >
-                <span style={{ color:cfg.color, fontSize:13, paddingTop:1 }}>{cfg.dot}</span>
-                <span style={{ fontWeight:700, fontSize:13, color:T.text }}>{goal.name}</span>
-                <div>
-                  <span style={{ fontSize:12, color:T.text }}>{goal.goLiveDate}</span>
-                  <span style={{ fontSize:10, color:days<0?T.urgent:days<=7?T.gold:T.faint, marginLeft:5 }}>
-                    {days<0?`${Math.abs(days)}d late`:days===0?'Today!':days===1?'Tomorrow':`${days}d`}
-                  </span>
-                </div>
-                <span style={{ fontSize:12, color:GOAL_OWNER_COLOR()[goal.owner]||T.muted, fontWeight:600 }}>{GOAL_OWNER_LABEL[goal.owner]||'—'}</span>
-                <span style={{ fontSize:11, color:T.muted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tpl?tpl.name:'—'}</span>
-                <div style={{ overflow:'hidden' }}>
-                  {next ? <span style={{ fontSize:11, color:T.text }}>{next.text} <span style={{ color:T.faint }}>· {next.dk}</span></span>
-                        : <span style={{ fontSize:11, color:T.faint }}>All done</span>}
-                </div>
-                <div>
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:T.muted, marginBottom:3 }}>
-                    <span>{prog.done}/{prog.total}</span><span>{prog.pct}%</span>
-                  </div>
-                  <div style={{ height:4, background:T.surface2, borderRadius:2, overflow:'hidden' }}>
-                    <div style={{ height:'100%', background:cfg.color, width:`${prog.pct}%` }} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+        );
+      })()}
 
       {/* Completed toggle */}
       {completedGoals.length > 0 && (
