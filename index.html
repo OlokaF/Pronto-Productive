@@ -13184,6 +13184,7 @@ function buildContentState() {
 const DEFAULT_TABS = [
   { key:"tasks",      label:"TASKS",       on:true },
   { key:"gcalendar",  label:"CALENDAR",    on:true },
+  { key:"goals",      label:"GOALS",       on:true },
   { key:"content",    label:"CONTENT",     on:true },
   { key:"video",      label:"VIDEO SCHED", on:true },
   { key:"plan",       label:"YEARLY PLAN", on:true },
@@ -15817,6 +15818,8 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [tab, setTab] = useS("tasks");
   const [view, setView] = useS("day");
   const [contentView, setContentView] = useS("week");  // controls Content tab nav & view
+  const [goals, setGoals] = useS(() => loadOr("goals", () => []));
+  const [goalTemplates, setGoalTemplates] = useS(() => loadOr("goalTemplates", () => DEFAULT_GOAL_TEMPLATES));
   const [deletedTasks, setDeletedTasks] = useS(() => loadOr("deletedTasks", () => ({})));
   const deletedTasksRef = useR({}); // mirror of deletedTasks state — safe to read in async callbacks
   const [tasksByDate, setTasksByDate] = useS(() => {
@@ -16082,6 +16085,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     contentLabels, videoLabels,
     recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush,
     uniform, toPostList,
+    goals, goalTemplates,
   });
 
   // Sync chatAs to todayUser when user logs in via TodayPicker
@@ -16101,7 +16105,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
     if (syncRef.current) syncRef.current.scheduleWrite(state);
   // tasksByDate, deletedTasks, schedule, actualSchedule excluded — they're stripped from the Firebase payload and have their own sync paths
-  }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList]);
+  }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList, goals, goalTemplates]);
   // Keep deletedTasksRef in sync so async callbacks (onApplyTasks) see fresh tombstones
   useE(() => { deletedTasksRef.current = deletedTasks; }, [deletedTasks]);
   // Task-specific save to dedicated Firebase path (smaller payload for task-only changes)
@@ -16310,6 +16314,8 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.uniform) setUniform(prev => _mergeUniform(prev, s.uniform));
     if (s.brainDumpItems) setBrainDumpItems(s.brainDumpItems);
     if (s.toPostList) setToPostList(prev => _mergeById(prev, Array.isArray(s.toPostList) ? s.toPostList : Object.values(s.toPostList || {})));
+    if (s.goals) setGoals(prev => _mergeById(prev, Array.isArray(s.goals) ? s.goals : Object.values(s.goals || {})));
+    if (s.goalTemplates) setGoalTemplates(prev => _mergeById(prev, Array.isArray(s.goalTemplates) ? s.goalTemplates : Object.values(s.goalTemplates || {})));
   };
 
   // ── Export schedule as .ics (for Samsung Calendar / Outlook import) ──
@@ -17001,6 +17007,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           onAddToTasks={onAdd}
         />}
         {tab === "gcalendar" && <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={chatAs} />}
+        {tab === "goals" && <GoalsTab goals={goals} setGoals={setGoals} goalTemplates={goalTemplates} setGoalTemplates={setGoalTemplates} tasksByDate={tasksByDate} setTasksByDate={setTasksByDate} />}
         {tab === "activity" && <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>}
         {tab === "analytics" && <AnalyticsView postApprovals={postApprovals} content={content}/>}
         {tab === "emails" && <EmailPipelineView
@@ -22520,6 +22527,777 @@ function OutlookSyncButton({ dk, daySchedule, taskNamesById, todayUser }) {
 
 window.OutlookSyncButton = OutlookSyncButton;
 })();
+</script>
+<script type="text/babel">
+// ── GOALS TAB — Goals & Forecasting ─────────────────────────────────────────
+
+const DEFAULT_GOAL_TEMPLATES = [
+  {
+    id: 'tpl_promotion',
+    name: 'Promotion Launch',
+    builtIn: true,
+    steps: [
+      { name: 'Confirm offer and mechanics',   daysBefore: 21, owner: 'oloka', category: 'Admin', notes: '' },
+      { name: 'Create campaign concept',        daysBefore: 18, owner: 'oloka', category: 'Admin', notes: '' },
+      { name: 'Write video script and shot list', daysBefore: 14, owner: 'oloka', category: 'Video', notes: '' },
+      { name: 'Film promotional video',         daysBefore: 11, owner: 'vanja', category: 'Video', notes: '' },
+      { name: 'Edit video',                     daysBefore: 8,  owner: 'vanja', category: 'Video', notes: '' },
+      { name: 'Build email and social assets',  daysBefore: 6,  owner: 'oloka', category: 'Email', notes: '' },
+      { name: 'Final checks and approvals',     daysBefore: 2,  owner: 'both',  category: 'Admin', notes: '' },
+    ],
+  },
+  {
+    id: 'tpl_newsletter',
+    name: 'Client Newsletter',
+    builtIn: true,
+    steps: [
+      { name: 'Draft newsletter content', daysBefore: 14, owner: 'oloka', category: 'Email', notes: '' },
+      { name: 'Design and layout',        daysBefore: 10, owner: 'oloka', category: 'Email', notes: '' },
+      { name: 'Review and proofread',     daysBefore: 7,  owner: 'both',  category: 'Admin', notes: '' },
+      { name: 'Send test version',        daysBefore: 3,  owner: 'oloka', category: 'Email', notes: '' },
+      { name: 'Final checks',             daysBefore: 1,  owner: 'both',  category: 'Admin', notes: '' },
+    ],
+  },
+  {
+    id: 'tpl_event',
+    name: 'Event / Photoshoot',
+    builtIn: true,
+    steps: [
+      { name: 'Book venue / photographer',     daysBefore: 14, owner: 'both',  category: 'Admin', notes: '' },
+      { name: 'Plan shot list and agenda',     daysBefore: 10, owner: 'both',  category: 'Admin', notes: '' },
+      { name: 'Confirm attendees',             daysBefore: 7,  owner: 'oloka', category: 'Admin', notes: '' },
+      { name: 'Prepare equipment and props',   daysBefore: 3,  owner: 'vanja', category: 'Admin', notes: '' },
+      { name: 'Final briefing',                daysBefore: 1,  owner: 'both',  category: 'Admin', notes: '' },
+    ],
+  },
+  {
+    id: 'tpl_product',
+    name: 'Product / Machine Launch',
+    builtIn: true,
+    steps: [
+      { name: 'Prepare product details and specs', daysBefore: 21, owner: 'oloka', category: 'Admin', notes: '' },
+      { name: 'Create product concept',            daysBefore: 18, owner: 'oloka', category: 'Admin', notes: '' },
+      { name: 'Write video script',                daysBefore: 14, owner: 'oloka', category: 'Video', notes: '' },
+      { name: 'Film product video',                daysBefore: 11, owner: 'vanja', category: 'Video', notes: '' },
+      { name: 'Edit video',                        daysBefore: 8,  owner: 'vanja', category: 'Video', notes: '' },
+      { name: 'Build website / listing assets',    daysBefore: 6,  owner: 'oloka', category: 'Email', notes: '' },
+      { name: 'Final checks',                      daysBefore: 2,  owner: 'both',  category: 'Admin', notes: '' },
+    ],
+  },
+  {
+    id: 'tpl_custom_blank',
+    name: 'Custom (blank)',
+    builtIn: true,
+    steps: [],
+  },
+];
+
+// ── Goal helpers ─────────────────────────────────────────────────────────────
+function goalStatus(goal, tasksByDate) {
+  if (goal.completed) return 'completed';
+  const todayStr = isoDate(new Date());
+  const goLiveMs = new Date(goal.goLiveDate + 'T23:59:59').getTime();
+  const linkedTasks = (goal.taskRefs || []).map(ref => {
+    const t = (tasksByDate[ref.dk] || []).find(t => t.id === ref.id);
+    return t ? { ...t, dk: ref.dk } : null;
+  }).filter(Boolean);
+  if (!linkedTasks.length) return 'not_started';
+  const anyDone = linkedTasks.some(t => t.done);
+  const anyOverdue = linkedTasks.some(t => !t.done && t.dk < todayStr);
+  const anyIncomplete = linkedTasks.some(t => !t.done);
+  const lead = goal.createdAt ? Math.max(0, Math.round((new Date(goal.goLiveDate+'T00:00:00') - new Date(goal.createdAt)) / 86400000)) : 0;
+  if (lead >= 5 && (goLiveMs - Date.now()) <= 48 * 3600000 && anyIncomplete) return 'at_risk';
+  if (anyOverdue) return 'needs_attention';
+  if (!anyDone) return 'not_started';
+  return 'on_track';
+}
+
+function goalProgress(goal, tasksByDate) {
+  const refs = goal.taskRefs || [];
+  if (!refs.length) return { done: 0, total: 0, pct: 0 };
+  let done = 0, total = 0;
+  for (const ref of refs) {
+    const t = (tasksByDate[ref.dk] || []).find(t => t.id === ref.id);
+    if (!t) continue;
+    total++;
+    if (t.done) done++;
+  }
+  return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
+}
+
+function daysUntilGoal(dk) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dk + 'T00:00:00');
+  return Math.ceil((target - today) / 86400000);
+}
+
+function nextGoalTask(goal, tasksByDate) {
+  const todayStr = isoDate(new Date());
+  return (goal.taskRefs || [])
+    .map(ref => { const t = (tasksByDate[ref.dk] || []).find(t => t.id === ref.id); return t ? { ...t, dk: ref.dk } : null; })
+    .filter(t => t && !t.done)
+    .sort((a, b) => a.dk.localeCompare(b.dk))[0] || null;
+}
+
+function calcGoalTaskDate(goLiveDk, daysBefore) {
+  const goLive = new Date(goLiveDk + 'T00:00:00');
+  const d = new Date(goLive.getTime() - daysBefore * 86400000);
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (d < today) return isoDate(today);
+  const dow = d.getDay();
+  if (dow === 6) d.setDate(d.getDate() + 2);
+  else if (dow === 0) d.setDate(d.getDate() + 1);
+  return isoDate(d);
+}
+
+const GOAL_STATUS_CFG = {
+  not_started:     { label: 'Not Started',     color: '#6B7280', bg: '#F3F4F6', dot: '○' },
+  on_track:        { label: 'On Track',        color: '#059669', bg: '#DCFCE7', dot: '●' },
+  needs_attention: { label: 'Needs Attention', color: '#D97706', bg: '#FEF3C7', dot: '●' },
+  at_risk:         { label: 'At Risk',         color: '#DC2626', bg: '#FEE2E2', dot: '●' },
+  completed:       { label: 'Completed',       color: '#2563EB', bg: '#DBEAFE', dot: '●' },
+};
+const GOAL_OWNER_LABEL = { oloka: 'Oloka', vanja: 'Vanja', both: 'Both' };
+const GOAL_OWNER_COLOR = () => ({ oloka: T.oloka, vanja: T.vanja, both: T.navy });
+
+function GoalStatusPill({ status }) {
+  const cfg = GOAL_STATUS_CFG[status] || GOAL_STATUS_CFG.not_started;
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:cfg.bg, color:cfg.color, whiteSpace:'nowrap' }}>
+      <span style={{ fontSize:8 }}>{cfg.dot}</span>{cfg.label}
+    </span>
+  );
+}
+
+// ── Main GoalsTab ─────────────────────────────────────────────────────────────
+function GoalsTab({ goals, setGoals, goalTemplates, setGoalTemplates, tasksByDate, setTasksByDate }) {
+  const [subView, setSubView] = useState('list');
+  const [selectedId, setSelectedId] = useState(null);
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  const selectedGoal = (goals || []).find(g => g.id === selectedId);
+
+  if (subView === 'create') {
+    return <GoalCreateView
+      goalTemplates={goalTemplates || DEFAULT_GOAL_TEMPLATES}
+      onCancel={() => setSubView('list')}
+      onCreated={(goal, tasksToAdd) => {
+        setGoals(prev => [...(prev || []), goal]);
+        if (tasksToAdd && tasksToAdd.length) {
+          setTasksByDate(prev => {
+            const next = { ...prev };
+            for (const task of tasksToAdd) {
+              const { dk, ...t } = task;
+              next[dk] = [...(next[dk] || []), { ...t, id: task.id }];
+            }
+            return next;
+          });
+        }
+        setSelectedId(goal.id);
+        setSubView('detail');
+      }}
+    />;
+  }
+
+  if (subView === 'detail' && selectedGoal) {
+    return <GoalDetailView
+      goal={selectedGoal}
+      tasksByDate={tasksByDate}
+      setTasksByDate={setTasksByDate}
+      setGoals={setGoals}
+      goalTemplates={goalTemplates || DEFAULT_GOAL_TEMPLATES}
+      onBack={() => { setSubView('list'); setSelectedId(null); }}
+    />;
+  }
+
+  if (subView === 'templates') {
+    return <GoalTemplatesView
+      goalTemplates={goalTemplates || DEFAULT_GOAL_TEMPLATES}
+      setGoalTemplates={setGoalTemplates}
+      onBack={() => setSubView('list')}
+    />;
+  }
+
+  // ── List view ──
+  const activeGoals = (goals || []).filter(g => !g.completed).sort((a,b) => a.goLiveDate.localeCompare(b.goLiveDate));
+  const completedGoals = (goals || []).filter(g => g.completed).sort((a,b) => (b.completedAt||0)-(a.completedAt||0));
+  const statusCounts = activeGoals.reduce((acc, g) => { const s = goalStatus(g, tasksByDate); acc[s]=(acc[s]||0)+1; return acc; }, {});
+
+  return (
+    <div style={{ padding:'24px 28px', maxWidth:920 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+        <div>
+          <h2 style={{ fontSize:20, fontWeight:800, color:T.heading, fontFamily:"'ProximaNova Black', sans-serif", letterSpacing:'0.04em' }}>GOALS</h2>
+          <p style={{ fontSize:12, color:T.muted, marginTop:2 }}>Track what you're working towards</p>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={() => setSubView('templates')} style={{ padding:'8px 14px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, fontSize:11, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>TEMPLATES</button>
+          <button onClick={() => setSubView('create')} style={{ padding:'8px 14px', background:T.navy, border:'none', borderRadius:7, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>+ NEW GOAL</button>
+        </div>
+      </div>
+
+      {/* Status summary dots */}
+      {activeGoals.length > 0 && (
+        <div style={{ display:'flex', gap:18, marginBottom:18, flexWrap:'wrap' }}>
+          {Object.entries(GOAL_STATUS_CFG).filter(([k]) => k !== 'completed' && statusCounts[k]).map(([k,cfg]) => (
+            <span key={k} style={{ fontSize:12, color:cfg.color, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+              <span style={{ fontSize:9 }}>{cfg.dot}</span>{cfg.label} ({statusCounts[k]})
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {activeGoals.length === 0 && completedGoals.length === 0 && (
+        <div style={{ textAlign:'center', padding:'64px 0', color:T.faint }}>
+          <div style={{ fontSize:40, marginBottom:14 }}>🎯</div>
+          <p style={{ fontSize:15, fontWeight:700, color:T.muted, marginBottom:6 }}>No goals yet</p>
+          <p style={{ fontSize:12, color:T.faint, marginBottom:24 }}>Create your first goal — choose a go-live date and Pronto generates all the tasks</p>
+          <button onClick={() => setSubView('create')} style={{ padding:'10px 22px', background:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>+ CREATE FIRST GOAL</button>
+        </div>
+      )}
+
+      {/* Goals table */}
+      {activeGoals.length > 0 && (
+        <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden', marginBottom:20 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 120px 70px 110px 1fr 90px', gap:8, padding:'8px 16px', background:T.surface, borderBottom:`1px solid ${T.border}`, fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
+            <span></span><span>GOAL</span><span>GO-LIVE</span><span>OWNER</span><span>TEMPLATE</span><span>NEXT TASK</span><span>PROGRESS</span>
+          </div>
+          {activeGoals.map((goal, i) => {
+            const st = goalStatus(goal, tasksByDate);
+            const cfg = GOAL_STATUS_CFG[st];
+            const days = daysUntilGoal(goal.goLiveDate);
+            const prog = goalProgress(goal, tasksByDate);
+            const next = nextGoalTask(goal, tasksByDate);
+            const tpl = (goalTemplates||[]).find(t => t.id === goal.templateId);
+            return (
+              <div key={goal.id}
+                onClick={() => { setSelectedId(goal.id); setSubView('detail'); }}
+                style={{ display:'grid', gridTemplateColumns:'24px 1fr 120px 70px 110px 1fr 90px', gap:8, padding:'12px 16px', borderTop:`1px solid ${T.border}`, cursor:'pointer', transition:'background 0.12s' }}
+                onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+              >
+                <span style={{ color:cfg.color, fontSize:13, paddingTop:1 }}>{cfg.dot}</span>
+                <span style={{ fontWeight:700, fontSize:13, color:T.text }}>{goal.name}</span>
+                <div>
+                  <span style={{ fontSize:12, color:T.text }}>{goal.goLiveDate}</span>
+                  <span style={{ fontSize:10, color:days<0?T.urgent:days<=7?T.gold:T.faint, marginLeft:5 }}>
+                    {days<0?`${Math.abs(days)}d late`:days===0?'Today!':days===1?'Tomorrow':`${days}d`}
+                  </span>
+                </div>
+                <span style={{ fontSize:12, color:GOAL_OWNER_COLOR()[goal.owner]||T.muted, fontWeight:600 }}>{GOAL_OWNER_LABEL[goal.owner]||'—'}</span>
+                <span style={{ fontSize:11, color:T.muted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tpl?tpl.name:'—'}</span>
+                <div style={{ overflow:'hidden' }}>
+                  {next ? <span style={{ fontSize:11, color:T.text }}>{next.text} <span style={{ color:T.faint }}>· {next.dk}</span></span>
+                        : <span style={{ fontSize:11, color:T.faint }}>All done</span>}
+                </div>
+                <div>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:T.muted, marginBottom:3 }}>
+                    <span>{prog.done}/{prog.total}</span><span>{prog.pct}%</span>
+                  </div>
+                  <div style={{ height:4, background:T.surface2, borderRadius:2, overflow:'hidden' }}>
+                    <div style={{ height:'100%', background:cfg.color, width:`${prog.pct}%` }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Completed toggle */}
+      {completedGoals.length > 0 && (
+        <>
+          <button onClick={()=>setShowCompleted(v=>!v)} style={{ fontSize:11, color:T.muted, background:'none', border:'none', cursor:'pointer', padding:'4px 0', fontFamily:'inherit', textDecoration:'underline' }}>
+            {showCompleted?'Hide':'Show'} completed goals ({completedGoals.length})
+          </button>
+          {showCompleted && (
+            <div style={{ marginTop:10, opacity:0.65 }}>
+              {completedGoals.map(g => (
+                <div key={g.id} onClick={()=>{ setSelectedId(g.id); setSubView('detail'); }} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 16px', border:`1px solid ${T.border}`, borderRadius:8, marginBottom:6, cursor:'pointer' }}>
+                  <span style={{ fontSize:13, color:T.muted, textDecoration:'line-through' }}>{g.name}</span>
+                  <span style={{ fontSize:11, color:T.faint }}>{g.goLiveDate}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Create Goal View ──────────────────────────────────────────────────────────
+function GoalCreateView({ goalTemplates, onCancel, onCreated }) {
+  const [name, setName] = useState('');
+  const [goLiveDate, setGoLiveDate] = useState('');
+  const [owner, setOwner] = useState('oloka');
+  const [templateId, setTemplateId] = useState('tpl_promotion');
+  const [step, setStep] = useState('form');
+  const [preview, setPreview] = useState([]);
+
+  const todayStr = isoDate(new Date());
+  const inp = { width:'100%', padding:'10px 12px', border:`1px solid ${T.border}`, borderRadius:7, fontSize:13, fontFamily:'inherit', background:T.bg, color:T.text, boxSizing:'border-box' };
+  const lbl = { fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', display:'block', marginBottom:5 };
+
+  const handleGenerate = () => {
+    if (!name.trim() || !goLiveDate) return;
+    const tpl = (goalTemplates||[]).find(t => t.id === templateId);
+    const steps = tpl ? [...tpl.steps].sort((a,b) => b.daysBefore - a.daysBefore) : [];
+    setPreview(steps.map(s => ({ ...s, date: calcGoalTaskDate(goLiveDate, s.daysBefore) })));
+    setStep('preview');
+  };
+
+  const handleConfirm = () => {
+    const goalId = 'goal_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+    const taskRefs = [];
+    const tasksToAdd = [];
+    for (const s of preview) {
+      const taskId = 'gtask_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+      tasksToAdd.push({ id:taskId, dk:s.date, text:s.name, done:false, owner:s.owner||owner, category:s.category||'Admin', priority:'Normal', goalId });
+      taskRefs.push({ dk:s.date, id:taskId });
+    }
+    onCreated({ id:goalId, name:name.trim(), goLiveDate, owner, templateId:templateId||null, taskRefs, completed:false, completedAt:null, createdAt:Date.now(), updatedAt:Date.now() }, tasksToAdd);
+  };
+
+  if (step === 'preview') {
+    const tpl = (goalTemplates||[]).find(t => t.id === templateId);
+    const hasToday = preview.some(s => s.date === todayStr);
+    return (
+      <div style={{ padding:'24px 28px', maxWidth:640 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
+          <button onClick={()=>setStep('form')} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
+          <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>Plan Preview</h2>
+        </div>
+        <div style={{ background:T.surface, borderRadius:8, padding:'14px 18px', marginBottom:16 }}>
+          <div style={{ fontSize:15, fontWeight:800, color:T.heading }}>{name}</div>
+          <div style={{ fontSize:12, color:T.muted, marginTop:3 }}>Go-live: {goLiveDate} · {GOAL_OWNER_LABEL[owner]} · {tpl?.name||'No template'}</div>
+        </div>
+        {preview.length === 0 ? (
+          <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>No template steps — goal will be a milestone. Add tasks manually after creating.</p>
+        ) : (
+          <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden', marginBottom:16 }}>
+            {preview.map((s, i) => (
+              <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderTop:i>0?`1px solid ${T.border}`:'none' }}>
+                <span style={{ fontSize:11, color:T.faint, minWidth:86, fontVariantNumeric:'tabular-nums' }}>{s.date}</span>
+                <span style={{ flex:1, fontSize:13, color:T.text }}>{s.name}</span>
+                <span style={{ fontSize:11, color:GOAL_OWNER_COLOR()[s.owner]||T.muted, fontWeight:600 }}>{GOAL_OWNER_LABEL[s.owner]||''}</span>
+              </div>
+            ))}
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderTop:`1px solid ${T.border}`, background:T.surface }}>
+              <span style={{ fontSize:11, color:T.faint, minWidth:86 }}>{goLiveDate}</span>
+              <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>🎯 {name} — GO LIVE</span>
+            </div>
+          </div>
+        )}
+        {hasToday && (
+          <div style={{ background:T.highSoft, border:`1px solid ${T.gold}`, borderRadius:7, padding:'10px 14px', fontSize:12, color:T.gold, marginBottom:14, fontWeight:600 }}>
+            ⚠ Some tasks were compressed to today (past dates or weekend).
+          </div>
+        )}
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={onCancel} style={{ flex:1, padding:'11px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+          <button onClick={handleConfirm} style={{ flex:2, padding:'11px', background:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>CREATE GOAL + ADD TASKS</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding:'24px 28px', maxWidth:500 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:24 }}>
+        <button onClick={onCancel} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
+        <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>New Goal</h2>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+        <div><label style={lbl}>GOAL NAME *</label><input value={name} onChange={e=>setName(e.target.value)} style={inp} placeholder="e.g. October Customer Promotion" /></div>
+        <div><label style={lbl}>GO-LIVE DATE *</label><input type="date" value={goLiveDate} onChange={e=>setGoLiveDate(e.target.value)} style={inp} min={todayStr} /></div>
+        <div>
+          <label style={lbl}>TEMPLATE</label>
+          <select value={templateId} onChange={e=>setTemplateId(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
+            <option value="">No template (milestone only)</option>
+            {(goalTemplates||[]).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>GOAL OWNER</label>
+          <select value={owner} onChange={e=>setOwner(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
+            <option value="oloka">Oloka</option>
+            <option value="vanja">Vanja</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+        <button onClick={handleGenerate} disabled={!name.trim()||!goLiveDate}
+          style={{ padding:'12px', background:(!name.trim()||!goLiveDate)?T.border:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:(!name.trim()||!goLiveDate)?T.muted:'#fff', cursor:(!name.trim()||!goLiveDate)?'default':'pointer', fontFamily:'inherit' }}>
+          GENERATE PLAN →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Goal Detail View ──────────────────────────────────────────────────────────
+function GoalDetailView({ goal, tasksByDate, setTasksByDate, setGoals, goalTemplates, onBack }) {
+  const [editingName, setEditingName] = useState(false);
+  const [nameVal, setNameVal] = useState(goal.name);
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [newGoLive, setNewGoLive] = useState(goal.goLiveDate);
+  const [reschedulePreview, setReschedulePreview] = useState(null);
+
+  const status = goalStatus(goal, tasksByDate);
+  const cfg = GOAL_STATUS_CFG[status];
+  const prog = goalProgress(goal, tasksByDate);
+  const days = daysUntilGoal(goal.goLiveDate);
+  const tpl = (goalTemplates||[]).find(t => t.id === goal.templateId);
+  const todayStr = isoDate(new Date());
+
+  const linkedTasks = (goal.taskRefs||[])
+    .map(ref => { const t = (tasksByDate[ref.dk]||[]).find(t=>t.id===ref.id); return t?{...t,dk:ref.dk}:null; })
+    .filter(Boolean)
+    .sort((a,b) => a.dk.localeCompare(b.dk));
+
+  const overdueTask = linkedTasks.find(t => !t.done && t.dk < todayStr);
+
+  const saveName = () => {
+    const n = nameVal.trim() || goal.name;
+    setGoals(prev => prev.map(g => g.id===goal.id ? {...g, name:n, updatedAt:Date.now()} : g));
+    setEditingName(false);
+  };
+
+  const handleMarkComplete = () => {
+    if (!window.confirm('Mark this goal as complete?')) return;
+    setGoals(prev => prev.map(g => g.id===goal.id ? {...g, completed:true, completedAt:Date.now(), updatedAt:Date.now()} : g));
+    onBack();
+  };
+
+  const handleDelete = () => {
+    if (!window.confirm('Delete this goal? All unfinished linked tasks will also be deleted.')) return;
+    const toRemove = {};
+    for (const ref of (goal.taskRefs||[])) { if (!toRemove[ref.dk]) toRemove[ref.dk]=new Set(); toRemove[ref.dk].add(ref.id); }
+    setTasksByDate(prev => {
+      const next = {...prev};
+      for (const [dk, ids] of Object.entries(toRemove)) {
+        const filtered = (next[dk]||[]).filter(t => !ids.has(t.id) || t.done);
+        if (filtered.length) next[dk]=filtered; else delete next[dk];
+      }
+      return next;
+    });
+    setGoals(prev => prev.filter(g => g.id!==goal.id));
+    onBack();
+  };
+
+  const handlePreviewReschedule = () => {
+    const oldMs = new Date(goal.goLiveDate+'T00:00:00').getTime();
+    const newMs = new Date(newGoLive+'T00:00:00').getTime();
+    const deltaMs = newMs - oldMs;
+    const deltaDays = Math.round(deltaMs/86400000);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const items = linkedTasks.filter(t=>!t.done).map(t => {
+      const shifted = new Date(new Date(t.dk+'T00:00:00').getTime()+deltaMs);
+      if (shifted < today) shifted.setTime(today.getTime());
+      const dow = shifted.getDay();
+      if (dow===6) shifted.setDate(shifted.getDate()+2);
+      else if (dow===0) shifted.setDate(shifted.getDate()+1);
+      return { task:t, oldDk:t.dk, newDk:isoDate(shifted) };
+    });
+    setReschedulePreview({ deltaDays, items });
+  };
+
+  const handleConfirmReschedule = () => {
+    const { items } = reschedulePreview;
+    setTasksByDate(prev => {
+      const next = {...prev};
+      for (const mv of items) {
+        next[mv.oldDk] = (next[mv.oldDk]||[]).filter(t=>t.id!==mv.task.id);
+        if (!next[mv.oldDk].length) delete next[mv.oldDk];
+        next[mv.newDk] = [...(next[mv.newDk]||[]), {...mv.task, dk:mv.newDk}];
+      }
+      return next;
+    });
+    const newRefs = (goal.taskRefs||[]).map(ref => { const mv=items.find(m=>m.task.id===ref.id); return mv?{...ref,dk:mv.newDk}:ref; });
+    setGoals(prev => prev.map(g => g.id===goal.id ? {...g, goLiveDate:newGoLive, taskRefs:newRefs, updatedAt:Date.now()} : g));
+    setReschedulePreview(null);
+    setShowReschedule(false);
+  };
+
+  const moveToToday = (t) => {
+    setTasksByDate(prev => {
+      const next = {...prev};
+      next[t.dk] = (next[t.dk]||[]).filter(x=>x.id!==t.id);
+      if (!next[t.dk].length) delete next[t.dk];
+      next[todayStr] = [...(next[todayStr]||[]), {...t, dk:todayStr}];
+      return next;
+    });
+    setGoals(prev => prev.map(g => g.id!==goal.id?g : {...g, taskRefs:(g.taskRefs||[]).map(r=>r.id===t.id?{...r,dk:todayStr}:r), updatedAt:Date.now()}));
+  };
+
+  const inp = { width:'100%', padding:'8px 10px', border:`1px solid ${T.border}`, borderRadius:6, fontSize:12, fontFamily:'inherit', background:T.bg, color:T.text };
+
+  return (
+    <div style={{ padding:'24px 28px', maxWidth:860 }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20 }}>
+        <div style={{ flex:1 }}>
+          <button onClick={onBack} style={{ background:'none', border:'none', color:T.muted, fontSize:11, cursor:'pointer', padding:'0 0 8px', fontFamily:'inherit', fontWeight:700, letterSpacing:'0.06em' }}>← ALL GOALS</button>
+          {editingName ? (
+            <input value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>e.key==='Enter'&&e.target.blur()} autoFocus
+              style={{ fontSize:20, fontWeight:800, color:T.heading, border:`1px solid ${T.border}`, borderRadius:6, padding:'4px 8px', fontFamily:'inherit', width:'100%', boxSizing:'border-box' }} />
+          ) : (
+            <h1 onClick={()=>setEditingName(true)} style={{ fontSize:20, fontWeight:800, color:T.heading, cursor:'text', display:'flex', alignItems:'center', gap:8 }}>
+              {goal.name} <span style={{ fontSize:12, color:T.faint, fontWeight:400 }}>✎</span>
+            </h1>
+          )}
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6, flexWrap:'wrap' }}>
+            <GoalStatusPill status={status} />
+            <span style={{ fontSize:12, color:T.muted }}>Go-live: {goal.goLiveDate}</span>
+            <span style={{ fontSize:12, fontWeight:700, color:days<0?T.urgent:days<=7?T.gold:T.muted }}>
+              {days<0?`${Math.abs(days)} days overdue`:days===0?'Today!':days===1?'Tomorrow':`${days} days away`}
+            </span>
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:8, marginLeft:16, flexShrink:0 }}>
+          {!goal.completed && <button onClick={handleMarkComplete} style={{ padding:'8px 12px', background:'#059669', border:'none', borderRadius:6, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>✓ COMPLETE</button>}
+          <button onClick={handleDelete} style={{ padding:'8px 12px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontWeight:700, color:T.urgent, cursor:'pointer', fontFamily:'inherit' }}>DELETE</button>
+        </div>
+      </div>
+
+      {/* Overdue suggestion */}
+      {overdueTask && (
+        <div style={{ background:'#FEF3C7', border:'1px solid #D97706', borderRadius:8, padding:'10px 16px', marginBottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+          <span style={{ fontSize:12, color:'#92400E', fontWeight:600 }}>⚠ "{overdueTask.text}" is overdue ({overdueTask.dk})</span>
+          <button onClick={()=>moveToToday(overdueTask)} style={{ padding:'5px 10px', background:'#D97706', border:'none', borderRadius:5, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit', flexShrink:0 }}>Move to today</button>
+        </div>
+      )}
+
+      {/* Two-col layout */}
+      <div style={{ display:'flex', gap:28, flexWrap:'wrap' }}>
+        {/* Left: Timeline */}
+        <div style={{ flex:'1 1 400px', minWidth:280 }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:T.faint, marginBottom:14 }}>TIMELINE</div>
+          <div style={{ position:'relative', paddingLeft:28 }}>
+            {/* Vertical line */}
+            {linkedTasks.length > 0 && <div style={{ position:'absolute', left:8, top:6, bottom:0, width:1, background:T.border }} />}
+            {linkedTasks.map((t, i) => (
+              <div key={t.id} style={{ display:'flex', gap:10, paddingBottom:14, position:'relative' }}>
+                <div style={{ position:'absolute', left:-20, top:4, width:9, height:9, borderRadius:'50%', background:t.done?'#059669':t.dk<todayStr?'#D97706':T.border, border:`2px solid ${t.done?'#059669':t.dk<todayStr?'#D97706':T.borderStrong}`, flexShrink:0 }} />
+                <div style={{ flex:1 }}>
+                  <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:11, color:T.faint, minWidth:78, fontVariantNumeric:'tabular-nums' }}>{t.dk}</span>
+                    <span style={{ fontSize:13, color:t.done?T.muted:T.text, textDecoration:t.done?'line-through':'none' }}>{t.text}</span>
+                    {t.done && <span style={{ fontSize:11, color:'#059669' }}>✓</span>}
+                    {!t.done && t.dk<todayStr && <span style={{ fontSize:10, color:'#D97706', fontWeight:700 }}>OVERDUE</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {/* Go-live milestone */}
+            <div style={{ display:'flex', gap:10, position:'relative' }}>
+              <div style={{ position:'absolute', left:-20, top:4, width:9, height:9, borderRadius:'50%', background:T.gold, border:`2px solid ${T.gold}` }} />
+              <div>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <span style={{ fontSize:11, color:T.faint, minWidth:78 }}>{goal.goLiveDate}</span>
+                  <span style={{ fontSize:13, fontWeight:800, color:T.heading }}>🎯 GO LIVE</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          {linkedTasks.length===0 && <p style={{ fontSize:12, color:T.faint, fontStyle:'italic' }}>No tasks — add tasks to the task list and they'll appear here.</p>}
+        </div>
+
+        {/* Right: Info panel */}
+        <div style={{ flex:'0 0 210px', minWidth:190 }}>
+          <div style={{ border:`1px solid ${T.border}`, borderRadius:10, padding:18 }}>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:T.faint, marginBottom:16 }}>GOAL INFO</div>
+
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>PROGRESS</div>
+              <div style={{ fontSize:20, fontWeight:800, color:T.heading }}>{prog.pct}%</div>
+              <div style={{ height:5, background:T.surface2, borderRadius:3, margin:'4px 0' }}>
+                <div style={{ height:'100%', background:cfg.color, width:`${prog.pct}%`, borderRadius:3 }} />
+              </div>
+              <div style={{ fontSize:11, color:T.muted }}>{prog.done}/{prog.total} tasks done</div>
+            </div>
+
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>GO-LIVE DATE</div>
+              {showReschedule ? (
+                <div>
+                  <input type="date" value={newGoLive} onChange={e=>setNewGoLive(e.target.value)} style={{ ...inp, marginBottom:6 }} />
+                  <button onClick={handlePreviewReschedule} disabled={!newGoLive||newGoLive===goal.goLiveDate} style={{ width:'100%', padding:'7px', background:T.navy, border:'none', borderRadius:5, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit', marginBottom:4 }}>PREVIEW →</button>
+                  <button onClick={()=>{setShowReschedule(false);setNewGoLive(goal.goLiveDate);}} style={{ width:'100%', padding:'6px', background:'none', border:`1px solid ${T.border}`, borderRadius:5, fontSize:11, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>{goal.goLiveDate}</div>
+                  {!goal.completed && <button onClick={()=>setShowReschedule(true)} style={{ fontSize:11, color:T.navy, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit', textDecoration:'underline' }}>Change date</button>}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>OWNER</div>
+              <select value={goal.owner} onChange={e=>setGoals(prev=>prev.map(g=>g.id===goal.id?{...g,owner:e.target.value,updatedAt:Date.now()}:g))}
+                style={{ ...inp, fontWeight:600, color:GOAL_OWNER_COLOR()[goal.owner]||T.text, cursor:'pointer' }}>
+                <option value="oloka">Oloka</option>
+                <option value="vanja">Vanja</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', marginBottom:4 }}>TEMPLATE</div>
+              <div style={{ fontSize:12, color:T.muted }}>{tpl?tpl.name:'None'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Reschedule preview modal */}
+      {reschedulePreview && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={()=>setReschedulePreview(null)}>
+          <div style={{ background:T.bg, borderRadius:12, padding:28, maxWidth:500, width:'100%', maxHeight:'80vh', overflowY:'auto' }} onClick={e=>e.stopPropagation()}>
+            <h3 style={{ fontSize:16, fontWeight:800, color:T.heading, marginBottom:6 }}>Reschedule Preview</h3>
+            <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>
+              Moving {reschedulePreview.deltaDays>0?'+':''}{reschedulePreview.deltaDays} days · {reschedulePreview.items.length} task{reschedulePreview.items.length!==1?'s':''} will move.
+            </p>
+            {reschedulePreview.items.length>0 ? (
+              <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden', marginBottom:20 }}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 88px 88px', gap:8, padding:'8px 12px', background:T.surface, fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
+                  <span>TASK</span><span>OLD DATE</span><span>NEW DATE</span>
+                </div>
+                {reschedulePreview.items.map((mv,i) => (
+                  <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 88px 88px', gap:8, padding:'10px 12px', borderTop:`1px solid ${T.border}`, fontSize:12 }}>
+                    <span style={{ color:T.text }}>{mv.task.text}</span>
+                    <span style={{ color:T.faint }}>{mv.oldDk}</span>
+                    <span style={{ color:T.text, fontWeight:600 }}>{mv.newDk}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <p style={{ fontSize:12, color:T.muted, marginBottom:16 }}>No incomplete tasks to move.</p>}
+            <p style={{ fontSize:11, color:T.urgent, marginBottom:16 }}>⚠ This cannot be undone.</p>
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={()=>setReschedulePreview(null)} style={{ flex:1, padding:'10px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+              <button onClick={handleConfirmReschedule} style={{ flex:2, padding:'10px', background:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>MOVE TASKS</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task table */}
+      {linkedTasks.length>0 && (
+        <div style={{ marginTop:32 }}>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:T.faint, marginBottom:10 }}>LINKED TASKS</div>
+          <div style={{ border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 96px 76px 80px', gap:8, padding:'8px 16px', background:T.surface, fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
+              <span>TASK</span><span>DATE</span><span>OWNER</span><span>STATUS</span>
+            </div>
+            {linkedTasks.map((t,i) => (
+              <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 96px 76px 80px', gap:8, padding:'10px 16px', borderTop:`1px solid ${T.border}`, fontSize:12 }}>
+                <span style={{ color:t.done?T.muted:T.text, textDecoration:t.done?'line-through':'none' }}>{t.text}</span>
+                <span style={{ color:T.faint, fontVariantNumeric:'tabular-nums' }}>{t.dk}</span>
+                <span style={{ color:GOAL_OWNER_COLOR()[t.owner]||T.muted, fontWeight:600 }}>{GOAL_OWNER_LABEL[t.owner]||t.owner}</span>
+                <span style={{ fontWeight:600, fontSize:11, color:t.done?'#059669':t.dk<todayStr?'#D97706':T.faint }}>
+                  {t.done?'Done':t.dk<todayStr?'Overdue':'Pending'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Templates View ────────────────────────────────────────────────────────────
+function GoalTemplatesView({ goalTemplates, setGoalTemplates, onBack }) {
+  const [editId, setEditId] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editSteps, setEditSteps] = useState([]);
+
+  const openEdit = (tpl) => { setEditId(tpl.id); setEditName(tpl.name); setEditSteps(tpl.steps.map((s,i)=>({...s,_k:i}))); };
+
+  const saveEdit = () => {
+    setGoalTemplates(prev => prev.map(t => t.id===editId ? {...t, name:editName.trim()||t.name, steps:editSteps.map(({_k,...s})=>s)} : t));
+    setEditId(null);
+  };
+
+  const addNew = () => {
+    const id = 'tpl_'+Date.now();
+    const tpl = { id, name:'New Template', builtIn:false, steps:[] };
+    setGoalTemplates(prev => [...(prev||[]), tpl]);
+    openEdit(tpl);
+  };
+
+  const inp = { padding:'7px 10px', border:`1px solid ${T.border}`, borderRadius:5, fontSize:12, fontFamily:'inherit', background:T.bg, color:T.text };
+
+  if (editId) {
+    const upd = (i, f, v) => setEditSteps(prev => prev.map((s,j) => j===i?{...s,[f]:v}:s));
+    return (
+      <div style={{ padding:'24px 28px', maxWidth:680 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:24 }}>
+          <button onClick={()=>setEditId(null)} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
+          <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>Edit Template</h2>
+        </div>
+        <div style={{ marginBottom:16 }}>
+          <label style={{ fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em', display:'block', marginBottom:5 }}>TEMPLATE NAME</label>
+          <input value={editName} onChange={e=>setEditName(e.target.value)} style={{ width:'100%', ...inp, fontSize:13, padding:'10px 12px' }} />
+        </div>
+        <div style={{ marginBottom:16 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 72px 76px 72px 28px', gap:6, padding:'7px 12px', background:T.surface, borderRadius:'6px 6px 0 0', fontSize:10, fontWeight:700, color:T.faint, letterSpacing:'0.08em' }}>
+            <span>TASK NAME</span><span style={{ textAlign:'center' }}>DAYS BEFORE</span><span>OWNER</span><span>CATEGORY</span><span></span>
+          </div>
+          {editSteps.map((s,i) => (
+            <div key={s._k||i} style={{ display:'grid', gridTemplateColumns:'1fr 72px 76px 72px 28px', gap:6, padding:'8px 12px', background:T.bg, border:`1px solid ${T.border}`, borderTop:'none' }}>
+              <input value={s.name} onChange={e=>upd(i,'name',e.target.value)} placeholder="Task name" style={{ ...inp }} />
+              <input type="number" value={s.daysBefore} onChange={e=>upd(i,'daysBefore',Math.max(0,parseInt(e.target.value)||0))} min="0" max="365" style={{ ...inp, textAlign:'center' }} />
+              <select value={s.owner||'oloka'} onChange={e=>upd(i,'owner',e.target.value)} style={{ ...inp, cursor:'pointer' }}>
+                <option value="oloka">Oloka</option><option value="vanja">Vanja</option><option value="both">Both</option>
+              </select>
+              <select value={s.category||'Admin'} onChange={e=>upd(i,'category',e.target.value)} style={{ ...inp, cursor:'pointer' }}>
+                <option>Admin</option><option>Video</option><option>Email</option><option>Social Post</option><option>Event</option>
+              </select>
+              <button onClick={()=>setEditSteps(prev=>prev.filter((_,j)=>j!==i))} style={{ background:'none', border:'none', color:T.urgent, fontSize:18, cursor:'pointer', padding:0, lineHeight:1 }}>×</button>
+            </div>
+          ))}
+          <button onClick={()=>setEditSteps(prev=>[...prev,{name:'',daysBefore:7,owner:'oloka',category:'Admin',notes:'',_k:Date.now()}])}
+            style={{ width:'100%', padding:'9px', background:'none', border:`1px dashed ${T.border}`, borderRadius:'0 0 6px 6px', borderTop:'none', fontSize:11, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>
+            + ADD STEP
+          </button>
+        </div>
+        <p style={{ fontSize:11, color:T.faint, marginBottom:16 }}>Changes only affect future goals — existing goals are not changed.</p>
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={()=>setEditId(null)} style={{ flex:1, padding:'10px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, fontSize:12, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>CANCEL</button>
+          <button onClick={saveEdit} style={{ flex:2, padding:'10px', background:T.navy, border:'none', borderRadius:7, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>SAVE TEMPLATE</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding:'24px 28px', maxWidth:640 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <button onClick={onBack} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', padding:0 }}>←</button>
+          <h2 style={{ fontSize:18, fontWeight:800, color:T.heading }}>Templates</h2>
+        </div>
+        <button onClick={addNew} style={{ padding:'8px 14px', background:T.navy, border:'none', borderRadius:7, fontSize:11, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>+ NEW TEMPLATE</button>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        {(goalTemplates||[]).map(tpl => (
+          <div key={tpl.id} style={{ border:`1px solid ${T.border}`, borderRadius:10, padding:'14px 20px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div>
+              <div style={{ fontSize:14, fontWeight:700, color:T.text }}>{tpl.name}</div>
+              <div style={{ fontSize:11, color:T.faint, marginTop:2 }}>
+                {tpl.steps.length} steps{tpl.steps.length>0?' · '+Math.max(...tpl.steps.map(s=>s.daysBefore))+' day lead':''}
+              </div>
+            </div>
+            <button onClick={()=>openEdit(tpl)} style={{ padding:'7px 14px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, fontSize:11, fontWeight:700, color:T.muted, cursor:'pointer', fontFamily:'inherit' }}>EDIT</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 </script>
 
 </body>
