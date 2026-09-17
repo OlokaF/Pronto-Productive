@@ -1843,7 +1843,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
               });
           };
           attempt(3);
-        }, 30000);
+        }, 3000);
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
@@ -15442,7 +15442,7 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
             .update(updates)
             .then(() => { lastWrittenStateRef.current = stripped; setLastSync(new Date()); })
             .catch(err => console.error("Firebase write:", err));
-        }, 30000);
+        }, 3000);
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
@@ -15854,7 +15854,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   // One-time cleanup: remove pre-2026 stale content from localStorage (preserves 2026+ content)
   useE(() => {
     if (localStorage.getItem('prontoHQ.contentWiped2026d')) return;
-    localStorage.setItem('prontoHQ.contentWiped2026d', '1');
+    try { localStorage.setItem('prontoHQ.contentWiped2026d', '1'); } catch(_) {}
     try {
       const raw = localStorage.getItem('prontoHQ.state.v1');
       if (raw) {
@@ -15895,11 +15895,13 @@ function App({ onSwitchWorkspace = () => {} }) {
   }, [tasksByDate]);
   const CONTENT_LS_KEY = 'prontoHQ.content.v1';
   const [content, setContent] = useS(() => {
-    // Merge both sources so a failed main-state save doesn't lose newer dedicated-key data
+    // Merge all three sources: main state, dedicated LS key, sessionStorage fallback
     const mainC = (saved && saved.content && Object.keys(saved.content).length > 0) ? saved.content : null;
     const dedC = (() => { try { const fb = JSON.parse(localStorage.getItem(CONTENT_LS_KEY) || 'null'); return (fb && Object.keys(fb).length > 0) ? fb : null; } catch(_) { return null; } })();
-    if (mainC && dedC) return _mergeContent(mainC, dedC);
-    return mainC || dedC || {};
+    const sessC = (() => { try { const fb = JSON.parse(sessionStorage.getItem(CONTENT_LS_KEY) || 'null'); return (fb && Object.keys(fb).length > 0) ? fb : null; } catch(_) { return null; } })();
+    const sources = [mainC, dedC, sessC].filter(Boolean);
+    if (sources.length === 0) return {};
+    return sources.reduce((a, b) => _mergeContent(a, b));
   });
   const [chatAs, setChatAs] = useS("vanja");
   const [todayUser, setTodayUser] = useS(() => {
@@ -16098,18 +16100,21 @@ function App({ onSwitchWorkspace = () => {} }) {
   // On first render only, we delay the Firebase write by 4s so the initial Firebase sync can
   // arrive and merge first (preventing a stale localStorage state from overwriting Firebase).
   const _fbReady = useR(false);
-  useE(() => { const t = setTimeout(() => { _fbReady.current = true; }, 4000); return () => clearTimeout(t); }, []);
+  const _latestStateRef = useR(null);
+  useE(() => { const t = setTimeout(() => { _fbReady.current = true; if (syncRef.current && _latestStateRef.current) syncRef.current.scheduleWrite(_latestStateRef.current); }, 4000); return () => clearTimeout(t); }, []);
   useE(() => {
     const state = fullState();
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (_) {}
+    _latestStateRef.current = state;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { try { console.error('[Pronto] LS main save failed:', e.message); } catch(_) {} }
     if (_fbReady.current && syncRef.current) syncRef.current.scheduleWrite(state);
   // tasksByDate, deletedTasks, schedule, actualSchedule excluded — they're stripped from the Firebase payload and have their own sync paths
   }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList, goals, goalTemplates]);
   // Dedicated immediate saves — second independent persistence paths
   const GOALS_LS_KEY = 'prontoHQ.goals.v1';
   useE(() => {
-    if (!content || Object.keys(content).length === 0) return;
-    try { localStorage.setItem(CONTENT_LS_KEY, JSON.stringify(content)); } catch(_) {}
+    const j = JSON.stringify(content || {});
+    try { localStorage.setItem(CONTENT_LS_KEY, j); } catch(e) { try { console.error('[Pronto] LS content save failed:', e.message); } catch(_) {} }
+    try { sessionStorage.setItem(CONTENT_LS_KEY, j); } catch(_) {}
   }, [content]);
   useE(() => {
     if (!goals || goals.length === 0) return;
@@ -16118,7 +16123,9 @@ function App({ onSwitchWorkspace = () => {} }) {
   // Flush content + full state to localStorage on page close (catches the window between state update and effect)
   useE(() => {
     const flush = () => {
-      try { localStorage.setItem(CONTENT_LS_KEY, JSON.stringify(content)); } catch(_) {}
+      const j = JSON.stringify(content);
+      try { localStorage.setItem(CONTENT_LS_KEY, j); } catch(_) {}
+      try { sessionStorage.setItem(CONTENT_LS_KEY, j); } catch(_) {}
       try { localStorage.setItem(LS_KEY, JSON.stringify(fullState())); } catch(_) {}
     };
     window.addEventListener('beforeunload', flush);
