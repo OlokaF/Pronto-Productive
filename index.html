@@ -18709,15 +18709,21 @@ function GCalCalendarTab({ tasksByDate, myIdentity }) {
               <div style={{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:'0.1em',marginBottom:6}}>SCHEDULED & DONE</div>
               {filteredTasks.done.map(t=>(
                 <div key={t.id}>
-                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4,padding:'5px 8px',borderRadius:7,background:T.surface+'88',border:`1px solid ${T.border}`,opacity:0.65}}>
-                    <span style={{fontSize:10,color:T.faint,flexShrink:0}}>✓</span>
+                  <div
+                    draggable
+                    onDragStart={ev=>{ ev.dataTransfer.effectAllowed='copy'; ev.dataTransfer.setData('application/x-pronto-backlog-task', JSON.stringify({text:t.text,dateKey:selDk,category:t.category,notes:t.notes||'',colorId:CAT_COLOR_ID[t.category]||''})); }}
+                    style={{display:'flex',alignItems:'center',gap:6,marginBottom:4,padding:'5px 8px',borderRadius:7,background:T.surface+'88',border:`1px solid ${T.border}`,opacity:0.65,cursor:'grab'}}
+                    onClick={()=>setModal({edit:null,prefill:{title:t.text,date:selDk,colorId:CAT_COLOR_ID[t.category]||'',description:t.notes||''}})}>
+                    <span style={{fontSize:10,color:T.faint,flexShrink:0}}>⠿</span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:11,fontWeight:600,color:T.muted,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',textDecoration:'line-through'}}>{t.text}</div>
                     </div>
                   </div>
                   {(t.subtasks||[]).filter(s=>s.done).map(s=>(
                     <div key={s.id}
-                      style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,marginLeft:16,padding:'4px 8px',borderRadius:6,opacity:0.55}}>
+                      draggable
+                      onDragStart={ev=>{ ev.dataTransfer.effectAllowed='copy'; ev.dataTransfer.setData('application/x-pronto-backlog-task', JSON.stringify({text:t.text+' › '+s.text,dateKey:selDk,category:t.category,notes:'',colorId:CAT_COLOR_ID[t.category]||''})); }}
+                      style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,marginLeft:16,padding:'4px 8px',borderRadius:6,opacity:0.55,cursor:'grab'}}>
                       <span style={{fontSize:8,color:T.faint,flexShrink:0}}>↳</span>
                       <div style={{flex:1,minWidth:0,fontSize:10,fontWeight:500,color:T.faint,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',textDecoration:'line-through'}}>{s.text}</div>
                     </div>
