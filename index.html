@@ -15507,7 +15507,7 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
     return () => {
       clearInterval(heartbeatId);
       myRef.off("value", myHandler);
-      theirRef.off("value", theirHandler);
+      if (theirChildListenersRef.current?.length) { theirChildListenersRef.current.forEach(({ ref, event, fn }) => ref.off(event, fn)); theirChildListenersRef.current = []; }
       if (theirTasksListenerRef.current) { const { ref: _ttr, handlers: _tth } = theirTasksListenerRef.current; (_tth||[]).forEach(({ event, fn }) => _ttr.off(event, fn)); theirTasksListenerRef.current = null; }
       presRef.off("value", presHandler);
       try { db.ref(".info/connected").off(); } catch(_) {}
