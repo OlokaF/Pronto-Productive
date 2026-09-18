@@ -95,6 +95,53 @@
 
   /* Show mobile utility bar only on mobile */
   .mobile-utility-bar { display: none; }
+
+  /* ── Desktop screens rendered inside the mobile shell ──
+     Scoped to .mobile-subpage so the hand-built mobile pages are untouched. */
+  /* No overflow on the wrapper — it would break position:sticky on the header
+     and clip wide tables instead of letting them scroll. */
+  .mobile-subpage { width: 100%; max-width: 100%; }
+  /* Wide content (size grids, tables) scrolls sideways inside the body only */
+  .mobile-subpage-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Outer wrappers of desktop views carry maxWidth 680–1100 — cap them */
+  .mobile-subpage > div > div { max-width: 100% !important; }
+
+  /* Desktop headings are inline-styled at 28–40px */
+  .mobile-subpage h1 { font-size: 21px !important; line-height: 1.15 !important; letter-spacing: -0.02em !important; }
+  .mobile-subpage h2 { font-size: 17px !important; line-height: 1.2 !important; }
+  .mobile-subpage h3 { font-size: 15px !important; line-height: 1.25 !important; }
+
+  /* Horizontal rows must wrap instead of overflowing */
+  .mobile-subpage [style*="display: flex"] { flex-wrap: wrap; }
+  /* …but keep genuinely inline pairs (icon + label) on one line */
+  .mobile-subpage [style*="white-space: nowrap"] { flex-wrap: nowrap; }
+
+  /* Wide tables scroll in their own container */
+  .mobile-subpage table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* 16px minimum stops iOS auto-zoom on focus */
+  .mobile-subpage input,
+  .mobile-subpage select,
+  .mobile-subpage textarea { font-size: 16px !important; max-width: 100%; box-sizing: border-box; }
+
+  /* Trim desktop-scale padding */
+  .mobile-subpage [style*="padding: 24px 28px"],
+  .mobile-subpage [style*="padding: 28px 32px"] { padding: 14px 12px !important; }
+
+  /* Images never overflow */
+  .mobile-subpage img { max-width: 100%; height: auto; }
+
+  /* Bottom nav sits above the iPhone home indicator; content clears both */
+  .mobile-bottom-nav { padding-bottom: env(safe-area-inset-bottom, 0px); min-height: 56px; }
+  .mobile-scroll-area { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important; }
+  /* The More sheet sits directly on top of the bar */
+  .mobile-more-sheet { bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+
+  /* Fixed app shell so .mobile-scroll-area actually scrolls (not the document).
+     Without this the inner overflowY:auto never activates and sticky headers
+     scroll away. 100dvh tracks the collapsing mobile URL bar. */
+  .mobile-app-shell { height: 100vh; height: 100dvh; overflow: hidden; }
   </style>
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
@@ -13180,27 +13227,77 @@ const DEFAULT_TABS = [
 ];
 const TABS = DEFAULT_TABS; // alias used elsewhere
 
-function MobileBottomNav({ mobileTab, setMobileTab }) {
-  const tabs = [
-    { key:"tasks", icon:"🏠", label:"Home" },
-    { key:"tasks", icon:"✅", label:"Tasks" },
-    { key:"add", icon:"+", label:"", isAdd:true },
-    { key:"schedule", icon:"📅", label:"Schedule" },
-    { key:"more", icon:"···", label:"More" },
-  ];
+// Mirrors the desktop tab bar exactly — same source list, same visibleTabs filter,
+// so mobile never drifts from desktop and respects the Settings tab toggles.
+// Standard mobile pattern: bottom tab bar for primary sections (thumb-reachable),
+// 4 most-used + More. Tab list and order come from DEFAULT_TABS/visibleTabs,
+// so mobile never drifts from desktop or the Settings toggles.
+const MOBILE_PRIMARY_COUNT = 4;
+const MOBILE_TAB_ICONS = {
+  tasks:"✅", gcalendar:"📅", goals:"🎯", content:"✏️", video:"🎬",
+  plan:"📊", team:"👥", uniform:"👕", resources:"📚", schedule:"🗓", settings:"⚙️",
+};
+
+function MobileBottomNav({ mobileTab, setMobileTab, visibleTabs }) {
+  const [moreOpen, setMoreOpen] = useS(false);
+  const vis = visibleTabs && visibleTabs.length ? visibleTabs : DEFAULT_TABS.filter(t=>t.on).map(t=>t.key);
+  const tabs = DEFAULT_TABS.filter(t => vis.includes(t.key) && t.key !== "settings");
+  const primary  = tabs.slice(0, MOBILE_PRIMARY_COUNT);
+  const overflow = tabs.slice(MOBILE_PRIMARY_COUNT);
+  const settingsTab = DEFAULT_TABS.find(t => t.key === "settings");
+  const sheetItems = settingsTab ? [...overflow, settingsTab] : overflow;
+  const onOverflowScreen = sheetItems.some(t => t.key === mobileTab);
+
+  const pick = (k) => { setMoreOpen(false); setMobileTab(k); };
+
+  const navBtn = (key, icon, label, active, onClick) => (
+    <button key={key} onClick={onClick}
+      style={{ flex:1, minWidth:0, border:"none", background:"none", cursor:"pointer", fontFamily:"inherit",
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3,
+        padding:"7px 2px", color: active ? T.gold : T.muted, WebkitTapHighlightColor:"transparent" }}>
+      <span style={{ fontSize:17, lineHeight:1 }}>{icon}</span>
+      <span style={{ fontSize:8.5, fontWeight:800, letterSpacing:"0.03em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%" }}>{label}</span>
+    </button>
+  );
+
   return (
-    <div style={{ position:"fixed", bottom:0, left:0, right:0, maxWidth:480, margin:"0 auto", height:60, background:T.cardBg, borderTop:`1px solid ${T.border}`, display:"flex", alignItems:"stretch", zIndex:200 }}>
-      {tabs.map(t => (
-        <button key={t.key} onClick={() => !t.isAdd && setMobileTab(t.key)}
-          style={{ flex:1, border:"none", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, color: t.isAdd ? "#fff" : mobileTab===t.key ? T.gold : T.muted, fontFamily:"inherit" }}>
-          {t.isAdd
-            ? <div style={{ width:44, height:44, borderRadius:"50%", background:T.navy, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, color:"#fff", fontWeight:300, marginTop:-16, boxShadow:"0 4px 12px rgba(0,0,0,0.3)" }}>+</div>
-            : <span style={{ fontSize:18 }}>{t.icon}</span>
-          }
-          {!t.isAdd && <span style={{ fontSize:9, fontWeight:700, letterSpacing:"0.05em" }}>{t.label}</span>}
-        </button>
-      ))}
-    </div>
+    <>
+      {moreOpen && (
+        <div onClick={()=>setMoreOpen(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:240 }} />
+      )}
+
+      {/* More sheet — slides up from the bar */}
+      {moreOpen && (
+        <div className="mobile-more-sheet"
+          style={{ position:"fixed", left:0, right:0, maxWidth:480, margin:"0 auto", background:T.cardBg,
+            borderTopLeftRadius:16, borderTopRightRadius:16, boxShadow:"0 -8px 32px rgba(0,0,0,0.22)",
+            zIndex:250, maxHeight:"65vh", overflowY:"auto" }}>
+          <div style={{ display:"flex", justifyContent:"center", padding:"9px 0 4px" }}>
+            <div style={{ width:36, height:4, borderRadius:2, background:T.border }} />
+          </div>
+          <div style={{ padding:"2px 18px 10px", fontSize:10, fontWeight:800, letterSpacing:"0.1em", color:T.faint }}>MORE</div>
+          {sheetItems.map(t => (
+            <div key={t.key} onClick={()=>pick(t.key)}
+              style={{ display:"flex", alignItems:"center", gap:14, padding:"13px 18px", borderTop:`1px solid ${T.border}`,
+                cursor:"pointer", WebkitTapHighlightColor:"transparent",
+                background: mobileTab===t.key ? T.surface : "transparent" }}>
+              <span style={{ fontSize:18, width:26, textAlign:"center", flexShrink:0 }}>{MOBILE_TAB_ICONS[t.key]||"•"}</span>
+              <span style={{ flex:1, fontSize:12.5, fontWeight:800, letterSpacing:"0.04em",
+                color: mobileTab===t.key ? T.gold : T.ink }}>{t.label}</span>
+              <span style={{ color:T.faint, fontSize:15, flexShrink:0 }}>›</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mobile-bottom-nav"
+        style={{ position:"fixed", bottom:0, left:0, right:0, maxWidth:480, margin:"0 auto",
+          background:T.cardBg, borderTop:`1px solid ${T.border}`, display:"flex", alignItems:"stretch", zIndex:260 }}>
+        {primary.map(t => navBtn(t.key, MOBILE_TAB_ICONS[t.key]||"•", t.label, mobileTab===t.key && !moreOpen, ()=>pick(t.key)))}
+        {sheetItems.length > 0 && navBtn("__more", "⋯", "MORE", moreOpen || onOverflowScreen, ()=>setMoreOpen(o=>!o))}
+      </div>
+    </>
   );
 }
 
@@ -15604,30 +15701,34 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
   );
 }
 
-function MobileMorePage({ setForceMobile }) {
+function MobileMorePage({ setForceMobile, onNavigate, available }) {
   const items = [
-    { icon:"📧", label:"Emails", desc:"Email templates & campaigns" },
-    { icon:"🎬", label:"Video Schedule", desc:"Video content planning" },
-    { icon:"📊", label:"Plan 2026", desc:"Annual goals & milestones" },
-    { icon:"👥", label:"Team", desc:"Team management" },
-    { icon:"👕", label:"Uniform", desc:"Stock tracking" },
-    { icon:"📚", label:"Resources", desc:"Documents & links" },
-    { icon:"📈", label:"Activity", desc:"Usage & history" },
-    { icon:"🧠", label:"Brain Dump", desc:"Quick capture" },
-    { icon:"✅", label:"Approvals", desc:"Post approvals" },
-  ];
+    { key:"goals",     icon:"🎯", label:"Goals",          desc:"Campaigns & milestones" },
+    { key:"gcalendar", icon:"📅", label:"Calendar",       desc:"Google Calendar schedule" },
+    { key:"video",     icon:"🎬", label:"Video Schedule", desc:"Filming & production" },
+    { key:"plan",      icon:"📊", label:"Yearly Plan",    desc:"Annual goals & milestones" },
+    { key:"team",      icon:"👥", label:"Team",           desc:"Staff & lunches" },
+    { key:"uniform",   icon:"👕", label:"Uniform & Merch",desc:"Stock tracking" },
+    { key:"resources", icon:"📚", label:"Resources",      desc:"Suppliers, docs & links" },
+    { key:"emails",    icon:"📧", label:"Emails",         desc:"Email pipeline" },
+    { key:"analytics", icon:"📈", label:"Analytics",      desc:"Post performance" },
+    { key:"activity",  icon:"🕘", label:"Activity",       desc:"Usage & history" },
+    { key:"settings",  icon:"⚙️", label:"Settings",       desc:"Theme, tabs & branding" },
+  ].filter(it => (available||{})[it.key]);
+
   return (
     <div style={{ padding:16 }}>
       <h2 style={{ fontSize:20, fontWeight:900, color:T.heading, margin:"0 0 16px", fontFamily:"'210 Supersize Black',sans-serif" }}>More</h2>
       <div style={{ display:"flex", flexDirection:"column", gap:2, background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
         {items.map((item,i) => (
-          <div key={item.label} style={{ display:"flex", alignItems:"center", gap:14, padding:"14px 16px", borderBottom:i<items.length-1?`1px solid ${T.border}`:"none" }}>
-            <span style={{ fontSize:20, width:32, textAlign:"center" }}>{item.icon}</span>
-            <div style={{ flex:1 }}>
+          <div key={item.key} onClick={()=>onNavigate&&onNavigate(item.key)}
+            style={{ display:"flex", alignItems:"center", gap:14, padding:"14px 16px", borderBottom:i<items.length-1?`1px solid ${T.border}`:"none", cursor:"pointer", WebkitTapHighlightColor:"transparent" }}>
+            <span style={{ fontSize:20, width:32, textAlign:"center", flexShrink:0 }}>{item.icon}</span>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:14, fontWeight:700, color:T.heading }}>{item.label}</div>
               <div style={{ fontSize:11, color:T.muted }}>{item.desc}</div>
             </div>
-            <span style={{ color:T.faint, fontSize:16 }}>›</span>
+            <span style={{ color:T.faint, fontSize:16, flexShrink:0 }}>›</span>
           </div>
         ))}
       </div>
@@ -15641,16 +15742,16 @@ function MobileMorePage({ setForceMobile }) {
   );
 }
 
-function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, schedule, setSchedule, actualSchedule, setActualSchedule, schedSpans, setSchedSpans, dayNotes, setDayNotes, content, setContent, machinesToPush, setMachinesToPush, toBeCompleted, setToBeCompleted, ongoingJobs, setOngoingJobs, postApprovals, setPostApprovals, toPostList, setToPostList, ideas, setIdeas, staff, avatars, forceMobile, setForceMobile, categories, getState, applyState, syncRef, chatAs, setOnlineUsers }) {
-  const [mobileTab, setMobileTab] = useS("today");
+function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAdd, onDelete, onChangePriority, onChangeOwner, onChangeText, onChangeCategory, onChangeSubtasks, onChangeNotes, recurringTasks, setRecurringTasks, schedule, setSchedule, actualSchedule, setActualSchedule, schedSpans, setSchedSpans, dayNotes, setDayNotes, content, setContent, machinesToPush, setMachinesToPush, toBeCompleted, setToBeCompleted, ongoingJobs, setOngoingJobs, postApprovals, setPostApprovals, toPostList, setToPostList, ideas, setIdeas, staff, avatars, forceMobile, setForceMobile, categories, getState, applyState, syncRef, chatAs, setOnlineUsers, extraPages, visibleTabs }) {
+  const [mobileTab, setMobileTab] = useS("tasks");
   const popstateRef = useR(false);
 
   useE(() => {
-    window.history.replaceState({ mTab: "today" }, '');
-    window.history.pushState({ mTab: "today" }, '');
+    window.history.replaceState({ mTab: "tasks" }, '');
+    window.history.pushState({ mTab: "tasks" }, '');
     const handler = (e) => {
       popstateRef.current = true;
-      setMobileTab(e.state?.mTab || "today");
+      setMobileTab(e.state?.mTab || "tasks");
     };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
@@ -15662,7 +15763,7 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
   }, [mobileTab]);
 
   return (
-    <div style={{ minHeight:"100vh", background:T.bg, display:"flex", flexDirection:"column", fontFamily:"'Inter', sans-serif", maxWidth:480, margin:"0 auto" }}>
+    <div className="mobile-app-shell" style={{ background:T.bg, display:"flex", flexDirection:"column", fontFamily:"'Inter', sans-serif", maxWidth:480, margin:"0 auto" }}>
       <MobileHeader setForceMobile={setForceMobile} getState={getState} applyState={applyState} syncRef={syncRef} chatAs={chatAs} setOnlineUsers={setOnlineUsers}
         onApplyTasks={(msg) => {
           if (!msg || typeof msg !== "object") return;
@@ -15706,19 +15807,7 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
           }
         }}
       />
-      <div style={{ flex:1, overflowY:"auto", paddingBottom:70 }}>
-        {mobileTab === "today" && (
-          <MobileTodayPage
-            todayUser={todayUser}
-            tasksByDate={tasksByDate}
-            schedule={schedule}
-            machinesToPush={machinesToPush}
-            setMachinesToPush={setMachinesToPush}
-            setMobileTab={setMobileTab}
-            content={content}
-            postApprovals={postApprovals}
-          />
-        )}
+      <div className="mobile-scroll-area" style={{ flex:1, overflowY:"auto", overflowX:"hidden" }}>
         {mobileTab === "tasks" && (
           <MobileTasksPage
             tasksByDate={tasksByDate}
@@ -15779,11 +15868,13 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
             setDayNotes={setDayNotes}
           />
         )}
-        {mobileTab === "more" && (
-          <MobileMorePage setForceMobile={setForceMobile} />
+        {(extraPages||{})[mobileTab] && (
+          <div className="mobile-subpage">
+            <div className="mobile-subpage-body" style={{ padding:"12px 12px 24px" }}>{extraPages[mobileTab]()}</div>
+          </div>
         )}
       </div>
-      <MobileBottomNav mobileTab={mobileTab} setMobileTab={setMobileTab} />
+      <MobileBottomNav mobileTab={mobileTab} setMobileTab={setMobileTab} visibleTabs={visibleTabs} />
     </div>
   );
 }
@@ -16692,6 +16783,20 @@ function App({ onSwitchWorkspace = () => {} }) {
         syncRef={syncRef}
         chatAs={chatAs}
         setOnlineUsers={setOnlineUsers}
+        visibleTabs={visibleTabs}
+        extraPages={{
+          goals:     () => <GoalsTab goals={goals} setGoals={setGoals} goalTemplates={goalTemplates} setGoalTemplates={setGoalTemplates} tasksByDate={tasksByDate} setTasksByDate={setTasksByDate} onJumpToTask={dk=>{ setSelDate(new Date(dk+'T12:00:00')); }} />,
+          gcalendar: () => <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={chatAs} />,
+          video:     () => <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd} videoQueue={videoQueue} setVideoQueue={setVideoQueue} toPostList={toPostList} setToPostList={setToPostList} onSetContent={setContent}/>,
+          plan:      () => <PlanView plan={plan} setPlan={setPlan}/>,
+          team:      () => <TeamView staff={staff} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>,
+          uniform:   () => <UniformView uniform={uniform} setUniform={setUniform} staff={staff} />,
+          resources: () => <ResourcesView ideas={ideas} setIdeas={setIdeas} suppliers={suppliers} setSuppliers={setSuppliers} budget={budget} setBudget={setBudget} onboarding={onboarding} setOnboarding={setOnboarding} courses={courses} setCourses={setCourses} testimonials={testimonials} setTestimonials={setTestimonials} photos={photos} setPhotos={setPhotos} onAddToTasks={onAdd} />,
+          activity:  () => <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>,
+          analytics: () => <AnalyticsView postApprovals={postApprovals} content={content}/>,
+          emails:    () => <EmailPipelineView emailItems={emailItems} setEmailItems={setEmailItems} emailComments={emailComments} setEmailComments={setEmailComments} emailActivity={emailActivity} setEmailActivity={setEmailActivity} emailAttachments={emailAttachments} setEmailAttachments={setEmailAttachments} todayUser={todayUser} staff={staff} />,
+          settings:  () => <SettingsView theme={theme} setTheme={(t) => { applyTheme(t); try { localStorage.setItem("prontoHQ.theme", t); } catch(_) {} setTheme(t); }} categories={categories} setCategories={setCategories} visibleTabs={visibleTabs} setVisibleTabs={setVisibleTabs} allTabs={DEFAULT_TABS} branding={branding} setBranding={setBranding} avatars={avatars} onAvatarChange={onAvatarChange} todayUser={todayUser} contentLabels={contentLabels} setContentLabels={setContentLabels} videoLabels={videoLabels} setVideoLabels={setVideoLabels} setContent={setContent} />,
+        }}
       />
     );
   }
