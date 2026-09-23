@@ -1535,6 +1535,16 @@ function _mergeUniform(a, b) {
 }
 
 // Merge flat arrays (recurringTasks, toBeCompleted, ongoingJobs) by id using updatedAt
+// Union two staff lists by id, newest updatedAt wins. Soft-deleted people are KEPT
+// here as tombstones — dropping them erased the record entirely on the next sync, so a
+// removal never propagated (and the person could reappear from the other device).
+// Display sites filter on `deleted`; state must not.
+function _mergeStaffLists(prev, incoming) {
+  const ensureId = m => (m && m.id) ? m : { ...m, id: ('staff_' + (((m||{}).name)||'').replace(/[^a-z0-9]/gi,'_').slice(0,20) + '_' + (((m||{}).started || (m||{})._addedAt) || '')).slice(0,48) };
+  const inc = (Array.isArray(incoming) ? incoming : Object.values(incoming || {})).filter(Boolean).map(ensureId);
+  return _mergeById((prev || []).filter(Boolean).map(ensureId), inc);
+}
+
 function _mergeById(arrA, arrB) {
   const a = arrA || [], b = arrB || [];
   const byId = {};
@@ -16382,7 +16392,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         if (s.testimonials) setTestimonials(s.testimonials);
         if (s.photos) setPhotos(s.photos);
         if (s.plan) setPlan(s.plan);
-        if (s.staff) setStaff(s.staff);
+        if (s.staff) setStaff(prev => _mergeStaffLists(prev, s.staff));
         if (s.lunches) setLunches(s.lunches);
         if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
         if (s.ongoingJobs) setOngoingJobs(s.ongoingJobs);
@@ -16451,7 +16461,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         if (s.testimonials) setTestimonials(s.testimonials);
         if (s.photos) setPhotos(s.photos);
         if (s.plan) setPlan(s.plan);
-        if (s.staff) setStaff(s.staff);
+        if (s.staff) setStaff(prev => _mergeStaffLists(prev, s.staff));
         if (s.lunches) setLunches(s.lunches);
         if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
         if (s.ongoingJobs) setOngoingJobs(s.ongoingJobs);
@@ -16495,11 +16505,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.testimonials) setTestimonials(s.testimonials);
     if (s.photos) setPhotos(s.photos);
     if (s.plan) setPlan(s.plan);
-    if (s.staff) setStaff(prev => {
-      const ensureId = m => m.id ? m : { ...m, id: ('staff_'+(m.name||'').replace(/[^a-z0-9]/gi,'_').slice(0,20)+'_'+(m.started||m._addedAt||'')).slice(0,48) };
-      const incoming = (Array.isArray(s.staff)?s.staff:Object.values(s.staff||{})).map(ensureId);
-      return _mergeById((prev||[]).map(ensureId), incoming).filter(m => !m.deleted);
-    });
+    if (s.staff) setStaff(prev => _mergeStaffLists(prev, s.staff));
     if (s.lunches) setLunches(prev => {
       const ensureId = l => l.id ? l : { ...l, id: ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40) };
       const incoming = (Array.isArray(s.lunches)?s.lunches:Object.values(s.lunches||{})).map(ensureId).filter(l => !lunchBlocked(l));
@@ -21116,7 +21122,7 @@ function UniformView({ uniform, setUniform, staff = [] }) {
                 <select value={issueStaff} onChange={e => setIssueStaff(e.target.value)}
                   style={{ width:"100%", padding:"10px 12px", border:`1px solid ${T.border}`, borderRadius:6, fontSize:13, color:T.ink, background:T.bg, outline:"none", fontFamily:"inherit" }}>
                   <option value="">Select staff member…</option>
-                  {staff.map(s => <option key={s.id || s.name} value={s.name}>{s.name}{s.role ? ` — ${s.role}` : ""}</option>)}
+                  {staff.filter(s => !s.deleted).map(s => <option key={s.id || s.name} value={s.name}>{s.name}{s.role ? ` — ${s.role}` : ""}</option>)}
                 </select>
               </div>
               <div>
