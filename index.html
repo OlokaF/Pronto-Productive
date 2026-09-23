@@ -1639,7 +1639,10 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
     if (!Object.keys(updates).length) return;
     dbRef.current.ref("prontoHQ").update(updates)
       .then(() => { lastSyncedTasksRef.current = currentFlat; })
-      .catch(err => console.error("[Pronto] Tasks write failed:", err));
+      .catch(err => {
+        console.error("[Pronto] Tasks write failed:", err);
+        setSyncError((err && (err.code || err.message)) || "Task write failed");
+      });
   };
 
   // Close popup on outside click
@@ -1939,7 +1942,7 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
                   setTimeout(() => attempt(retriesLeft - 1), 2000 * (4 - retriesLeft));
                 } else {
                   console.error("[Pronto] Firebase write failed after retries:", err);
-                  setSyncError(true);
+                  setSyncError((err && (err.code || err.message)) || "Write failed");
                 }
               });
           };
@@ -2043,7 +2046,13 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
             <div style={{ padding:"10px 12px", background:syncError?"#FFFBEB":"#E4F7EF", border:`1px solid ${syncError?"#F59E0B33":"#0E9F6E22"}`, borderRadius:7, marginBottom:14 }}>
               {syncError && (
                 <div style={{ background:"#FEF3CD", border:"1px solid #F59E0B44", borderRadius:5, padding:"7px 10px", marginBottom:8, fontSize:11, color:"#92400E", fontWeight:600 }}>
-                  ⚠ Last write failed — retrying automatically. Your data is safe in your browser.
+                  ⚠ Writes are FAILING — changes are not reaching Firebase.
+                  <div style={{ fontFamily:"monospace", fontWeight:500, marginTop:4, wordBreak:"break-all" }}>
+                    {typeof syncError === "string" ? syncError : "unknown error"}
+                  </div>
+                  <div style={{ fontWeight:500, marginTop:4 }}>
+                    PERMISSION_DENIED usually means the Firebase database rules have expired.
+                  </div>
                 </div>
               )}
               <p style={{ fontSize:12, color:syncError?"#B45309":"#0E9F6E", fontWeight:700, marginBottom:4 }}>{syncError ? "Connected — sync error" : "Connected — changes sync automatically"}</p>
