@@ -20530,6 +20530,26 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
     <div style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:"20px 24px", marginBottom:16 }}>{children}</div>
   );
 
+  // Browser storage usage. localStorage silently fails once full, which previously lost
+  // days of work with no visible symptom, so it is surfaced here.
+  const storageInfo = (() => {
+    try {
+      let total = 0; const rows = [];
+      for (const k in localStorage) {
+        if (!Object.prototype.hasOwnProperty.call(localStorage, k)) continue;
+        const n = ((localStorage[k] || "") + "").length;
+        total += n;
+        if (n > 1024) rows.push({ k, n });
+      }
+      rows.sort((a, b) => b.n - a.n);
+      let writable = true;
+      try { localStorage.setItem("__pronto_probe", "x".repeat(50000)); localStorage.removeItem("__pronto_probe"); }
+      catch (_) { writable = false; }
+      return { total, rows: rows.slice(0, 6), writable, limit: 5 * 1024 * 1024 };
+    } catch (_) { return null; }
+  })();
+  const fmtKB = n => n > 1048576 ? (n / 1048576).toFixed(2) + " MB" : Math.round(n / 1024) + " KB";
+
   const avatarFileRefs = { vanja: useR(null), oloka: useR(null) };
 
   const handleAvatarUpload = (key, e) => {
@@ -20543,6 +20563,37 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
 
   return (
     <div style={{ maxWidth:640 }}>
+      {storageInfo && (() => {
+        const pct = Math.min(100, (storageInfo.total / storageInfo.limit) * 100);
+        const bad = !storageInfo.writable || pct > 80;
+        const warn = pct > 60;
+        const col = bad ? "#C8261A" : warn ? "#D97706" : "#0E9F6E";
+        return (
+          <div style={{ background:T.cardBg, border:`1px solid ${bad ? "#C8261A55" : T.border}`, borderRadius:10, padding:"20px 24px", marginBottom:16 }}>
+            <p style={{ fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:11, color:T.heading, letterSpacing:"0.1em", marginBottom:14 }}>BROWSER STORAGE</p>
+            <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:8 }}>
+              <span style={{ fontSize:26, fontWeight:900, color:col }}>{fmtKB(storageInfo.total)}</span>
+              <span style={{ fontSize:12, color:T.muted }}>of ~{fmtKB(storageInfo.limit)} used ({pct.toFixed(0)}%)</span>
+            </div>
+            <div style={{ height:8, background:T.border, borderRadius:4, overflow:"hidden", marginBottom:10 }}>
+              <div style={{ height:"100%", width:pct + "%", background:col, borderRadius:4 }} />
+            </div>
+            <p style={{ fontSize:12, fontWeight:700, color:col, marginBottom:10 }}>
+              {storageInfo.writable ? "Saving works — there is room to write." : "FULL — changes are NOT being saved. Tell Oloka."}
+            </p>
+            {storageInfo.rows.length > 0 && (
+              <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:10 }}>
+                {storageInfo.rows.map(r => (
+                  <div key={r.k} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:T.muted, padding:"3px 0" }}>
+                    <span style={{ fontFamily:"monospace", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginRight:12 }}>{r.k}</span>
+                    <span style={{ fontVariantNumeric:"tabular-nums", flexShrink:0 }}>{fmtKB(r.n)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       <div style={{ marginBottom:24 }}>
         <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>CONFIGURATION</p>
         <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>SETTINGS</h1>
