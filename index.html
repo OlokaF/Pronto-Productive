@@ -10895,6 +10895,7 @@ function StaffCard({ staff, idx, onChange, onDelete }) {
   );
 }
 
+const LUNCH_SHEET_URL = "https://docs.google.com/spreadsheets/d/1SlV-KqLwhMlRcQ9A0Etg3yrdVTPkrY6uKtBwn5AIeRQ/edit?usp=sharing";
 const DELETED_LUNCHES_KEY = 'prontoHQ.deletedLunchIds';
 // Module-level set — always current, no React timing issues
 const _deletedLunchIds = (() => { try { return new Set(JSON.parse(localStorage.getItem(DELETED_LUNCHES_KEY)||'[]')); } catch(_) { return new Set(); } })();
@@ -11079,83 +11080,25 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
         ><span style={{ fontSize:18, lineHeight:1 }}>+</span> Add team member</button>
       </div>
 
-      {/* Lunch winners */}
+      {/* Lunch winners — moved to a Google Sheet. The in-app list repeatedly lost entries
+          to the sync bugs (7 winners were unrecoverable), so the Sheet is now the record. */}
       <div style={{ marginTop:30 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ width:4, height:18, background:T.gold }}></span>
           <h2 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:18, letterSpacing:"0.01em", color:T.heading }}>LUNCH WINNERS</h2>
-          <span style={{ color:T.muted, fontSize:11 }}>· {lunches.filter(l=>!lunchBlocked(l)&&!l.had).length} remaining · {lunches.filter(l=>!lunchBlocked(l)&&l.had).length} done</span>
         </div>
-        <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden", background:T.cardBg }}>
-          {/* Header row */}
-          <div style={{ display:"grid", gridTemplateColumns:"36px 1fr 100px 130px 88px 32px", gap:0, background:T.surface, borderBottom:`1px solid ${T.border}`, padding:"6px 12px", alignItems:"center" }}>
-            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>HAD</span>
-            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>NAME</span>
-            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>TYPE</span>
-            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>DATE ↑</span>
-            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:T.muted }}>STATUS</span>
-            <span></span>
+        <a href={LUNCH_SHEET_URL} target="_blank" rel="noopener noreferrer"
+          style={{ display:"flex", alignItems:"center", gap:14, textDecoration:"none",
+            border:`1px solid ${T.border}`, borderRadius:10, background:T.cardBg, padding:"18px 20px", cursor:"pointer" }}
+          onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.gold; e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.07)"; }}
+          onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.boxShadow="none"; }}>
+          <span style={{ fontSize:26, flexShrink:0 }}>🍽</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:14, fontWeight:800, color:T.heading, marginBottom:2 }}>Click to view lunch list</div>
+            <div style={{ fontSize:11.5, color:T.muted }}>Opens the Team Lunch Record in Google Sheets</div>
           </div>
-          {lunches.filter(l=>!lunchBlocked(l)).length === 0 && (
-            <p style={{ padding:"16px 14px", fontSize:11, color:T.faint, fontStyle:"italic" }}>No lunch winners yet — add one below</p>
-          )}
-          {[...lunches].filter(l=>!lunchBlocked(l))
-            .sort((a, b) => {
-              const da = a.date || "", db = b.date || "";
-              if (da < db) return -1; if (da > db) return 1; return 0;
-            })
-            .map((l) => {
-              const origIdx = lunches.findIndex(x => (x.id || x) === (l.id || l));
-              const typeColor = l.type === "Video" ? "#7C3AED" : "#0891B2";
-              const typeBg    = l.type === "Video" ? "#EDE9FE" : "#E0F2FE";
-              return (
-                <div key={l.id || origIdx} style={{
-                  display:"grid", gridTemplateColumns:"36px 1fr 100px 130px 88px 32px", gap:0, alignItems:"center",
-                  padding:"7px 12px", borderBottom:`1px solid ${T.border}`,
-                  background: l.had ? T.surface : T.cardBg,
-                  opacity: l.had ? 0.65 : 1,
-                  transition:"all 0.15s",
-                }}>
-                  {/* Tick */}
-                  <button onClick={() => toggleLunchHad(origIdx)} title={l.had ? "Undo" : "Mark as had lunch"} style={{
-                    width:20, height:20, borderRadius:4, border:`2px solid ${l.had ? T.gold : T.border}`,
-                    background: l.had ? T.gold : "transparent", cursor:"pointer",
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    color:"#fff", fontSize:11, fontWeight:900, flexShrink:0, transition:"all 0.15s",
-                  }}>{l.had ? "✓" : ""}</button>
-                  {/* Name */}
-                  <EditableText value={l.name} onChange={v => updateLunch(origIdx, { name:v })} placeholder="Name"
-                    style={{ fontSize:12, fontWeight: l.had ? 400 : 600, color: l.had ? T.muted : T.ink, textDecoration: l.had ? "line-through" : "none" }}/>
-                  {/* Photo / Video toggle */}
-                  <div style={{ display:"flex", gap:0, border:`1px solid ${T.border}`, borderRadius:5, overflow:"hidden", width:"fit-content" }}>
-                    {["Photo","Video"].map(t => (
-                      <button key={t} onClick={() => updateLunch(origIdx, { type: t })} style={{
-                        padding:"2px 7px", fontSize:9, fontWeight:800, fontFamily:"inherit", cursor:"pointer", border:"none",
-                        background: (l.type||"Photo") === t ? typeColor : "transparent",
-                        color:       (l.type||"Photo") === t ? "#fff"      : T.muted,
-                      }}>{t}</button>
-                    ))}
-                  </div>
-                  {/* Date */}
-                  <input type="date" value={l.date && l.date.match(/^\d{4}-\d{2}-\d{2}$/) ? l.date : ""} onChange={e => updateLunch(origIdx, { date: e.target.value })} style={{
-                    background:"transparent", border:"none", color:T.muted, fontSize:11, fontFamily:"inherit", padding:0, cursor:"pointer",
-                  }}/>
-                  {/* Status badge */}
-                  <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.06em", color: l.had ? "#10B981" : T.gold, background: l.had ? "#10B98115" : T.gold+"15", padding:"2px 7px", borderRadius:10 }}>
-                    {l.had ? "DONE ✓" : "PENDING"}
-                  </span>
-                  {/* Delete */}
-                  <button onClick={() => deleteLunchItem(l)} title="Remove row" style={{
-                    background:"none", border:"none", color:T.faint, cursor:"pointer", fontSize:15,
-                    padding:"0 4px", lineHeight:1, justifySelf:"center",
-                  }} onMouseEnter={e=>e.currentTarget.style.color="#EF4444"} onMouseLeave={e=>e.currentTarget.style.color=T.faint}>×</button>
-                </div>
-              );
-            })}
-          <div style={{ padding:"8px 12px" }}>
-            <AddRowBtn label="Add lunch winner" onClick={addLunch}/>
-          </div>
-        </div>
+          <span style={{ fontSize:18, color:T.gold, flexShrink:0 }}>↗</span>
+        </a>
       </div>
     </div>
   );
