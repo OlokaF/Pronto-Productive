@@ -21299,8 +21299,31 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<AppErrorBoundary><PasswordGate><WorkspaceRouter /></PasswordGate></AppErrorBoundary>);
+// ── OAuth callback popup guard ────────────────────────────────────────────────
+// The Google/Tasks OAuth flows use redirect_uri = this app's own URL, so Google sends
+// the popup straight back here. Without this guard the popup booted a SECOND full copy
+// of the app: it connected to Firebase, and on close its unload flush wrote that copy's
+// stale state over the real window's work — tasks appeared to "revert". It also showed
+// as a small stray window, because Chrome clamps the offscreen 1x1 popup back on screen.
+// The opener only ever reads popup.location.hash, so this page needs no UI at all.
+const _isOAuthPopup = (() => {
+  try {
+    return !!window.opener
+        && window.opener !== window
+        && /^(gcal_silent_refresh|gcal_oauth|gtasks_oauth)$/.test(window.name || "");
+  } catch (_) { return false; }
+})();
+
+if (_isOAuthPopup) {
+  // Leave the URL (and its #access_token) untouched for the opener to read, then self-close
+  // in case the opener never gets to it.
+  document.title = "Signing in…";
+  try { document.body.innerHTML = '<p style="font:14px system-ui;padding:16px;color:#444">Signing in…</p>'; } catch (_) {}
+  setTimeout(() => { try { window.close(); } catch (_) {} }, 20000);
+} else {
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(<AppErrorBoundary><PasswordGate><WorkspaceRouter /></PasswordGate></AppErrorBoundary>);
+}
 
 </script>
 
