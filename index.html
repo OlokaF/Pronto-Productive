@@ -1685,6 +1685,9 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
 
     // ── Presence ──
     const identity = myIdentity || "vanja";
+    // Diff baseline belongs to a single identity — carrying it across a switch would
+    // diff our tasks against the other person's map (and null out their ids on our path).
+    lastSyncedTasksRef.current = null;
     const otherIdentity = identity === "oloka" ? "vanja" : "oloka";
     const meRef = db.ref(`${FB_PRES_PATH}/${identity}`);
     myPresRef.current = meRef;
@@ -15417,6 +15420,8 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
     if (!db) { setStatus("error"); setErrMsg("Could not initialise Firebase."); return; }
     dbRef.current = db;
     const identity = chatAs || "vanja";
+    // Diff baseline belongs to a single identity (see desktop note).
+    lastSyncedTasksRef.current = null;
     const otherIdentity = identity === "oloka" ? "vanja" : "oloka";
     db.ref(".info/connected").on("value", snap => {
       const connected = snap.val();
@@ -16062,7 +16067,11 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (sources.length === 0) return {};
     return sources.reduce((a, b) => _mergeContent(a, b));
   });
-  const [chatAs, setChatAs] = useS("vanja");
+  const [chatAs, setChatAs] = useS(() => {
+    // Read the signed-in user synchronously — a hardcoded "vanja" default made every
+    // other user boot with the wrong Firebase identity and write to the wrong path.
+    try { return localStorage.getItem("prontoHQ.todayUser") || "vanja"; } catch(_) { return "vanja"; }
+  });
   const [todayUser, setTodayUser] = useS(() => {
     try { return localStorage.getItem("prontoHQ.todayUser") || null; } catch(_) { return null; }
   });
