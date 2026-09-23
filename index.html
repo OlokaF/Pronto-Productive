@@ -16001,6 +16001,14 @@ function MobileApp({ todayUser, tasksByDate, selDate, setSelDate, onToggle, onAd
 function App({ onSwitchWorkspace = () => {} }) {
   // ── Persistence: load from localStorage once, save on every change ──
   const LS_KEY = "prontoHQ.state.v1";
+  const BRANDING_LS_KEY = "prontoHQ.branding.v1";
+
+  // The branding logos are base64 data URIs — ~3.4 MB, about 72% of the whole state — and
+  // fullState() was rewritten to localStorage on EVERY change. That pushed each save past
+  // the ~5 MB quota, setItem threw, the catch swallowed it, and the app silently fell back
+  // to the last save that happened to fit. Hence "import, reload, it's gone".
+  // Branding changes rarely, so it now lives under its own key and is written on its own.
+  const stripHeavyForLocal = (state) => { const { branding: _b, ...rest } = state || {}; return rest; };
   const saved = (() => {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || "null"); } catch (_) { return null; }
   })();
@@ -16248,7 +16256,16 @@ function App({ onSwitchWorkspace = () => {} }) {
     });
   };
   // Branding — app name, subtitle, custom logo
-  const [branding, setBranding] = useS(() => loadOr("branding", () => ({ appName:"PRONTO", appSubtitle:"PRODUCTIVE", logoUrl:null })));
+  const _lsFailedRef = useR(false);
+  const [branding, setBranding] = useS(() => {
+    try { const d = JSON.parse(localStorage.getItem(BRANDING_LS_KEY) || "null"); if (d) return d; } catch(_) {}
+    return loadOr("branding", () => ({ appName:"PRONTO", appSubtitle:"PRODUCTIVE", logoUrl:null }));
+  });
+  // Written on its own, only when branding actually changes.
+  useE(() => {
+    try { localStorage.setItem(BRANDING_LS_KEY, JSON.stringify(branding || {})); }
+    catch(e) { try { console.error('[Pronto] branding save failed (logo too large?):', e && e.message); } catch(_) {} }
+  }, [branding]);
   // Editable task categories
   const [categories, setCategories] = useS(() => {
     const defaults = ["Social Post","Email","Video","Design","Blog","Meeting","Event","Admin","AI","Website","Content Capture","Editing"];
@@ -16328,7 +16345,20 @@ function App({ onSwitchWorkspace = () => {} }) {
   useE(() => {
     const state = fullState();
     _latestStateRef.current = state;
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { try { console.error('[Pronto] LS main save failed:', e.message); } catch(_) {} }
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(stripHeavyForLocal(state)));
+      _lsFailedRef.current = false;
+    } catch (e) {
+      // Do not swallow this. A failed local save means the next reload loses everything
+      // since the last save that fit.
+      try {
+        console.error('[Pronto] LOCAL SAVE FAILED — data will be lost on reload:', e && e.name, e && e.message);
+        if (!_lsFailedRef.current) {
+          _lsFailedRef.current = true;
+          window.alert("Pronto could not save to this browser - storage is full. Your recent changes are NOT saved and will be lost if you reload. Tell Oloka: the stored logo images are most likely the cause.");
+        }
+      } catch(_) {}
+    }
     if (_fbReady.current && syncRef.current) syncRef.current.scheduleWrite(state);
   // tasksByDate, deletedTasks, schedule, actualSchedule excluded — they're stripped from the Firebase payload and have their own sync paths
   }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList, goals, goalTemplates]);
@@ -16358,7 +16388,7 @@ function App({ onSwitchWorkspace = () => {} }) {
       const lj = JSON.stringify(lunches || []);
       try { localStorage.setItem(LUNCHES_LS_KEY, lj); } catch(_) {}
       try { sessionStorage.setItem(LUNCHES_LS_KEY, lj); } catch(_) {}
-      try { localStorage.setItem(LS_KEY, JSON.stringify(fullState())); } catch(_) {}
+      try { localStorage.setItem(LS_KEY, JSON.stringify(stripHeavyForLocal(fullState()))); } catch(_) {}
     };
     window.addEventListener('beforeunload', flush);
     return () => window.removeEventListener('beforeunload', flush);
