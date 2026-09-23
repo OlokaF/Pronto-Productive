@@ -1545,6 +1545,15 @@ function _mergeStaffLists(prev, incoming) {
   return _mergeById((prev || []).filter(Boolean).map(ensureId), inc);
 }
 
+// How many populated sections a state blob carries. Used to stop a thin/empty server
+// slot from replacing a populated local one — applyState REPLACES these fields rather
+// than merging, so one bad apply wipes real work and then persists the emptiness.
+function _stateRichness(o) {
+  if (!o) return 0;
+  return ["content","ideas","suppliers","staff","plan","lunches","uniform","goals","emailItems"]
+    .filter(k => o[k] && Object.keys(o[k]).length > 0).length;
+}
+
 function _mergeById(arrA, arrB) {
   const a = arrA || [], b = arrB || [];
   const byId = {};
@@ -1738,8 +1747,13 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
         const localState = getState ? getState() : null;
         const localMs = localState?.savedAt ? new Date(localState.savedAt).getTime() : 0;
         const remoteMs = incoming.savedAt ? new Date(incoming.savedAt).getTime() : (_meta?.updatedAt || 0);
-        const diffHours = (localMs - remoteMs) / (1000 * 60 * 60);
-        if (localMs > 0 && diffHours > 1) {
+        // Local wins whenever it is not OLDER. This is our own slot; the only reason the
+        // server copy should win is an edit made on another device more recently. The old
+        // test demanded local be >1 hour newer, so a normal reload lost the work.
+        // Also refuse a server copy that is visibly thinner than what we already hold.
+        const localRich  = _stateRichness(localState);
+        const remoteRich = _stateRichness(incoming);
+        if (localMs > 0 && (localMs >= remoteMs || remoteRich < localRich)) {
           // Local is newer — keep it and push to server immediately so future loads don't conflict
           if (pendingState.current && dbRef.current) {
             localWriteAt.current = Date.now();
@@ -15475,6 +15489,19 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
       const { _meta, ...incoming } = data;
       if (!hasReceivedInitialData.current) {
         hasReceivedInitialData.current = true;
+        // Same protection as desktop, which mobile was missing entirely: never let an
+        // older or thinner server slot replace fresher local state.
+        const localState = getState ? getState() : null;
+        const localMs  = localState && localState.savedAt ? new Date(localState.savedAt).getTime() : 0;
+        const remoteMs = incoming.savedAt ? new Date(incoming.savedAt).getTime() : ((_meta && _meta.updatedAt) || 0);
+        if (localMs > 0 && (localMs >= remoteMs || _stateRichness(incoming) < _stateRichness(localState))) {
+          if (pendingState.current && dbRef.current) {
+            localWriteAt.current = Date.now();
+            dbRef.current.ref(myPath).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } });
+          }
+          setLastSync(new Date());
+          return;
+        }
         if (applyState) applyState(_mergeState(incoming, theirSnapRef.current, identity));
         setLastSync(new Date());
         return;
