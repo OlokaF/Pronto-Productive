@@ -19674,7 +19674,10 @@ function GoogleCalSyncEngine({ schedule, setSchedule, setExternalGcalEvents, tas
     if (!c.enabled || !c.accessToken || !c.tokenExpiry) return;
     const msUntilExpiry = c.tokenExpiry - Date.now();
     const refreshAt = msUntilExpiry - 5 * 60 * 1000;
-    if (refreshAt <= 0) { tryAutoReconnect.current(); return; }
+    // Do NOT open the auth popup on mount. Google tokens last ~1h, so an already-expired
+    // token fired this on essentially every app open — a visible stray window each time.
+    // The push/pull paths already refresh on demand, and SYNC in the header forces it.
+    if (refreshAt <= 0) return;
     const t = setTimeout(() => tryAutoReconnect.current(), refreshAt);
     return () => clearTimeout(t);
   }, [conf.accessToken, conf.tokenExpiry]);
@@ -21308,9 +21311,22 @@ class AppErrorBoundary extends React.Component {
 // The opener only ever reads popup.location.hash, so this page needs no UI at all.
 const _isOAuthPopup = (() => {
   try {
-    return !!window.opener
-        && window.opener !== window
-        && /^(gcal_silent_refresh|gcal_oauth|gtasks_oauth)$/.test(window.name || "");
+    const h = String(location.hash || "");
+    const q = String(location.search || "");
+    // The redirect lands back here with the token in the fragment — that is the reliable
+    // signal. (window.name is NOT: Chrome clears it across cross-origin navigation, so the
+    // popup's name is already gone by the time Google sends it back.)
+    const landed = /[#&]access_token=/.test(h)
+                || /[?&#]error=(access_denied|interaction_required|login_required|consent_required)/.test(q + h)
+                || /^(gcal_silent_refresh|gcal_oauth|gtasks_oauth)$/.test(window.name || "");
+    if (!landed) return false;
+    let hasOpener = false;
+    try { hasOpener = !!window.opener && window.opener !== window; } catch (_) {}
+    if (hasOpener) return true;
+    // Landed in a normal tab (opener lost): strip the fragment and boot normally rather
+    // than stranding the user on a blank page.
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}
+    return false;
   } catch (_) { return false; }
 })();
 
