@@ -1348,6 +1348,20 @@ function PresenceAvatars({ users, myIdentity }) {
 // ── Per-user conflict-free merge helpers ──
 
 // Merge deletedTasks maps; keep highest timestamp per id, purge entries > 14 days old
+// Unique numeric ids. A bare Date.now() collided whenever two items were created in the
+// same millisecond — the recurring-rules generator bulk-adds dozens at once — and colliding
+// ids collapse to a single node in flattenTasks()/_mergeTasksByDate(), so all but one
+// silently vanished on sync. Kept numeric: flattenTasks() does Number(id) on tombstones.
+// The random lane makes same-millisecond clashes between two devices very unlikely.
+const _ID_LANE = Math.floor(Math.random() * 90) + 5;   // 5..94, per session/device
+let _lastGenId = 0;
+function newLocalId() {
+  let v = Date.now() * 100 + _ID_LANE;                 // max ~1.8e14, well under MAX_SAFE_INTEGER
+  if (v <= _lastGenId) v = _lastGenId + 100;           // same ms: step forward, stay in lane
+  _lastGenId = v;
+  return v;
+}
+
 function _mergeDeletedTasks(a, b) {
   const out = { ...(a || {}) };
   const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
@@ -1590,6 +1604,33 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
   const myWriteIdRef           = useRy(null);   // fingerprint to reliably suppress our own echoes
   const lastWrittenStateRef    = useRy({});     // tracks last-written state fields for delta writes
   const theirChildListenersRef = useRy([]);     // child_changed / child_added listeners on their state path
+
+  const pendingTasksRef        = useRy(null);   // latest task state awaiting a Firebase write
+
+  // Task moves travel ONLY through this path — stripForSync() strips tasksByDate from the
+  // state blob — so anything that cancelled the debounce (tab close, app backgrounded)
+  // silently lost the move. Callable immediately so unload handlers can force it out.
+  const writePendingTasks = () => {
+    if (!dbRef.current || !pendingTasksRef.current) return;
+    if (!hasReceivedInitialData.current) {   // server data not in yet: retry, never drop
+      clearTimeout(tasksWriteTimerRef.current);
+      tasksWriteTimerRef.current = setTimeout(() => writePendingTasks(), 1200);
+      return;
+    }
+    const { tasksByDate, deletedTasks } = pendingTasksRef.current;
+    const ident = myIdentity || "vanja";
+    const currentFlat = flattenTasks(tasksByDate, deletedTasks);
+    const prevFlat    = lastSyncedTasksRef.current || {};
+    const updates     = {};
+    Object.entries(currentFlat).forEach(([id, task]) => {
+      if (JSON.stringify(prevFlat[id]) !== JSON.stringify(task)) updates[`tasks/${ident}/${id}`] = task;
+    });
+    Object.keys(prevFlat).forEach(id => { if (!currentFlat[id]) updates[`tasks/${ident}/${id}`] = null; });
+    if (!Object.keys(updates).length) return;
+    dbRef.current.ref("prontoHQ").update(updates)
+      .then(() => { lastSyncedTasksRef.current = currentFlat; })
+      .catch(err => console.error("[Pronto] Tasks write failed:", err));
+  };
 
   // Close popup on outside click
   useEy(() => {
@@ -1894,39 +1935,37 @@ function SyncButton({ getState, applyState, onApplyTasks, syncRef, myIdentity, m
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
+        pendingTasksRef.current = { tasksByDate, deletedTasks };
         clearTimeout(tasksWriteTimerRef.current);
-        tasksWriteTimerRef.current = setTimeout(() => {
-          if (!dbRef.current || !hasReceivedInitialData.current) return;
-          const ident = myIdentity || "vanja";
-          const currentFlat = flattenTasks(tasksByDate, deletedTasks);
-          const prevFlat    = lastSyncedTasksRef.current || {};
-          const updates     = {};
-          Object.entries(currentFlat).forEach(([id, task]) => {
-            if (JSON.stringify(prevFlat[id]) !== JSON.stringify(task))
-              updates[`tasks/${ident}/${id}`] = task;
-          });
-          Object.keys(prevFlat).forEach(id => {
-            if (!currentFlat[id]) updates[`tasks/${ident}/${id}`] = null;
-          });
-          if (!Object.keys(updates).length) return;
-          dbRef.current.ref("prontoHQ").update(updates)
-            .then(() => { lastSyncedTasksRef.current = currentFlat; })
-            .catch(err => console.error("[Pronto] Tasks write failed:", err));
-        }, 1500);
-      }
+        tasksWriteTimerRef.current = setTimeout(() => writePendingTasks(), 1500);
+      },
+      flushTasksNow() { writePendingTasks(); }
     };
-    return () => { clearTimeout(writeTimerRef.current); clearTimeout(tasksWriteTimerRef.current); };
+    // NOTE: deliberately NO cleanup here. This effect has no dependency array, so it re-runs
+    // after every render — clearing the debounce timers here cancelled pending writes, so a
+    // task moved less than 1.5s before any re-render never reached Firebase and reverted on
+    // the next sync. The schedule* methods re-arm their own timers; disconnect() clears them.
   });
 
   // Best-effort flush when closing/refreshing the tab
   useEy(() => {
     const flush = () => {
+      try { writePendingTasks(); } catch(_) {}   // tasks are NOT part of the state blob below
       if (!hasPendingWrite.current || !pendingState.current || !dbRef.current || !hasReceivedInitialData.current) return;
       const ident = myIdentity || "vanja";
       try { dbRef.current.ref(`${FB_STATE_PATH}/${ident}`).set({ ...stripForSync(pendingState.current), _meta:{ updatedAt:Date.now() } }); } catch(_) {}
     };
+    // visibilitychange is the only reliable signal on phones — mobile browsers routinely
+    // skip beforeunload/pagehide when backgrounded or swiped away.
+    const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('beforeunload', flush);
-    return () => window.removeEventListener('beforeunload', flush);
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
+    };
   }, [myIdentity]);
 
   const connect = () => {
@@ -6390,7 +6429,7 @@ function PlanView({ plan, setPlan }) {
   const updateItem = (id, text) => setPlan(p => ({ ...p, items: p.items.map(it => it.id === id ? { ...it, text } : it) }));
   const delItem = (id) => setPlan(p => ({ ...p, items: p.items.filter(it => it.id !== id) }));
   const addItem = (section, monthIdx) => setPlan(p => {
-    const id = Date.now();
+    const id = newLocalId();
     return { ...p, items: [...p.items, { id, section, monthIdx, text: "", year: planYear }] };
   });
 
@@ -15317,6 +15356,47 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
   const myWriteIdRef           = useR(null);    // fingerprint for echo suppression
   const lastWrittenStateRef    = useR({});      // tracks last-written state fields for delta writes
   const theirChildListenersRef = useR([]);      // child_changed listeners on their state path
+  const pendingTasksRef        = useR(null);    // latest task state awaiting a Firebase write
+
+  // Task moves travel ONLY through this path — stripForSync() strips tasksByDate from the
+  // state blob — so anything that cancelled the debounce (tab close, app backgrounded)
+  // silently lost the move. Callable immediately so unload handlers can force it out.
+  const writePendingTasks = () => {
+    if (!dbRef.current || !pendingTasksRef.current) return;
+    if (!hasReceivedInitialData.current) {   // server data not in yet: retry, never drop
+      clearTimeout(tasksWriteTimerRef.current);
+      tasksWriteTimerRef.current = setTimeout(() => writePendingTasks(), 1200);
+      return;
+    }
+    const { tasksByDate, deletedTasks } = pendingTasksRef.current;
+    const ident = chatAs || "vanja";
+    const currentFlat = flattenTasks(tasksByDate, deletedTasks);
+    const prevFlat    = lastSyncedTasksRef.current || {};
+    const updates     = {};
+    Object.entries(currentFlat).forEach(([id, task]) => {
+      if (JSON.stringify(prevFlat[id]) !== JSON.stringify(task)) updates[`tasks/${ident}/${id}`] = task;
+    });
+    Object.keys(prevFlat).forEach(id => { if (!currentFlat[id]) updates[`tasks/${ident}/${id}`] = null; });
+    if (!Object.keys(updates).length) return;
+    dbRef.current.ref("prontoHQ").update(updates)
+      .then(() => { lastSyncedTasksRef.current = currentFlat; })
+      .catch(err => console.error("[Pronto Mobile] Tasks write failed:", err));
+  };
+
+  // Mobile had NO unload flush at all. visibilitychange is the reliable signal on phones —
+  // Android/iOS routinely skip beforeunload when you switch apps or swipe the tab away.
+  useE(() => {
+    const flush = () => { try { writePendingTasks(); } catch(_) {} };
+    const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('beforeunload', flush);
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [chatAs]);
 
   useE(() => {
     if (myListenerRef.current)         { myListenerRef.current.ref.off("value", myListenerRef.current.handler); myListenerRef.current = null; }
@@ -15543,28 +15623,16 @@ function MobileHeader({ setForceMobile, getState, applyState, onApplyTasks, sync
       },
       scheduleWriteTasks(tasksByDate, deletedTasks) {
         if (!dbRef.current) return;
+        pendingTasksRef.current = { tasksByDate, deletedTasks };
         clearTimeout(tasksWriteTimerRef.current);
-        tasksWriteTimerRef.current = setTimeout(() => {
-          if (!dbRef.current || !hasReceivedInitialData.current) return;
-          const ident = chatAs || "vanja";
-          const currentFlat = flattenTasks(tasksByDate, deletedTasks);
-          const prevFlat    = lastSyncedTasksRef.current || {};
-          const updates     = {};
-          Object.entries(currentFlat).forEach(([id, task]) => {
-            if (JSON.stringify(prevFlat[id]) !== JSON.stringify(task))
-              updates[`tasks/${ident}/${id}`] = task;
-          });
-          Object.keys(prevFlat).forEach(id => {
-            if (!currentFlat[id]) updates[`tasks/${ident}/${id}`] = null;
-          });
-          if (!Object.keys(updates).length) return;
-          dbRef.current.ref("prontoHQ").update(updates)
-            .then(() => { lastSyncedTasksRef.current = currentFlat; })
-            .catch(err => console.error("[Pronto Mobile] Tasks write failed:", err));
-        }, 1500);
-      }
+        tasksWriteTimerRef.current = setTimeout(() => writePendingTasks(), 1500);
+      },
+      flushTasksNow() { writePendingTasks(); }
     };
-    return () => { clearTimeout(writeTimerRef.current); clearTimeout(tasksWriteTimerRef.current); };
+    // NOTE: deliberately NO cleanup here. This effect has no dependency array, so it re-runs
+    // after every render — clearing the debounce timers here cancelled pending writes, so a
+    // task moved less than 1.5s before any re-render never reached Firebase and reverted on
+    // the next sync. The schedule* methods re-arm their own timers; disconnect() clears them.
   });
 
   const connect = () => {
@@ -16536,7 +16604,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     logActivity(todayUser, "added task", data.text || "New task");
     setTasksByDate(prev => {
       const arr = prev[dateKey] || [];
-      const id = Date.now();
+      const id = newLocalId();
       return { ...prev, [dateKey]: [...arr, { ...data, id, updatedAt: _now() }] };
     });
   };
