@@ -1548,6 +1548,83 @@ function _mergeStaffLists(prev, incoming) {
 // How many populated sections a state blob carries. Used to stop a thin/empty server
 // slot from replacing a populated local one — applyState REPLACES these fields rather
 // than merging, so one bad apply wipes real work and then persists the emptiness.
+// Staff dates may be typed as DD/MM/YYYY (how the team writes them) or arrive as
+// YYYY-MM-DD from a date picker or older records. Normalise both to YYYY-MM-DD so
+// birthday and work-anniversary matching works whichever was used.
+function normStaffDate(v) {
+  const t = String(v == null ? "" : v).trim();
+  if (!t) return "";
+  let m = t.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);   // YYYY-MM-DD
+  if (m) return m[1] + "-" + String(m[2]).padStart(2, "0") + "-" + String(m[3]).padStart(2, "0");
+  m = t.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);       // DD/MM/YYYY
+  if (m) return m[3] + "-" + String(m[2]).padStart(2, "0") + "-" + String(m[1]).padStart(2, "0");
+  return "";
+}
+
+// ── Staff list from Google Sheets ────────────────────────────────────────────
+// Birthdays and Prontoversaries are driven by a Sheet the team edits directly, so
+// nobody has to maintain dates in two places. Read-only: the app never writes back.
+const STAFF_SHEET_ID = "1xgtfIZQ7ACty1eefgMHwhhfCBoMCbU3EuE-TE9ICcEI";
+const STAFF_SHEET_CSV = "https://docs.google.com/spreadsheets/d/" + STAFF_SHEET_ID + "/gviz/tq?tqx=out:csv";
+const STAFF_SHEET_URL = "https://docs.google.com/spreadsheets/d/" + STAFF_SHEET_ID + "/edit";
+
+// Minimal CSV reader — handles quoted fields and embedded commas.
+function parseCsvRows(text) {
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+    else if (c !== "\r") cur += c;
+  }
+  if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+// CSV -> [{name, dob, started}]. Tolerates column reordering and extra columns.
+function staffRowsFromCsv(text) {
+  const rows = parseCsvRows(text);
+  if (!rows.length) return [];
+  const head = rows[0].map(h => String(h || "").trim().toLowerCase());
+  const iName = head.indexOf("name"), iDob = head.indexOf("dob"), iStart = head.indexOf("started");
+  if (iName < 0) return [];
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const name = String(rows[r][iName] || "").trim();
+    if (!name) continue;
+    // skip the summary block at the bottom of the sheet
+    if (/^(total staff|still missing dates|birthdays this month|format|note)$/i.test(name)) continue;
+    out.push({
+      name,
+      dob:     iDob   >= 0 ? normStaffDate(rows[r][iDob])   : "",
+      started: iStart >= 0 ? normStaffDate(rows[r][iStart]) : "",
+    });
+  }
+  return out;
+}
+
+// Sheet is authoritative for dates; the app keeps photos, notes and everything else.
+// People only in the sheet are added so their reminders still fire.
+function mergeSheetStaff(appStaff, sheetStaff) {
+  if (!sheetStaff || !sheetStaff.length) return appStaff || [];
+  const key = n => String(n || "").trim().toLowerCase();
+  const bySheet = {};
+  sheetStaff.forEach(r => { bySheet[key(r.name)] = r; });
+  const seen = {};
+  const merged = (appStaff || []).map(p => {
+    const hit = bySheet[key(p.name)];
+    if (!hit) return p;
+    seen[key(p.name)] = true;
+    return { ...p, dob: hit.dob || p.dob, started: hit.started || p.started };
+  });
+  sheetStaff.forEach(r => { if (!seen[key(r.name)]) merged.push({ ...r, _fromSheet: true }); });
+  return merged;
+}
+
 function _stateRichness(o) {
   if (!o) return 0;
   return ["content","ideas","suppliers","staff","plan","lunches","uniform","goals","emailItems"]
@@ -2205,16 +2282,16 @@ function OngoingSection({ recurringTasks, setRecurringTasks, ongoingJobs, setOng
   const staffEvents = [];
   for (const s of staff || []) {
     if (!s.name) continue;
-    const dobMatch = (s.dob || "").match(/^\d{4}-(\d{2}-\d{2})$/);
+    const dobMatch = normStaffDate(s.dob).match(/^\d{4}-(\d{2}-\d{2})$/);
     if (dobMatch && dobMatch[1] === todayMMDD) {
       staffEvents.push({ id:"bday_"+s.name, text:`🎂 ${s.name.split(" ")[0]}'s Birthday`, kind:"birthday" });
     }
-    const startMatch = (s.started || "").match(/^\d{4}-(\d{2}-\d{2})$/);
+    const startMatch = normStaffDate(s.started).match(/^\d{4}-(\d{2}-\d{2})$/);
     if (startMatch && startMatch[1] === todayMMDD) {
-      const startYear = parseInt((s.started||"").slice(0,4));
+      const startYear = parseInt(normStaffDate(s.started).slice(0,4));
       const thisYear = new Date().getFullYear();
       const years = thisYear - startYear;
-      staffEvents.push({ id:"anni_"+s.name, text:`🎉 ${s.name.split(" ")[0]}'s ${years > 0 ? years+"yr " : ""}Work Anniversary`, kind:"anniversary" });
+      staffEvents.push({ id:"anni_"+s.name, text:`🎉 ${s.name.split(" ")[0]}'s ${years > 0 ? years+"yr " : ""}Prontoversary`, kind:"anniversary" });
     }
   }
 
@@ -3530,10 +3607,10 @@ function SharedTasksPanel({ dateKey, dayNotes, setDayNotes, recurringTasks, toBe
   const todayMMDD = dateKey ? dateKey.slice(5) : "";
   const staffEvents = (staff || []).flatMap(s => {
     const evts = [];
-    const dobMatch = (s.dob || "").match(/^\d{4}-(\d{2}-\d{2})$/);
+    const dobMatch = normStaffDate(s.dob).match(/^\d{4}-(\d{2}-\d{2})$/);
     if (dobMatch && dobMatch[1] === todayMMDD) evts.push({ id:"bday_"+s.name, text:`🎂 ${(s.name||"").split(" ")[0]}'s Birthday` });
-    const startMatch = (s.started || "").match(/^\d{4}-(\d{2}-\d{2})$/);
-    if (startMatch && startMatch[1] === todayMMDD) evts.push({ id:"anni_"+s.name, text:`🎉 ${(s.name||"").split(" ")[0]}'s Work Anniversary` });
+    const startMatch = normStaffDate(s.started).match(/^\d{4}-(\d{2}-\d{2})$/);
+    if (startMatch && startMatch[1] === todayMMDD) { const yrs = new Date().getFullYear() - parseInt(normStaffDate(s.started).slice(0,4)); evts.push({ id:"anni_"+s.name, text:`🎉 ${(s.name||"").split(" ")[0]}'s ${yrs>0?yrs+"yr ":""}Prontoversary` }); }
     return evts;
   });
   const contentText = (() => {
@@ -5051,7 +5128,7 @@ function NotificationsBell({ tasksByDate, schedule, staff, msgs, chatAs, dismiss
   const upcomingBdays = [];
   for (const s of staff || []) {
     if (!s.dob) continue;
-    const m = (s.dob || "").match(/^\d{4}-(\d{2})-(\d{2})$/);
+    const m = normStaffDate(s.dob).match(/^\d{4}-(\d{2})-(\d{2})$/);
     if (!m) continue;
     const month = parseInt(m[1]), day = parseInt(m[2]);
     let next = new Date(todayD.getFullYear(), month-1, day);
@@ -10945,7 +11022,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
   const upcoming = [];
   for (const s of staff) {
     if (s.deleted || !s.dob) continue;
-    const m = s.dob.match(/^\d{4}-(\d{2})-(\d{2})$/);
+    const m = normStaffDate(s.dob).match(/^\d{4}-(\d{2})-(\d{2})$/);
     if (!m) continue;
     const month = parseInt(m[1]), day = parseInt(m[2]);
     const this2026 = new Date(2026, month-1, day);
@@ -11015,7 +11092,7 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
         const upcomingStarts = [];
         for (const s of staff) {
           if (!s.started) continue;
-          const m = s.started.match(/^\d{4}-(\d{2})-(\d{2})$/);
+          const m = normStaffDate(s.started).match(/^\d{4}-(\d{2})-(\d{2})$/);
           if (!m) continue;
           const month = parseInt(m[1]), day = parseInt(m[2]);
           const startYear = parseInt(s.started.slice(0, 4));
@@ -13523,10 +13600,10 @@ function MobileTasksPage({ tasksByDate, selDate, setSelDate, onToggle, onAdd, on
   const staffEventsRecur = [];
   for (const s of staff || []) {
     if (!s.name) continue;
-    const dobM = (s.dob||"").match(/^\d{4}-(\d{2}-\d{2})$/);
+    const dobM = normStaffDate(s.dob).match(/^\d{4}-(\d{2}-\d{2})$/);
     if (dobM && dobM[1]===todayMMDD) staffEventsRecur.push({ id:"bday_"+s.name, text:`🎂 ${s.name.split(" ")[0]}'s Birthday` });
-    const startM = (s.started||"").match(/^\d{4}-(\d{2}-\d{2})$/);
-    if (startM && startM[1]===todayMMDD) { const yrs = new Date().getFullYear()-parseInt((s.started||"").slice(0,4)); staffEventsRecur.push({ id:"anni_"+s.name, text:`🎉 ${s.name.split(" ")[0]}'s ${yrs>0?yrs+"yr ":""}Work Anniversary` }); }
+    const startM = normStaffDate(s.started).match(/^\d{4}-(\d{2}-\d{2})$/);
+    if (startM && startM[1]===todayMMDD) { const yrs = new Date().getFullYear()-parseInt(normStaffDate(s.started).slice(0,4)); staffEventsRecur.push({ id:"anni_"+s.name, text:`🎉 ${s.name.split(" ")[0]}'s ${yrs>0?yrs+"yr ":""}Prontoversary` }); }
   }
   const dowRecur = new Date(dk+"T12:00:00").getDay();
   const BUILTIN_RECUR = [
@@ -16200,6 +16277,26 @@ function App({ onSwitchWorkspace = () => {} }) {
     });
   };
   // Branding — app name, subtitle, custom logo
+  // Staff dates pulled from the shared Google Sheet. Read-only, and purely additive:
+  // if the fetch fails we silently fall back to whatever the app already holds, so a
+  // network blip can never make birthdays disappear.
+  const [sheetStaff, setSheetStaff] = useS([]);
+  const [sheetStaffStatus, setSheetStaffStatus] = useS("loading");
+  useE(() => {
+    let cancelled = false;
+    fetch(STAFF_SHEET_CSV, { cache: "no-store" })
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(txt => {
+        if (cancelled) return;
+        const rows = staffRowsFromCsv(txt);
+        if (rows.length) { setSheetStaff(rows); setSheetStaffStatus("ok:" + rows.length); }
+        else setSheetStaffStatus("empty — check the sheet has a 'name' column header");
+      })
+      .catch(e => { if (!cancelled) setSheetStaffStatus("failed: " + (e && e.message) + " — sheet must be shared as 'Anyone with the link can view'"); });
+    return () => { cancelled = true; };
+  }, []);
+  const staffForEvents = React.useMemo(() => mergeSheetStaff(staff, sheetStaff), [staff, sheetStaff]);
+
   const _lsFailedRef = useR(false);
   const [branding, setBranding] = useS(() => {
     try { const d = JSON.parse(localStorage.getItem(BRANDING_LS_KEY) || "null"); if (d) return d; } catch(_) {}
@@ -16866,7 +16963,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         setToPostList={setToPostList}
         ideas={ideas}
         setIdeas={setIdeas}
-        staff={staff}
+        staff={staffForEvents}
         avatars={avatars}
         forceMobile={forceMobile}
         setForceMobile={setForceMobile}
@@ -16888,7 +16985,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           activity:  () => <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>,
           analytics: () => <AnalyticsView postApprovals={postApprovals} content={content}/>,
           emails:    () => <EmailPipelineView emailItems={emailItems} setEmailItems={setEmailItems} emailComments={emailComments} setEmailComments={setEmailComments} emailActivity={emailActivity} setEmailActivity={setEmailActivity} emailAttachments={emailAttachments} setEmailAttachments={setEmailAttachments} todayUser={todayUser} staff={staff} />,
-          settings:  () => <SettingsView theme={theme} setTheme={(t) => { applyTheme(t); try { localStorage.setItem("prontoHQ.theme", t); } catch(_) {} setTheme(t); }} categories={categories} setCategories={setCategories} visibleTabs={visibleTabs} setVisibleTabs={setVisibleTabs} allTabs={DEFAULT_TABS} branding={branding} setBranding={setBranding} avatars={avatars} onAvatarChange={onAvatarChange} todayUser={todayUser} contentLabels={contentLabels} setContentLabels={setContentLabels} videoLabels={videoLabels} setVideoLabels={setVideoLabels} setContent={setContent} />,
+          settings:  () => <SettingsView theme={theme} setTheme={(t) => { applyTheme(t); try { localStorage.setItem("prontoHQ.theme", t); } catch(_) {} setTheme(t); }} categories={categories} setCategories={setCategories} visibleTabs={visibleTabs} setVisibleTabs={setVisibleTabs} allTabs={DEFAULT_TABS} branding={branding} setBranding={setBranding} avatars={avatars} onAvatarChange={onAvatarChange} todayUser={todayUser} contentLabels={contentLabels} setContentLabels={setContentLabels} videoLabels={videoLabels} setVideoLabels={setVideoLabels} setContent={setContent} sheetStaffStatus={sheetStaffStatus} sheetStaffCount={sheetStaff.length} />,
         }}
       />
     );
@@ -17197,7 +17294,7 @@ function App({ onSwitchWorkspace = () => {} }) {
             onChangeSubtasks={onChangeSubtasks} onConvertToSubtask={onConvertToSubtask}
             onChangeNotes={onChangeNotes}
             onAdd={onAdd} onDelete={onDeleteTask} onDuplicate={onDuplicateTask} onShift={onShift} onMoveTask={onMoveTask} isMobile={isMobile}
-            staff={staff}
+            staff={staffForEvents}
             dayNotes={dayNotes} setDayNotes={setDayNotes}
             recurringTasks={recurringTasks} setRecurringTasks={setRecurringTasks}
             ongoingJobs={ongoingJobs} setOngoingJobs={setOngoingJobs}
@@ -17275,6 +17372,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           contentLabels={contentLabels} setContentLabels={setContentLabels}
           videoLabels={videoLabels} setVideoLabels={setVideoLabels}
           setContent={setContent}
+          sheetStaffStatus={sheetStaffStatus} sheetStaffCount={sheetStaff.length}
         />}
         {brandingModal && <BrandingModal branding={branding} setBranding={setBranding} onClose={() => setBrandingModal(false)}/>}
         {/* Settings drawer */}
@@ -17299,6 +17397,7 @@ function App({ onSwitchWorkspace = () => {} }) {
                 todayUser={todayUser}
                 contentLabels={contentLabels} setContentLabels={setContentLabels}
                 videoLabels={videoLabels} setVideoLabels={setVideoLabels}
+                sheetStaffStatus={sheetStaffStatus} sheetStaffCount={sheetStaff.length}
               />
             </div>
           </div>
@@ -20428,7 +20527,7 @@ function AutoBackupCard({ setContent }) {
 }
 
 // ── Settings View ──
-function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels, setContent }) {
+function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs, setVisibleTabs, allTabs, branding, setBranding, avatars, onAvatarChange, todayUser, contentLabels, setContentLabels, videoLabels, setVideoLabels, setContent, sheetStaffStatus, sheetStaffCount }) {
   const [newCat, setNewCat] = useS("");
   const [pwSection, setPwSection] = useS(false);
   const [pwCurrent, setPwCurrent] = useS("");
@@ -20507,6 +20606,29 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
 
   return (
     <div style={{ maxWidth:640 }}>
+      {sheetStaffStatus && (() => {
+        const ok = String(sheetStaffStatus).startsWith("ok:");
+        const loading = sheetStaffStatus === "loading";
+        const col = ok ? "#0E9F6E" : loading ? "#D97706" : "#C8261A";
+        return (
+          <div style={{ background:T.cardBg, border:`1px solid ${ok ? T.border : col + "55"}`, borderRadius:10, padding:"20px 24px", marginBottom:16 }}>
+            <p style={{ fontFamily:"'Outfit', sans-serif", fontWeight:800, fontSize:11, color:T.heading, letterSpacing:"0.1em", marginBottom:12 }}>STAFF LIST (GOOGLE SHEET)</p>
+            <p style={{ fontSize:13, fontWeight:700, color:col, marginBottom:8 }}>
+              {ok ? ("Connected — " + sheetStaffCount + " people loaded")
+                  : loading ? "Loading…"
+                  : "Not connected"}
+            </p>
+            {!ok && !loading && (
+              <p style={{ fontSize:11, color:T.muted, fontFamily:"monospace", wordBreak:"break-word", marginBottom:8 }}>{String(sheetStaffStatus)}</p>
+            )}
+            <p style={{ fontSize:11.5, color:T.muted, marginBottom:10 }}>
+              Birthdays and Prontoversaries come from this sheet. If it is not connected the app falls back to the staff stored in the app, so reminders keep working either way.
+            </p>
+            <a href={STAFF_SHEET_URL} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize:12, fontWeight:700, color:T.navy }}>Open the staff sheet →</a>
+          </div>
+        );
+      })()}
       {storageInfo && (() => {
         const pct = Math.min(100, (storageInfo.total / storageInfo.limit) * 100);
         const bad = !storageInfo.writable || pct > 80;
