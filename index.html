@@ -11002,19 +11002,7 @@ const blockLunchId = (id) => { if (!id) return; _deletedLunchIds.add(id); try { 
 const lunchBlocked = (l) => { const id = l.id || ('lunch_'+(l.name||'')+'_'+(l.date||'')).replace(/[^a-z0-9_]/gi,'_').slice(0,40); return id && _deletedLunchIds.has(id); };
 
 function TeamView({ staff, setStaff, lunches, setLunches }) {
-  const [filter, setFilter] = useSt("All");
-  const filters = ["All", "Male", "Female"];
 
-  const [newStaffIdx, setNewStaffIdx] = useSt(null); // index of most-recently-added member
-  const updateStaff = (i, next) => setStaff(prev => prev.map((s, idx) => idx === i ? { ...next, updatedAt: Date.now() } : s));
-  const delStaff = (i) => { setStaff(prev => prev.map((s, idx) => idx === i ? { ...s, deleted: true, updatedAt: Date.now() } : s)); if (newStaffIdx === i) setNewStaffIdx(null); };
-  const addStaff = () => {
-    setFilter("All");
-    setStaff(prev => {
-      setNewStaffIdx(prev.length);
-      return [...prev, { id: 'staff_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), gender:"", name:"New team member", dob:"", started:"", about:"", personality:"", _addedAt: Date.now(), updatedAt: Date.now() }];
-    });
-  };
 
   const updateLunch = (i, patch) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch, updatedAt: Date.now() } : l));
   const toggleLunchHad = (i) => setLunches(prev => prev.map((l, idx) => idx === i ? { ...l, had: !l.had, updatedAt: Date.now() } : l));
@@ -11025,18 +11013,6 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
   };
   const addLunch = () => setLunches(prev => [...prev, { id: Date.now() + "_" + Math.random().toString(36).slice(2,6), name:"", date: new Date().toISOString().slice(0,10), type:"Photo", had: false, updatedAt: Date.now() }]);
 
-  const filtered = staff.map((s, i) => ({ s, i })).filter(({ s }) => {
-    if (s.deleted) return false;
-    if (filter === "All") return true;
-    return (s.gender || "").toLowerCase() === filter.toLowerCase();
-  }).sort((a, b) => {
-    // New members (added in last 60s) float to top
-    const aNew = a.s._addedAt && (Date.now() - a.s._addedAt) < 60000;
-    const bNew = b.s._addedAt && (Date.now() - b.s._addedAt) < 60000;
-    if (aNew && !bNew) return -1;
-    if (bNew && !aNew) return 1;
-    return (a.s.name || "").localeCompare(b.s.name || "");
-  });
 
   // Upcoming birthdays
   const todayD = today();
@@ -11057,27 +11033,9 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
     <div>
       <div style={{ marginBottom:24, display:"flex", alignItems:"flex-end", justifyContent:"space-between", flexWrap:"wrap", gap:14 }}>
         <div>
-          <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{staff.filter(s=>!s.deleted).length} STAFF · CLICK ANY FIELD TO EDIT</p>
+          <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:8 }}>{staff.filter(s=>!s.deleted).length} STAFF</p>
           <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:0.92, color:T.heading }}>THE TEAM</h1>
-          <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Everyone at Pronto. Birthdays, start dates, personality colors and the things they're into.</p>
-        </div>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          {filters.map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={{
-              padding:"7px 14px", borderRadius:6,
-              background: filter===f ? T.navy : T.cardBg,
-              border:`1px solid ${filter===f ? T.navy : T.border}`,
-              color: filter===f ? "#fff" : T.text,
-              fontSize:11.5, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
-              letterSpacing:"0.06em", textTransform:"uppercase",
-            }}>{f}</button>
-          ))}
-          <button onClick={addStaff} style={{
-            padding:"7px 14px", borderRadius:6, background:T.gold, color:"#fff",
-            border:"none", fontSize:11.5, fontWeight:800, cursor:"pointer",
-            fontFamily:"inherit", letterSpacing:"0.06em", textTransform:"uppercase",
-            display:"inline-flex", alignItems:"center", gap:6,
-          }}>+ ADD MEMBER</button>
+          <p style={{ color:T.muted, fontSize:13.5, marginTop:8 }}>Birthdays and Prontoversaries, kept up to date in the team spreadsheet.</p>
         </div>
       </div>
 
