@@ -1609,20 +1609,41 @@ function staffRowsFromCsv(text) {
 
 // Sheet is authoritative for dates; the app keeps photos, notes and everything else.
 // People only in the sheet are added so their reminders still fire.
+// The Sheet is the team roster once it loads. We do NOT union it with the app's old
+// staff records — names drift ("Delia" vs "Delia Matchon", "Yolande Flett" vs
+// "Yolande Baker") and a union produced the same person twice in the birthday list.
+// App records are used only to carry photos and notes across onto the matching person.
 function mergeSheetStaff(appStaff, sheetStaff) {
   if (!sheetStaff || !sheetStaff.length) return appStaff || [];
-  const key = n => String(n || "").trim().toLowerCase();
-  const bySheet = {};
-  sheetStaff.forEach(r => { bySheet[key(r.name)] = r; });
-  const seen = {};
-  const merged = (appStaff || []).map(p => {
-    const hit = bySheet[key(p.name)];
-    if (!hit) return p;
-    seen[key(p.name)] = true;
-    return { ...p, dob: hit.dob || p.dob, started: hit.started || p.started };
+  const toks = n => String(n || "").toLowerCase().replace(/[^a-z ]/g, " ").split(/\s+/).filter(Boolean);
+
+  // Find the app record for a sheet person, tolerating added/removed/changed surnames.
+  const findApp = (sheetName) => {
+    const w = toks(sheetName);
+    if (!w.length) return null;
+    const pool = appStaff || [];
+    let hit = pool.find(p => String(p.name || "").trim().toLowerCase() === String(sheetName).trim().toLowerCase());
+    if (hit) return hit;
+    // two or more name parts in common — catches a dropped or added first name
+    // ("Cesar Fernando Falla Patino" -> "Fernando Falla Patino")
+    hit = pool.find(p => { const t = toks(p.name); return t.filter(x => w.includes(x)).length >= 2; });
+    if (hit) return hit;
+    // same first name AND at least one other name part in common
+    hit = pool.find(p => { const t = toks(p.name); return t[0] === w[0] && t.slice(1).some(x => w.slice(1).includes(x)); });
+    if (hit) return hit;
+    // same first name and one side has no surname at all ("Delia" vs "Delia Matchon")
+    hit = pool.find(p => { const t = toks(p.name); return t[0] === w[0] && (t.length === 1 || w.length === 1); });
+    if (hit) return hit;
+    // unique first-name match — covers a changed surname
+    const byFirst = pool.filter(p => toks(p.name)[0] === w[0]);
+    return byFirst.length === 1 ? byFirst[0] : null;
+  };
+
+  return sheetStaff.map(r => {
+    const app = findApp(r.name);
+    // sheet wins on name and dates; the app contributes photo/about/personality/id
+    return app ? { ...app, name: r.name, dob: r.dob, started: r.started } : { ...r, _fromSheet: true };
   });
-  sheetStaff.forEach(r => { if (!seen[key(r.name)]) merged.push({ ...r, _fromSheet: true }); });
-  return merged;
 }
 
 function _stateRichness(o) {
@@ -11134,28 +11155,21 @@ function TeamView({ staff, setStaff, lunches, setLunches }) {
         );
       })()}
 
-      {/* Staff grid */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(300px, 1fr))", gap:12 }}>
-        {filtered.map(({ s, i }) => {
-          const isNew = s._addedAt && (Date.now() - s._addedAt) < 60000;
-          return (
-            <div key={i} style={{ outline: isNew ? `2px solid ${T.gold}` : "none", borderRadius:8, animation: isNew ? "fadeIn 0.3s ease" : "none" }}>
-              <StaffCard staff={s} idx={i}
-                onChange={(ns) => updateStaff(i, ns)}
-                onDelete={() => delStaff(i)}/>
-            </div>
-          );
-        })}
-        <button onClick={addStaff} style={{
-          background:"transparent", border:`1px dashed ${T.borderStrong}`,
-          borderRadius:8, padding:"30px 14px",
-          color:T.muted, fontSize:13, cursor:"pointer",
-          display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-          fontFamily:"inherit", fontWeight:600,
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = T.gold; e.currentTarget.style.color = T.gold; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = T.borderStrong; e.currentTarget.style.color = T.muted; }}
-        ><span style={{ fontSize:18, lineHeight:1 }}>+</span> Add team member</button>
+      {/* Staff cards removed — the team list lives in a Google Sheet now. The summaries
+          above still work: they read the same sheet data. */}
+      <div style={{ marginTop:4, marginBottom:6 }}>
+        <a href={STAFF_SHEET_URL} target="_blank" rel="noopener noreferrer"
+          style={{ display:"flex", alignItems:"center", gap:14, textDecoration:"none", maxWidth:640,
+            border:`1px solid ${T.border}`, borderRadius:12, background:T.cardBg, padding:"20px 22px", cursor:"pointer" }}
+          onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.gold; e.currentTarget.style.boxShadow="0 4px 18px rgba(0,0,0,0.08)"; }}
+          onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.boxShadow="none"; }}>
+          <span style={{ fontSize:28, flexShrink:0 }}>👥</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:T.heading, marginBottom:3 }}>Click to view team list</div>
+            <div style={{ fontSize:12, color:T.muted }}>Names, birthdays and start dates — opens in Google Sheets</div>
+          </div>
+          <span style={{ fontSize:20, color:T.gold, flexShrink:0 }}>↗</span>
+        </a>
       </div>
 
       {/* Lunch winners — moved to a Google Sheet. The in-app list repeatedly lost entries
@@ -16979,7 +16993,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           gcalendar: () => <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={chatAs} />,
           video:     () => <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd} videoQueue={videoQueue} setVideoQueue={setVideoQueue} toPostList={toPostList} setToPostList={setToPostList} onSetContent={setContent}/>,
           plan:      () => <PlanView plan={plan} setPlan={setPlan}/>,
-          team:      () => <TeamView staff={staff} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>,
+          team:      () => <TeamView staff={staffForEvents} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>,
           uniform:   () => <UniformView uniform={uniform} setUniform={setUniform} staff={staff} />,
           resources: () => <ResourcesView ideas={ideas} setIdeas={setIdeas} suppliers={suppliers} setSuppliers={setSuppliers} budget={budget} setBudget={setBudget} onboarding={onboarding} setOnboarding={setOnboarding} courses={courses} setCourses={setCourses} testimonials={testimonials} setTestimonials={setTestimonials} photos={photos} setPhotos={setPhotos} onAddToTasks={onAdd} />,
           activity:  () => <ActivityView log={activityLog} onClear={() => setActivityLog([])}/>,
@@ -17338,7 +17352,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         })()}
         {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd} videoQueue={videoQueue} setVideoQueue={setVideoQueue} toPostList={toPostList} setToPostList={setToPostList} onSetContent={setContent}/>}
         {tab === "plan" && <PlanView plan={plan} setPlan={setPlan}/>}
-        {tab === "team" && <TeamView staff={staff} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>}
+        {tab === "team" && <TeamView staff={staffForEvents} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>}
         {tab === "uniform" && <UniformView uniform={uniform} setUniform={setUniform} staff={staff} />}
         {tab === "resources" && <ResourcesView
           ideas={ideas} setIdeas={setIdeas}
