@@ -1355,6 +1355,19 @@ function PresenceAvatars({ users, myIdentity }) {
 // The random lane makes same-millisecond clashes between two devices very unlikely.
 const _ID_LANE = Math.floor(Math.random() * 90) + 5;   // 5..94, per session/device
 let _lastGenId = 0;
+// A recurring occurrence is identified by its rule + date, not by when it happened to be
+// generated. Both devices run the generator independently, so a random id per device
+// produced the SAME task twice (or four times) after the two copies merged by id.
+// A deterministic id makes the merge collapse them into one.
+// Kept numeric and in its own range: ~9.0e11, clear of Date.now() ids (~1.8e12) and
+// newLocalId() ids (~1.8e14), so it can never collide with a hand-added task.
+function recurringTaskId(ruleId, dateKey) {
+  const str = "rec|" + ruleId + "|" + dateKey;
+  let h = 2166136261;                       // FNV-1a
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return 900000000000 + (h >>> 0);
+}
+
 function newLocalId() {
   let v = Date.now() * 100 + _ID_LANE;                 // max ~1.8e14, well under MAX_SAFE_INTEGER
   if (v <= _lastGenId) v = _lastGenId + 100;           // same ms: step forward, stay in lane
@@ -3066,8 +3079,9 @@ function DayView({ selDate, tasksByDate, onToggle, onChangePriority, onChangeOwn
       const dk = isoDate(d);
       for (const rule of activeRules) {
         if (!recRuleMatchesDate(rule, dk)) continue;
-        const existing = (tasksByDate[dk]||[]).find(t => String(t.ruleId) === String(rule.id));
-        if (!existing) toAdd.push({ dk, task: { text:rule.text, priority:rule.priority||'Normal', category:rule.category||'Social Post', done:false, owner:rule.owner||'oloka', ruleId:rule.id, updatedAt:Date.now() } });
+        const occId = recurringTaskId(rule.id, dk);
+        const existing = (tasksByDate[dk]||[]).find(t => String(t.id) === String(occId) || String(t.ruleId) === String(rule.id));
+        if (!existing) toAdd.push({ dk, task: { id:occId, text:rule.text, priority:rule.priority||'Normal', category:rule.category||'Social Post', done:false, owner:rule.owner||'oloka', ruleId:rule.id, updatedAt:Date.now() } });
       }
     }
     toAdd.forEach(({ dk, task }) => onAdd(dk, task));
@@ -16698,7 +16712,10 @@ function App({ onSwitchWorkspace = () => {} }) {
     logActivity(todayUser, "added task", data.text || "New task");
     setTasksByDate(prev => {
       const arr = prev[dateKey] || [];
-      const id = newLocalId();
+      // Callers may supply their own id (recurring occurrences do, so the same slot is
+      // stable across devices and reruns). Adding one that is already present is a no-op.
+      if (data.id != null && arr.some(t => String(t.id) === String(data.id))) return prev;
+      const id = data.id != null ? data.id : newLocalId();
       return { ...prev, [dateKey]: [...arr, { ...data, id, updatedAt: _now() }] };
     });
   };
