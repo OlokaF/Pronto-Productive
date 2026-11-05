@@ -13300,6 +13300,7 @@ const DEFAULT_TABS = [
   { key:"content",    label:"CONTENT",     on:true },
   { key:"video",      label:"VIDEO SCHED", on:true },
   { key:"plan",       label:"YEARLY PLAN", on:true },
+  { key:"ideabank",   label:"IDEA BANK",   on:true },
   { key:"team",       label:"TEAM",        on:true },
   { key:"uniform",    label:"UNIFORM",     on:true },
   { key:"resources",  label:"RESOURCES",   on:true },
@@ -13316,7 +13317,7 @@ const TABS = DEFAULT_TABS; // alias used elsewhere
 // so mobile never drifts from desktop or the Settings toggles.
 const MOBILE_PRIMARY_COUNT = 4;
 const MOBILE_TAB_ICONS = {
-  tasks:"✅", gcalendar:"📅", goals:"🎯", content:"✏️", video:"🎬",
+  tasks:"✅", ideabank:"💡", gcalendar:"📅", goals:"🎯", content:"✏️", video:"🎬",
   plan:"📊", team:"👥", uniform:"👕", resources:"📚", schedule:"🗓", settings:"⚙️",
 };
 
@@ -16033,6 +16034,13 @@ function App({ onSwitchWorkspace = () => {} }) {
     return [];
   });
   const [goalTemplates, setGoalTemplates] = useS(() => loadOr("goalTemplates", () => DEFAULT_GOAL_TEMPLATES));
+  const [ideaBank, setIdeaBank] = useS(() => {
+    const mainI = loadOr("ideaBank", () => null);
+    let dedI = null;
+    try { const d = JSON.parse(localStorage.getItem('prontoHQ.ideabank.v1') || 'null'); if (Array.isArray(d)) dedI = d; } catch(_) {}
+    const lists = [mainI, dedI].filter(a => Array.isArray(a) && a.length);
+    return lists.length ? lists.reduce((a, b) => _mergeById(a, b)) : [];
+  });
   const [deletedTasks, setDeletedTasks] = useS(() => loadOr("deletedTasks", () => ({})));
   const deletedTasksRef = useR({}); // mirror of deletedTasks state — safe to read in async callbacks
   const [tasksByDate, setTasksByDate] = useS(() => {
@@ -16349,7 +16357,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     contentLabels, videoLabels,
     recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush,
     uniform, toPostList,
-    goals, goalTemplates,
+    goals, goalTemplates, ideaBank,
   });
 
   // Sync chatAs to todayUser when user logs in via TodayPicker
@@ -16388,7 +16396,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     }
     if (_fbReady.current && syncRef.current) syncRef.current.scheduleWrite(state);
   // tasksByDate, deletedTasks, schedule, actualSchedule excluded — they're stripped from the Firebase payload and have their own sync paths
-  }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList, goals, goalTemplates]);
+  }, [content, ideas, suppliers, onboarding, courses, testimonials, photos, plan, staff, lunches, dayNotes, schedSpans, notifDismissed, activityLog, branding, categories, postApprovals, videoEvents, videoQueue, visibleTabs, contentLabels, videoLabels, recurringTasks, recRules, ongoingJobs, toBeCompleted, machinesToPush, uniform, toPostList, goals, goalTemplates, ideaBank]);
   // Dedicated immediate saves — second independent persistence paths
   const GOALS_LS_KEY = 'prontoHQ.goals.v1';
   useE(() => {
@@ -16400,6 +16408,10 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (!goals || goals.length === 0) return;
     try { localStorage.setItem(GOALS_LS_KEY, JSON.stringify(goals)); } catch(_) {}
   }, [goals]);
+  useE(() => {
+    if (!ideaBank || ideaBank.length === 0) return;
+    try { localStorage.setItem('prontoHQ.ideabank.v1', JSON.stringify(ideaBank)); } catch(_) {}
+  }, [ideaBank]);
   const LUNCHES_LS_KEY = 'prontoHQ.lunches.v1';
   useE(() => {
     const j = JSON.stringify(lunches || []);
@@ -16487,6 +16499,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         if (s.plan) setPlan(s.plan);
         if (s.staff) setStaff(prev => _mergeStaffLists(prev, s.staff));
         if (s.lunches) setLunches(s.lunches);
+        if (s.ideaBank) setIdeaBank(prev => _mergeById(prev, Array.isArray(s.ideaBank) ? s.ideaBank : Object.values(s.ideaBank || {})));
         if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
         if (s.ongoingJobs) setOngoingJobs(s.ongoingJobs);
         if (s.toBeCompleted) setToBeCompleted(s.toBeCompleted);
@@ -16556,6 +16569,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         if (s.plan) setPlan(s.plan);
         if (s.staff) setStaff(prev => _mergeStaffLists(prev, s.staff));
         if (s.lunches) setLunches(s.lunches);
+        if (s.ideaBank) setIdeaBank(prev => _mergeById(prev, Array.isArray(s.ideaBank) ? s.ideaBank : Object.values(s.ideaBank || {})));
         if (s.recurringTasks) setRecurringTasks(s.recurringTasks);
         if (s.ongoingJobs) setOngoingJobs(s.ongoingJobs);
         if (s.toBeCompleted) setToBeCompleted(s.toBeCompleted);
@@ -16618,6 +16632,10 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.visibleTabs) setVisibleTabs(prev => {
       let tabs = Array.isArray(s.visibleTabs) ? [...s.visibleTabs] : (prev || []);
       ALWAYS_ON_TABS.forEach(k => { if (!tabs.includes(k)) tabs.unshift(k); });
+      try {
+        if (!tabs.includes("ideabank") && !localStorage.getItem("prontoHQ.ideabankTabSeeded")) tabs.push("ideabank");
+        if (tabs.includes("ideabank")) localStorage.setItem("prontoHQ.ideabankTabSeeded", "1");
+      } catch(_) {}
       return tabs;
     });
     if (s.contentLabels) setContentLabels(s.contentLabels);
@@ -16632,6 +16650,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.toPostList) setToPostList(prev => _mergeById(prev, Array.isArray(s.toPostList) ? s.toPostList : Object.values(s.toPostList || {})));
     if (s.goals) setGoals(prev => _mergeById(prev, Array.isArray(s.goals) ? s.goals : Object.values(s.goals || {})));
     if (s.goalTemplates) setGoalTemplates(prev => _mergeById(prev, Array.isArray(s.goalTemplates) ? s.goalTemplates : Object.values(s.goalTemplates || {})));
+    if (s.ideaBank) setIdeaBank(prev => _mergeById(prev, Array.isArray(s.ideaBank) ? s.ideaBank : Object.values(s.ideaBank || {})));
   };
 
   // ── Export schedule as .ics (for Samsung Calendar / Outlook import) ──
@@ -16968,6 +16987,7 @@ function App({ onSwitchWorkspace = () => {} }) {
           gcalendar: () => <GCalCalendarTab tasksByDate={tasksByDate} myIdentity={chatAs} />,
           video:     () => <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd} videoQueue={videoQueue} setVideoQueue={setVideoQueue} toPostList={toPostList} setToPostList={setToPostList} onSetContent={setContent}/>,
           plan:      () => <PlanView plan={plan} setPlan={setPlan}/>,
+          ideabank:  () => <IdeaBankView ideaBank={ideaBank} setIdeaBank={setIdeaBank} todayUser={todayUser}/>,
           team:      () => <TeamView staff={staffForEvents} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>,
           uniform:   () => <UniformView uniform={uniform} setUniform={setUniform} staff={staff} />,
           resources: () => <ResourcesView ideas={ideas} setIdeas={setIdeas} suppliers={suppliers} setSuppliers={setSuppliers} budget={budget} setBudget={setBudget} onboarding={onboarding} setOnboarding={setOnboarding} courses={courses} setCourses={setCourses} testimonials={testimonials} setTestimonials={setTestimonials} photos={photos} setPhotos={setPhotos} onAddToTasks={onAdd} />,
@@ -17327,6 +17347,7 @@ function App({ onSwitchWorkspace = () => {} }) {
         })()}
         {tab === "video" && <VideoScheduleView selDate={selDate} videoEvents={videoEvents} setVideoEvents={setVideoEvents} view={contentView} setView={setContentView} videoLabels={videoLabels} onAddToTasks={onAdd} videoQueue={videoQueue} setVideoQueue={setVideoQueue} toPostList={toPostList} setToPostList={setToPostList} onSetContent={setContent}/>}
         {tab === "plan" && <PlanView plan={plan} setPlan={setPlan}/>}
+        {tab === "ideabank" && <IdeaBankView ideaBank={ideaBank} setIdeaBank={setIdeaBank} todayUser={todayUser}/>}
         {tab === "team" && <TeamView staff={staffForEvents} setStaff={setStaff} lunches={lunches} setLunches={setLunches}/>}
         {tab === "uniform" && <UniformView uniform={uniform} setUniform={setUniform} staff={staff} />}
         {tab === "resources" && <ResourcesView
@@ -20852,6 +20873,264 @@ function UniformView() {
         </div>
         <span style={{ fontSize:20, color:T.gold, flexShrink:0 }}>↗</span>
       </a>
+    </div>
+  );
+}
+
+// ── Idea Bank ─────────────────────────────────────────────────────────────────
+// A long-range parking place for "someday / next year" ideas, grouped by category.
+// Deliberately text-and-links only: image uploads (base64) are what filled browser
+// storage and lost data before, so a "photo" here is a link to an image, never a file.
+const IDEA_BANK_DEFAULT_CATS = ["Events", "Content", "Equipment", "Staff", "Website", "Other"];
+const IDEA_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// target is "" | "someday" | "YYYY" | "YYYY-MM"
+function ideaTargetLabel(t) {
+  if (!t) return "";
+  if (t === "someday") return "Someday";
+  const m = /^(\d{4})(?:-(\d{2}))?$/.exec(t);
+  if (!m) return "";
+  return m[2] ? IDEA_MONTHS[parseInt(m[2], 10) - 1] + " " + m[1] : m[1];
+}
+function ideaTargetSort(t) {
+  const m = /^(\d{4})(?:-(\d{2}))?$/.exec(t || "");
+  if (!m) return 99999999;                               // someday / no date last
+  return parseInt(m[1], 10) * 100 + (m[2] ? parseInt(m[2], 10) : 13);
+}
+// Only http(s) links are ever rendered as hrefs — a pasted "javascript:" link must never run.
+function ideaSafeUrl(u) {
+  const t = String(u || "").trim();
+  if (!t) return "";
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/^[a-z][a-z0-9+.\-]*:/i.test(t)) return "";
+  return "https://" + t;
+}
+const ideaIsImageUrl = u => /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i.test(u || "");
+
+function IdeaBankView({ ideaBank, setIdeaBank, todayUser }) {
+  const [search, setSearch] = useS("");
+  const [yearFilter, setYearFilter] = useS("all");   // all | someday | none | "YYYY"
+  const [showDone, setShowDone] = useS(false);
+  const [editor, setEditor] = useS(null);
+  const [collapsed, setCollapsed] = useS({});
+
+  const live = (ideaBank || []).filter(i => i && !i.deleted);
+  const nowYear = new Date().getFullYear();
+
+  useE(() => {
+    if (!editor) return;
+    const h = e => { if (e.key === "Escape") setEditor(null); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [!!editor]);
+
+  const years = [...new Set(live.map(i => (/^(\d{4})/.exec(i.target || "") || [])[1]).filter(Boolean))].sort();
+  const hasSomeday = live.some(i => i.target === "someday");
+  const hasNoDate = live.some(i => !i.target);
+
+  const q = search.trim().toLowerCase();
+  const filtering = !!q || yearFilter !== "all";
+  const visible = live.filter(i => {
+    if (!showDone && i.done) return false;
+    if (yearFilter === "someday" && i.target !== "someday") return false;
+    if (yearFilter === "none" && i.target) return false;
+    if (/^\d{4}$/.test(yearFilter) && !String(i.target || "").startsWith(yearFilter)) return false;
+    if (q && !((i.title || "") + " " + (i.notes || "") + " " + (i.category || "")).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const cats = [...IDEA_BANK_DEFAULT_CATS];
+  live.forEach(i => { const c = i.category || "Other"; if (!cats.includes(c)) cats.push(c); });
+  const grouped = {};
+  cats.forEach(c => { grouped[c] = []; });
+  visible.forEach(i => { grouped[i.category || "Other"].push(i); });
+  const byTarget = (a, b) =>
+    ((a.done ? 1 : 0) - (b.done ? 1 : 0)) ||
+    (ideaTargetSort(a.target) - ideaTargetSort(b.target)) ||
+    ((a.createdAt || 0) - (b.createdAt || 0));
+  cats.forEach(c => grouped[c].sort(byTarget));
+  const sections = cats.filter(c => grouped[c].length || (!filtering && IDEA_BANK_DEFAULT_CATS.includes(c)));
+
+  const blank = (cat) => ({ title:"", notes:"", category: cat || "Other", newCategory:"", year:"", month:"", link:"", done:false });
+  const openNew = (cat) => setEditor(blank(cat));
+  const openEdit = (i) => {
+    const m = /^(\d{4})(?:-(\d{2}))?$/.exec(i.target || "");
+    setEditor({
+      id: i.id, title: i.title || "", notes: i.notes || "", category: i.category || "Other", newCategory: "",
+      year: i.target === "someday" ? "someday" : (m ? m[1] : ""), month: m && m[2] ? m[2] : "",
+      link: i.link || "", done: !!i.done,
+    });
+  };
+
+  const saveIdea = () => {
+    const d = editor;
+    const title = (d.title || "").trim();
+    if (!title) return;
+    const cat = d.category === "__new__" ? ((d.newCategory || "").trim() || "Other") : (d.category || "Other");
+    const target = d.year === "someday" ? "someday" : (d.year ? (d.month ? d.year + "-" + d.month : d.year) : "");
+    const now = Date.now();
+    const fields = { title, notes: (d.notes || "").trim(), category: cat, target, link: (d.link || "").trim(), done: !!d.done, updatedAt: now };
+    setIdeaBank(prev => {
+      const arr = prev || [];
+      if (d.id != null && arr.some(x => String(x.id) === String(d.id))) {
+        return arr.map(x => String(x.id) === String(d.id) ? { ...x, ...fields, createdAt: x.createdAt || now } : x);
+      }
+      return [...arr, { ...fields, id: newLocalId(), createdAt: now, by: todayUser || "" }];
+    });
+    setEditor(null);
+  };
+  const toggleDone = (id) => setIdeaBank(prev => (prev || []).map(x => String(x.id) === String(id) ? { ...x, done: !x.done, updatedAt: Date.now() } : x));
+  // soft delete: the tombstone is what makes a removal survive a sync from the other device
+  const removeIdea = (id) => { setIdeaBank(prev => (prev || []).map(x => String(x.id) === String(id) ? { ...x, deleted: true, updatedAt: Date.now() } : x)); setEditor(null); };
+
+  const inp = { width:"100%", padding:"10px 12px", border:`1px solid ${T.border}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:T.bg, color:T.ink, boxSizing:"border-box", outline:"none" };
+  const lbl = { fontSize:10, fontWeight:800, color:T.faint, letterSpacing:"0.1em", display:"block", marginBottom:6 };
+  const chip = (on) => ({ padding:"5px 12px", borderRadius:20, border:`1px solid ${on ? T.navy : T.border}`, background:on ? T.navy : "transparent", color:on ? "#fff" : T.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" });
+  const doneCount = live.filter(i => i.done).length;
+  const yearOptions = []; for (let y = nowYear; y <= nowYear + 6; y++) yearOptions.push(String(y));
+  if (editor && /^\d{4}$/.test(editor.year) && !yearOptions.includes(editor.year)) yearOptions.unshift(editor.year);
+
+  return (
+    <div>
+      <div style={{ marginBottom:20 }}>
+        <p style={{ color:T.gold, fontSize:10, letterSpacing:"0.18em", fontWeight:800, marginBottom:6 }}>LOOKING AHEAD</p>
+        <h1 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:36, letterSpacing:"-0.025em", lineHeight:1.05, color:T.heading, marginBottom:6 }}>IDEA BANK</h1>
+        <p style={{ color:T.muted, fontSize:13.5 }}>Ideas for next year and beyond. Park them here, then come back when the time is right.</p>
+      </div>
+
+      <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:12 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search ideas…" style={{ ...inp, flex:"1 1 220px", maxWidth:360 }} />
+        <button onClick={() => openNew()} style={{ padding:"10px 18px", background:T.navy, border:"none", borderRadius:8, color:"#fff", fontSize:12, fontWeight:800, letterSpacing:"0.04em", cursor:"pointer", fontFamily:"inherit" }}>+ ADD IDEA</button>
+      </div>
+
+      {live.length > 0 && (
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center", marginBottom:18 }}>
+          <button onClick={() => setYearFilter("all")} style={chip(yearFilter === "all")}>All</button>
+          {years.map(y => <button key={y} onClick={() => setYearFilter(y)} style={chip(yearFilter === y)}>{y}</button>)}
+          {hasSomeday && <button onClick={() => setYearFilter("someday")} style={chip(yearFilter === "someday")}>Someday</button>}
+          {hasNoDate && <button onClick={() => setYearFilter("none")} style={chip(yearFilter === "none")}>No date</button>}
+          <span style={{ flex:1 }} />
+          <button onClick={() => setShowDone(s => !s)} style={chip(showDone)}>{showDone ? "Showing done" : "Show done"}{doneCount ? " (" + doneCount + ")" : ""}</button>
+        </div>
+      )}
+
+      {live.length === 0 && (
+        <div style={{ border:`1px dashed ${T.border}`, borderRadius:12, padding:"36px 20px", textAlign:"center", background:T.cardBg }}>
+          <div style={{ fontSize:30, marginBottom:8 }}>💡</div>
+          <div style={{ fontSize:15, fontWeight:800, color:T.heading, marginBottom:4 }}>Nothing parked yet</div>
+          <div style={{ fontSize:12.5, color:T.muted, marginBottom:14 }}>Add the first idea. It can be as rough as a single line.</div>
+          <button onClick={() => openNew()} style={{ padding:"10px 18px", background:T.gold, border:"none", borderRadius:8, color:"#fff", fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>+ ADD IDEA</button>
+        </div>
+      )}
+
+      {live.length > 0 && filtering && visible.length === 0 && (
+        <p style={{ fontSize:13, color:T.muted, padding:"12px 2px" }}>No ideas match. Try clearing the search or year filter.</p>
+      )}
+
+      {sections.map(cat => {
+        const items = grouped[cat] || [];
+        const isCollapsed = !!collapsed[cat];
+        return (
+          <div key={cat} style={{ marginBottom:22 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+              <span style={{ width:4, height:16, background:T.gold, flexShrink:0 }}></span>
+              <button onClick={() => setCollapsed(c => ({ ...c, [cat]: !c[cat] }))}
+                style={{ background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:"'210 Supersize Black', sans-serif", fontWeight:800, fontSize:15, color:T.heading, letterSpacing:"0.01em", textTransform:"uppercase" }}>
+                {cat}
+              </button>
+              <span style={{ fontSize:11, color:T.muted }}>{items.length}</span>
+              <span style={{ flex:1 }} />
+              <button onClick={() => openNew(cat)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, padding:"3px 10px", fontSize:11, fontWeight:700, color:T.muted, cursor:"pointer", fontFamily:"inherit" }}>+ Add</button>
+              <button onClick={() => setCollapsed(c => ({ ...c, [cat]: !c[cat] }))} aria-label={isCollapsed ? "Expand" : "Collapse"}
+                style={{ background:"none", border:"none", padding:"0 4px", cursor:"pointer", color:T.faint, fontSize:12 }}>{isCollapsed ? "▸" : "▾"}</button>
+            </div>
+            {!isCollapsed && (items.length === 0 ? (
+              <p style={{ fontSize:12, color:T.faint, fontStyle:"italic", padding:"2px 2px 2px 14px" }}>No ideas here yet.</p>
+            ) : (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))", gap:10 }}>
+                {items.map(i => {
+                  const url = ideaSafeUrl(i.link);
+                  const tl = ideaTargetLabel(i.target);
+                  return (
+                    <div key={i.id} onClick={() => openEdit(i)}
+                      style={{ background:T.cardBg, border:`1px solid ${T.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", opacity:i.done ? 0.55 : 1, display:"flex", gap:10, alignItems:"flex-start" }}>
+                      <button onClick={e => { e.stopPropagation(); toggleDone(i.id); }} aria-label={i.done ? "Mark not done" : "Mark done"}
+                        style={{ flexShrink:0, width:20, height:20, marginTop:1, borderRadius:"50%", border:`2px solid ${i.done ? "#059669" : T.border}`, background:i.done ? "#059669" : "transparent", color:"#fff", fontSize:11, lineHeight:1, cursor:"pointer", padding:0 }}>{i.done ? "✓" : ""}</button>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13.5, fontWeight:700, color:T.heading, textDecoration:i.done ? "line-through" : "none", wordBreak:"break-word" }}>{i.title}</div>
+                        {i.notes && <div style={{ fontSize:12, color:T.muted, marginTop:4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", wordBreak:"break-word" }}>{i.notes}</div>}
+                        {url && ideaIsImageUrl(url) && (
+                          <img src={url} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = "none"; }}
+                            style={{ display:"block", marginTop:8, maxWidth:"100%", maxHeight:110, borderRadius:6, objectFit:"cover" }} />
+                        )}
+                        {(tl || url) && (
+                          <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:8, flexWrap:"wrap" }}>
+                            {tl && <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.05em", color:T.gold, background:T.gold + "1A", borderRadius:20, padding:"2px 9px" }}>{tl}</span>}
+                            {url && <a href={url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize:11, fontWeight:700, color:T.navy, textDecoration:"none" }}>Open link ↗</a>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+
+      {editor && (
+        <div onClick={() => setEditor(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.cardBg, borderRadius:14, padding:"22px 22px 18px", maxWidth:480, width:"100%", maxHeight:"90vh", overflowY:"auto", boxShadow:"0 12px 40px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ fontFamily:"'210 Supersize Black', sans-serif", fontWeight:900, fontSize:17, color:T.heading, marginBottom:16 }}>{editor.id != null ? "Edit idea" : "New idea"}</h3>
+
+            <label style={lbl}>IDEA *</label>
+            <input autoFocus value={editor.title} onChange={e => setEditor({ ...editor, title: e.target.value })}
+              onKeyDown={e => { if (e.key === "Enter") saveIdea(); }} placeholder="e.g. Customer open day" style={{ ...inp, marginBottom:14 }} />
+
+            <label style={lbl}>CATEGORY</label>
+            <select value={editor.category} onChange={e => setEditor({ ...editor, category: e.target.value })} style={{ ...inp, cursor:"pointer", marginBottom: editor.category === "__new__" ? 8 : 14 }}>
+              {cats.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="__new__">+ New category…</option>
+            </select>
+            {editor.category === "__new__" && (
+              <input value={editor.newCategory} onChange={e => setEditor({ ...editor, newCategory: e.target.value })} placeholder="New category name" style={{ ...inp, marginBottom:14 }} />
+            )}
+
+            <label style={lbl}>TARGET</label>
+            <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+              <select value={editor.year} onChange={e => setEditor({ ...editor, year: e.target.value, month: e.target.value && e.target.value !== "someday" ? editor.month : "" })} style={{ ...inp, cursor:"pointer", flex:1 }}>
+                <option value="">No date</option>
+                {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                <option value="someday">Someday</option>
+              </select>
+              <select value={editor.month} disabled={!/^\d{4}$/.test(editor.year)} onChange={e => setEditor({ ...editor, month: e.target.value })} style={{ ...inp, cursor:"pointer", flex:1, opacity:/^\d{4}$/.test(editor.year) ? 1 : 0.5 }}>
+                <option value="">Any month</option>
+                {IDEA_MONTHS.map((m, k) => <option key={m} value={String(k + 1).padStart(2, "0")}>{m}</option>)}
+              </select>
+            </div>
+
+            <label style={lbl}>NOTES</label>
+            <textarea value={editor.notes} onChange={e => setEditor({ ...editor, notes: e.target.value })} rows={4} placeholder="Why, how, who to talk to…" style={{ ...inp, resize:"vertical", marginBottom:14, lineHeight:1.4 }} />
+
+            <label style={lbl}>LINK OR IMAGE LINK</label>
+            <input value={editor.link} onChange={e => setEditor({ ...editor, link: e.target.value })} placeholder="https://…" style={{ ...inp, marginBottom:6 }} />
+            <p style={{ fontSize:10.5, color:T.faint, marginBottom:16 }}>Paste a web address. If it points straight at an image, a preview shows on the card.</p>
+
+            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12.5, color:T.ink, cursor:"pointer", marginBottom:18 }}>
+              <input type="checkbox" checked={editor.done} onChange={e => setEditor({ ...editor, done: e.target.checked })} style={{ width:16, height:16 }} />
+              Done / no longer needed
+            </label>
+
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              {editor.id != null && <button onClick={() => removeIdea(editor.id)} style={{ padding:"10px 14px", background:"none", border:`1px solid ${T.urgent || "#C8261A"}55`, borderRadius:8, color:T.urgent || "#C8261A", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Delete</button>}
+              <span style={{ flex:1 }} />
+              <button onClick={() => setEditor(null)} style={{ padding:"10px 16px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.muted, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={saveIdea} disabled={!editor.title.trim()} style={{ padding:"10px 20px", background:editor.title.trim() ? T.navy : T.border, border:"none", borderRadius:8, color:editor.title.trim() ? "#fff" : T.muted, fontSize:12, fontWeight:800, cursor:editor.title.trim() ? "pointer" : "default", fontFamily:"inherit" }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
