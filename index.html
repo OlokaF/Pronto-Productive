@@ -1659,6 +1659,19 @@ function mergeSheetStaff(appStaff, sheetStaff) {
   });
 }
 
+// The Idea Bank tab was added after every saved tab list already existed. A list written
+// before that (another person's slot, or an older device syncing in) simply lacks the key,
+// and applyState REPLACES the list, so the tab vanished and was then saved back that way.
+// A one-time flag could not fix that: it was set the first time the tab was present, so the
+// next stale list removed the tab for good. Instead the tab is re-added every time, unless
+// someone switched it off themselves in Settings.
+const IDEABANK_HIDDEN_KEY = "prontoHQ.ideabankHidden";
+function ideaBankHidden() { try { return localStorage.getItem(IDEABANK_HIDDEN_KEY) === "1"; } catch (_) { return false; } }
+function ensureIdeaBankTab(tabs) {
+  const list = Array.isArray(tabs) ? tabs : [];
+  return (list.includes("ideabank") || ideaBankHidden()) ? list : [...list, "ideabank"];
+}
+
 function _stateRichness(o) {
   if (!o) return 0;
   return ["content","ideas","suppliers","staff","plan","lunches","uniform","goals","emailItems"]
@@ -16331,7 +16344,7 @@ function App({ onSwitchWorkspace = () => {} }) {
   const [visibleTabs, setVisibleTabs] = useS(() => {
     const saved = loadOr("visibleTabs", () => DEFAULT_TABS.filter(t=>t.on).map(t=>t.key));
     // Migration: add any new tabs that are on:true in DEFAULT_TABS but missing from saved
-    const newOnes = DEFAULT_TABS.filter(t => t.on && !saved.includes(t.key)).map(t=>t.key);
+    const newOnes = DEFAULT_TABS.filter(t => t.on && !saved.includes(t.key) && !(t.key === "ideabank" && ideaBankHidden())).map(t=>t.key);
     // Migration: remove tabs that have been permanently disabled (analytics)
     const removed = DEFAULT_TABS.filter(t => !t.on).map(t=>t.key);
     const merged = [...saved.filter(k => !removed.includes(k)), ...newOnes];
@@ -16635,10 +16648,7 @@ function App({ onSwitchWorkspace = () => {} }) {
     if (s.visibleTabs) setVisibleTabs(prev => {
       let tabs = Array.isArray(s.visibleTabs) ? [...s.visibleTabs] : (prev || []);
       ALWAYS_ON_TABS.forEach(k => { if (!tabs.includes(k)) tabs.unshift(k); });
-      try {
-        if (!tabs.includes("ideabank") && !localStorage.getItem("prontoHQ.ideabankTabSeeded")) tabs.push("ideabank");
-        if (tabs.includes("ideabank")) localStorage.setItem("prontoHQ.ideabankTabSeeded", "1");
-      } catch(_) {}
+      tabs = ensureIdeaBankTab(tabs);
       return tabs;
     });
     if (s.contentLabels) setContentLabels(s.contentLabels);
@@ -20732,6 +20742,7 @@ function SettingsView({ theme, setTheme, categories, setCategories, visibleTabs,
                 <p style={{ fontSize:12.5, color:on?T.ink:T.muted, fontWeight:on?700:400 }}>{t.label}</p>
                 <button disabled={locked} onClick={() => {
                   if (locked) return;
+                  if (t.key === "ideabank") { try { localStorage.setItem(IDEABANK_HIDDEN_KEY, on ? "1" : ""); } catch(_) {} }
                   setVisibleTabs(prev => on ? prev.filter(k => k !== t.key) : [...prev, t.key]);
                 }} style={{
                   width:44, height:24, borderRadius:12, border:"none", cursor: locked ? "not-allowed" : "pointer",
