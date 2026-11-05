@@ -1702,6 +1702,9 @@ function _mergeState(myState, theirState, myIdentity) {
     uniform: _mergeUniform(myState.uniform, theirState.uniform),
     postApprovals: _mergeById(myState.postApprovals, theirState.postApprovals),
     machinesToPush: _mergeById(myState.machinesToPush, theirState.machinesToPush),
+    // Without this the Idea Bank only ever carried the data from MY slot: ideas added on one
+    // person's devices never reached the other person's. Merged by id, so deletes propagate.
+    ideaBank: _mergeById(myState.ideaBank, theirState.ideaBank),
   };
 }
 
@@ -20906,6 +20909,29 @@ function ideaSafeUrl(u) {
   return "https://" + t;
 }
 const ideaIsImageUrl = u => /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i.test(u || "");
+const ideaLinkLabel = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (_) { return "link"; } };
+
+// Turn web addresses typed into notes into real links. Built as React nodes (never
+// innerHTML), and every href goes through ideaSafeUrl, so only http(s) can ever be opened.
+function ideaLinkify(text) {
+  const str = String(text || "");
+  const re = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+  const parts = []; let last = 0, k = 0, m;
+  while ((m = re.exec(str)) !== null) {
+    let raw = m[0], trail = "";
+    const tm = raw.match(/[.,;:!?)\]]+$/);                 // keep sentence punctuation out of the link
+    if (tm) { trail = tm[0]; raw = raw.slice(0, -trail.length); }
+    if (m.index > last) parts.push(str.slice(last, m.index));
+    const href = ideaSafeUrl(raw);
+    parts.push(href
+      ? <a key={k++} href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color:T.navy, fontWeight:700, textDecoration:"underline" }}>{raw}</a>
+      : raw);
+    if (trail) parts.push(trail);
+    last = m.index + m[0].length;
+  }
+  if (last < str.length) parts.push(str.slice(last));
+  return parts;
+}
 
 function IdeaBankView({ ideaBank, setIdeaBank, todayUser }) {
   const [search, setSearch] = useS("");
@@ -21058,7 +21084,7 @@ function IdeaBankView({ ideaBank, setIdeaBank, todayUser }) {
                         style={{ flexShrink:0, width:20, height:20, marginTop:1, borderRadius:"50%", border:`2px solid ${i.done ? "#059669" : T.border}`, background:i.done ? "#059669" : "transparent", color:"#fff", fontSize:11, lineHeight:1, cursor:"pointer", padding:0 }}>{i.done ? "✓" : ""}</button>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:13.5, fontWeight:700, color:T.heading, textDecoration:i.done ? "line-through" : "none", wordBreak:"break-word" }}>{i.title}</div>
-                        {i.notes && <div style={{ fontSize:12, color:T.muted, marginTop:4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", wordBreak:"break-word" }}>{i.notes}</div>}
+                        {i.notes && <div style={{ fontSize:12, color:T.muted, marginTop:4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", wordBreak:"break-word" }}>{ideaLinkify(i.notes)}</div>}
                         {url && ideaIsImageUrl(url) && (
                           <img src={url} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = "none"; }}
                             style={{ display:"block", marginTop:8, maxWidth:"100%", maxHeight:110, borderRadius:6, objectFit:"cover" }} />
@@ -21066,7 +21092,7 @@ function IdeaBankView({ ideaBank, setIdeaBank, todayUser }) {
                         {(tl || url) && (
                           <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:8, flexWrap:"wrap" }}>
                             {tl && <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.05em", color:T.gold, background:T.gold + "1A", borderRadius:20, padding:"2px 9px" }}>{tl}</span>}
-                            {url && <a href={url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize:11, fontWeight:700, color:T.navy, textDecoration:"none" }}>Open link ↗</a>}
+                            {url && <a href={url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:11.5, fontWeight:700, color:T.navy, textDecoration:"none", border:`1px solid ${T.navy}33`, background:T.navy + "0D", borderRadius:20, padding:"4px 11px", maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>🔗 {ideaLinkLabel(url)} ↗</a>}
                           </div>
                         )}
                       </div>
@@ -21115,7 +21141,8 @@ function IdeaBankView({ ideaBank, setIdeaBank, todayUser }) {
 
             <label style={lbl}>LINK OR IMAGE LINK</label>
             <input value={editor.link} onChange={e => setEditor({ ...editor, link: e.target.value })} placeholder="https://…" style={{ ...inp, marginBottom:6 }} />
-            <p style={{ fontSize:10.5, color:T.faint, marginBottom:16 }}>Paste a web address. If it points straight at an image, a preview shows on the card.</p>
+            <p style={{ fontSize:10.5, color:T.faint, marginBottom:ideaSafeUrl(editor.link) ? 6 : 16 }}>Paste a web address. If it points straight at an image, a preview shows on the card.</p>
+            {ideaSafeUrl(editor.link) && <a href={ideaSafeUrl(editor.link)} target="_blank" rel="noopener noreferrer" style={{ display:"inline-block", fontSize:12, fontWeight:700, color:T.navy, marginBottom:16 }}>Test this link ↗</a>}
 
             <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12.5, color:T.ink, cursor:"pointer", marginBottom:18 }}>
               <input type="checkbox" checked={editor.done} onChange={e => setEditor({ ...editor, done: e.target.checked })} style={{ width:16, height:16 }} />
